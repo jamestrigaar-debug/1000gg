@@ -22,6 +22,7 @@
     TEAM_DATABASE,
     ACADEMY_STARTING_POOL,
     NATIONAL_TEAM,
+    FOREIGN_LEAGUES,
   } = D;
 
   // Manager profiles per team: visible during club-offer selection to help the
@@ -61,6 +62,14 @@
   };
   const POSITION_KEYS = Object.keys(POSITIONS);
 
+  const AGENT_TIERS = [
+    { key: "poor", label: "Poor", influence: 0, contractBonus: 0, wealth: 10, weight: 20 },
+    { key: "med", label: "Mediocre", influence: 0.08, contractBonus: 0, wealth: 25, weight: 35 },
+    { key: "average", label: "Average", influence: 0.18, contractBonus: 1, wealth: 50, weight: 30 },
+    { key: "worldclass", label: "World Class", influence: 0.35, contractBonus: 2, wealth: 80, weight: 15 },
+  ];
+  const AGENT_BY_KEY = Object.fromEntries(AGENT_TIERS.map((a) => [a.key, a]));
+
   const ATTRS = [
     { key: "heading", name: "Heading", short: "HDR", type: "numeric", desc: "Aerial threat — wins headers and attacks crosses." },
     { key: "mentality", name: "Mentality", short: "MEN", type: "mentality", desc: "Personality & temperament — hidden influence on big moments." },
@@ -79,7 +88,7 @@
   const LEVERS = {
     startRerolls: 3,
     goalTarget: 1000,
-    conversionMultiplier: 0.82,
+    conversionMultiplier: 1.0,
     primeWindow: [25, 29],
     injuryFreqMin: 3,
     injuryFreqMax: 6,
@@ -211,7 +220,16 @@
   function hasTrait(name) { return state.hiddenTraits && state.hiddenTraits.includes(name); }
   function traitCount() { return state.hiddenTraits ? state.hiddenTraits.length : 0; }
 
+  function rollAgent() {
+    const pick = weightedRandomPick(AGENT_TIERS.map((t) => ({ item: t, weight: t.weight })));
+    const agent = pick || AGENT_TIERS[1];
+    state.agent = { key: agent.key, label: agent.label, influence: agent.influence, contractBonus: agent.contractBonus };
+    state.wealth = agent.wealth;
+    state.fame = Math.floor(agent.wealth / 2);
+  }
+
   function drawRadarChart(canvas, attrs) {
+    if (!canvas.getContext) return;
     const ctx = canvas.getContext("2d");
     const w = canvas.width, h = canvas.height, cx = w / 2, cy = h / 2;
     const maxR = Math.min(w, h) / 2 - 28;
@@ -281,7 +299,54 @@
 
   const SQUAD_KEYS = Object.keys(PLAYER_DATABASE);
   const CLUB_KEYS = Object.keys(CLUB_ACADEMY);
-  const LEAGUE_CLUBS = Object.keys(TEAM_DATABASE);
+
+  // Normalise each player to the best version of themselves across all seasons.
+  // This guarantees that a striker who peaked in 2008 still carries that peak
+  // when they appear in a 2004 donor squad, protecting the player against stale data.
+  const playerBest = {};
+  for (const squad of SQUAD_KEYS) {
+    for (const pl of PLAYER_DATABASE[squad]) {
+      const best = playerBest[pl.name];
+      if (!best) {
+        playerBest[pl.name] = { ...pl };
+        continue;
+      }
+      best.heading = Math.max(best.heading, pl.heading);
+      best.fitness = Math.max(best.fitness, pl.fitness);
+      best.strength = Math.max(best.strength, pl.strength);
+      best.leftFoot = Math.max(best.leftFoot, pl.leftFoot);
+      best.rightFoot = Math.max(best.rightFoot, pl.rightFoot);
+      best.speed = Math.max(best.speed, pl.speed);
+      best.mentalityRating = Math.max(best.mentalityRating, pl.mentalityRating);
+      best.overall = Math.max(best.overall, pl.overall);
+      // physical build: keep the "tallest and heaviest" version as the canonical frame
+      best.height = Math.max(best.height, pl.height);
+      best.weight = Math.max(best.weight, pl.weight);
+      // preserve the latest mentality trait if it is special
+      if (MENTALITY_TRAITS[pl.mentality]?.special) best.mentality = pl.mentality;
+      // keep the highest tier badge
+      const tierRank = { "": 0, L: 1, VG: 2, G: 3, E: 4, VG: 2 };
+      if ((tierRank[pl.tier] || 0) > (tierRank[best.tier] || 0)) best.tier = pl.tier;
+    }
+  }
+  // Mutate the existing player objects in place so the local constant and
+  // the game data both reference the normalised versions.
+  for (const squad of SQUAD_KEYS) {
+    const squadList = PLAYER_DATABASE[squad];
+    for (let i = 0; i < squadList.length; i++) {
+      squadList[i] = playerBest[squadList[i].name];
+    }
+  }
+  const LEAGUE_CLUBS = Object.keys(TEAM_DATABASE).filter((c) => ["Elite", "Europe", "Mid", "Lower"].includes(TEAM_DATABASE[c].league));
+  const FOREIGN_LEAGUE_KEYS = ["LaLiga", "SerieA", "Bundesliga"];
+  function getClubLeague(club) {
+    return (TEAM_DATABASE[club] || {}).league;
+  }
+  function getLeagueClubs(club) {
+    const league = getClubLeague(club);
+    if (FOREIGN_LEAGUE_KEYS.includes(league)) return FOREIGN_LEAGUES[league] || [club];
+    return LEAGUE_CLUBS;
+  }
 
   /* ------------------------------ STATE --------------------------------- */
   let state = null;
@@ -298,12 +363,13 @@
       selectedDonorIdx: null,
       pendingClub: null,  // club selected from offers on confirm screen
       clubOffers: [],     // generated club offers for confirm screen
-      player: { name: "Your Striker", slots: {} }, // attr -> { donor, donorObj, team, year, value, value2 }
+      player: { name: "Your Striker", slots: {}, usedDonors: [] }, // attr -> { donor, donorObj, team, year, value, value2 }
       academy: null, // { club, tier }
       // compiled
       attrs: null, mentality: null, mentalityRating: 60, playstyle: null,
       baseRating: 0, synergyNotes: [], derived: null, hiddenTraits: [],
       position: "ST", contractYears: 0, contractSignedAt: 0, retireNow: false,
+      agent: null, wealth: 0, fame: 0,
       // career
       season: 0, age: LEVERS.debutAge, club: null, role: "Rotation",
       reputation: 20, reputationTier: "Unknown",
@@ -311,7 +377,8 @@
       totalYellow: 0, totalRed: 0, teamCleanSheets: 0,
       careerLog: [], flags: {}, cooldowns: {}, pendingCarryOver: [],
       yearsAtClub: 0, injuryProneSeasons: 0, milestonesHit: {},
-      intlCaps: 0, intlGoals: 0, intlDebut: false,
+      intlCaps: 0, intlGoals: 0, intlDebut: false, intlCaptain: false,
+      injuryProneness: 50, retirementAge: 40, luck: 0,
       seasonHistory: [], retired: false, bestRating: 0,
       clubsPlayed: new Set(), clubStats: {}, lastPerformanceTier: "Met Expectation",
       honours: {
@@ -568,14 +635,16 @@
       .map((pl, idx) => ({ pl, idx }))
       .sort((a, b) => statForAttr(key, b.pl) - statForAttr(key, a.pl));
 
+    const used = new Set(state.player.usedDonors || []);
     const hideStats = DIFFICULTIES[state.difficulty].hideStats;
     const cards = squad.map(({ pl, idx }) => {
       const badge = statForAttr(key, pl);
       const tierChip = pl.tier ? `<span class="legend-chip">${pl.tier}</span>` : "";
+      const isUsed = used.has(pl.name);
       return `
-        <button class="donor-card" data-idx="${idx}">
+        <button class="donor-card${isUsed ? " used" : ""}" data-idx="${idx}"${isUsed ? " disabled" : ""}>
           ${hideStats ? "" : `<div class="donor-badge">${key === "mentality" ? "" : badge}</div>`}
-          <div class="donor-name">${esc(pl.name)} ${tierChip}</div>
+          <div class="donor-name">${esc(pl.name)} ${tierChip}${isUsed ? " <span class='used-tag'>USED</span>" : ""}</div>
           ${hideStats ? "" : `<div class="donor-pos">${pl.pos}</div>`}
           ${hideStats ? "" : `<div class="donor-value">${donorValueText(key, pl)}</div>`}
         </button>`;
@@ -586,7 +655,10 @@
       <div class="roster-grid">${cards}</div>
       <div id="selected-donor"></div>`;
     document.querySelectorAll("#roster-slot .donor-card").forEach((c) =>
-      c.addEventListener("click", () => selectDonor(parseInt(c.dataset.idx, 10))));
+      c.addEventListener("click", () => {
+        if (c.disabled) return;
+        selectDonor(parseInt(c.dataset.idx, 10));
+      }));
   }
 
   function renderPositionRoll() {
@@ -645,9 +717,15 @@
   }
 
   function selectDonor(idx) {
-    state.selectedDonorIdx = idx;
     const { squadKey } = state.currentSpin;
     const pl = PLAYER_DATABASE[squadKey][idx];
+    if ((state.player.usedDonors || []).includes(pl.name)) {
+      document.getElementById("selected-donor").innerHTML = `<span class="bad">${esc(pl.name)} has already been used. Pick a different donor.</span>`;
+      state.selectedDonorIdx = null;
+      setBtn("btn-accept", false);
+      return;
+    }
+    state.selectedDonorIdx = idx;
     document.querySelectorAll("#roster-slot .donor-card").forEach((c) =>
       c.classList.toggle("selected", parseInt(c.dataset.idx, 10) === idx));
     const hideStats = DIFFICULTIES[state.difficulty].hideStats;
@@ -704,11 +782,13 @@
     if (state.selectedDonorIdx == null) return;
     const { squadKey, team, year } = state.currentSpin;
     const pl = PLAYER_DATABASE[squadKey][state.selectedDonorIdx];
+    if ((state.player.usedDonors || []).includes(pl.name)) return;
     const slot = { donor: pl.name, donorObj: pl, team, year };
     if (key === "body") { slot.value = pl.fitness; slot.value2 = pl.strength; }
     else if (key === "mentality") { slot.value = pl.mentality; slot.rating = pl.mentalityRating; }
     else slot.value = pl[key];
     state.player.slots[key] = slot;
+    state.player.usedDonors.push(pl.name);
 
     if (remainingAttrs().length === 0) { state.phase = "academy"; }
     saveState();
@@ -749,8 +829,42 @@
     const acad = state.academy
       ? `<div class="prev-row"><span>Academy</span><span class="prev-val">${state.academy.tier}</span><span class="prev-src">${esc(state.academy.club)}</span></div>`
       : `<div class="prev-row empty"><span>Academy</span><span>—</span></div>`;
+    const scout = scoutFeedback(slots);
     wrap.innerHTML = `<h3>Your DNA so far</h3>${rows}${acad}
+      <div class="scout-feedback"><strong>Scout report:</strong> ${scout}</div>
       <div class="preview-hint">Every donor you pick secretly nudges your other attributes — trade-offs are real.</div>`;
+  }
+
+  function scoutFeedback(slots) {
+    const filled = Object.values(slots).filter(Boolean).length;
+    if (filled === 0) return "We need a bigger sample size. Start spinning squads to build a profile.";
+    const notes = [];
+    const pos = slots.position ? slots.position.position : null;
+    if (pos === "ST") notes.push("a traditional penalty-box presence");
+    else if (pos === "CF") notes.push("a mobile frontman");
+    else if (pos === "Winger") notes.push("a wide goal threat");
+    else if (pos) notes.push(`a ${(POSITIONS[pos] || POSITIONS.ST).label.toLowerCase()}`);
+    const build = slots.build;
+    if (build) {
+      if (build.height >= 190) notes.push("imposing aerial frame");
+      else if (build.height <= 173) notes.push("low centre of gravity");
+      if (build.weight >= 85) notes.push("physical strength to hold off defenders");
+      else if (build.weight <= 68) notes.push("sharp agility over raw power");
+    }
+    if (slots.heading && slots.heading.value >= 85) notes.push("elite heading ability");
+    if (slots.leftFoot && slots.leftFoot.value >= 85) notes.push("devastating left foot");
+    if (slots.rightFoot && slots.rightFoot.value >= 85) notes.push("devastating right foot");
+    if (slots.speed && slots.speed.value >= 85) notes.push("blistering pace");
+    if (slots.body && slots.body.value >= 85) notes.push("excellent engine");
+    if (slots.mentality) {
+      const ment = slots.mentality.value;
+      if (["Big Game Player", "Winner", "Talisman", "Fearless", "Ice Cold"].includes(ment)) notes.push("a mentality made for big moments");
+      else if (["Professional", "Determined", "Diligent"].includes(ment)) notes.push("a solid professional attitude");
+    }
+    const missing = ATTRS.filter((cfg) => !slots[cfg.key]).map((cfg) => cfg.name);
+    if (missing.length) notes.push(`still needs ${missing.join(", ")}`);
+    if (notes.length === 0) return "Early days — the profile is still forming.";
+    return notes.join(" · ") + ".";
   }
 
   /* ==================== COMPILE: HIDDEN INFLUENCE + SYNERGY ============== */
@@ -795,6 +909,9 @@
     state.derived = deriveStats(syn.attrs);
 
     state.academyTier = state.academy.tier;
+    state.luck = rollLuck();
+    state.injuryProneness = calculateInjuryProneness(state.attrs, state.academy.tier, state.luck);
+    state.retirementAge = calculateRetirementAge(state.injuryProneness, state.attrs.fitness);
     state.baseRating = calculateStrikerRating(state.attrs);
     state.playstyle = inferPlaystyle(state.attrs);
 
@@ -806,6 +923,9 @@
 
     // hidden traits — discovered at creation, based on build + randomness
     state.hiddenTraits = generateHiddenTraits(state.attrs, state);
+
+    // agent roll — shapes wealth, fame, and contract negotiating power
+    rollAgent();
 
     // Determine starting club: if academy is in the league, start there;
     // otherwise generate club offers based on skill
@@ -864,11 +984,11 @@
     const weakFoot = Math.min(a.leftFoot, a.rightFoot);
     // Finishing: weighted heavily toward best foot, but weak foot matters
     const finishing = bestFoot * 0.68 + weakFoot * 0.32;
-    // Nonlinear: diminishing returns on any single attribute above 90
-    const dim = (v) => v <= 90 ? v : 90 + (v - 90) * 0.5;
+    // Nonlinear: diminishing returns only kick in above 95, so true elite players can separate from the pack
+    const dim = (v) => v <= 95 ? v : 95 + (v - 95) * 0.5;
     const rating =
-      dim(finishing) * 0.36 + dim(a.heading) * 0.14 + dim(a.speed) * 0.18 +
-      dim(a.strength) * 0.10 + dim(a.fitness) * 0.10 + dim((a.leftFoot + a.rightFoot) / 2) * 0.12;
+      dim(finishing) * 0.38 + dim(a.heading) * 0.14 + dim(a.speed) * 0.18 +
+      dim(a.strength) * 0.10 + dim(a.fitness) * 0.10 + dim((a.leftFoot + a.rightFoot) / 2) * 0.10;
     return Math.round(clamp(rating, 40, 99));
   }
 
@@ -878,8 +998,18 @@
     if (a.strength >= 88) return "Powerhouse";
     if (Math.max(a.leftFoot, a.rightFoot) >= 92) return "Clinical Finisher";
     if (state.derived && state.derived.dribbling >= 85) return "Dribbler";
+    if (a.speed >= 85 && a.strength >= 80) return "Complete Forward";
     return "Complete Forward";
   }
+
+  const PLAYSTYLE_PROFILES = {
+    "Target Man": { goalMod: 1.04, injuryRisk: 1.08, desc: "Aerial dominance — more goals from crosses, but physical toll from duels." },
+    "Pace Merchant": { goalMod: 1.08, injuryRisk: 1.14, desc: "Burns defenders on the break — hamstrings and knocks are common." },
+    "Powerhouse": { goalMod: 1.03, injuryRisk: 1.10, desc: "Bullies defenders — relentless but attritional." },
+    "Clinical Finisher": { goalMod: 1.11, injuryRisk: 1.04, desc: "Needs fewer chances — lower injury risk from minimal off-ball work." },
+    "Dribbler": { goalMod: 1.06, injuryRisk: 1.16, desc: "Creates chaos — but tackles from desperate defenders add up." },
+    "Complete Forward": { goalMod: 1.00, injuryRisk: 1.00, desc: "Balanced threat — no extreme bonuses or drawbacks." },
+  };
 
   function renderConfirm() {
     const a = state.attrs, dv = state.derived;
@@ -947,6 +1077,8 @@
         <div class="playstyle-chip">${state.playstyle}</div>
         <div class="ment-chip ${mentIsSpecial(state.mentality) ? "rare" : ""}">${state.mentality}</div>
         <div class="acad-chip">🎓 ${esc(acad.club)} · ${acad.tier} academy</div>
+        <div class="agent-chip">${state.agent.label} agent · Wealth ${state.wealth}</div>
+        <div class="longevity-chip">Longevity: ${state.retirementAge} seasons · Durability ${100 - state.injuryProneness}/100</div>
       </div>
       <div class="confirm-body">
         <div class="dna-table">${rows}</div>
@@ -1115,6 +1247,34 @@
     "Park the Bus": { strongVs: ["Counter"], weakVs: ["Direct"], atk: 0.9, def: 0.9, chaos: -4 },
     "Route One": { strongVs: [], weakVs: ["Possession"], atk: 1.0, chaos: 12 },
   };
+  const DERBY_PAIRS = [
+    ["Manchester United", "Liverpool"], ["Arsenal", "Tottenham"], ["Chelsea", "Arsenal"], ["Manchester City", "Manchester United"],
+    ["Everton", "Liverpool"], ["Newcastle", "Sunderland"], ["West Ham", "Tottenham"], ["Aston Villa", "Birmingham"],
+  ];
+  function isDerby(home, away) {
+    return DERBY_PAIRS.some((p) => (p[0] === home && p[1] === away) || (p[0] === away && p[1] === home));
+  }
+  function generateMatchNarrative(home, away, homeGoals, awayGoals, isPlayerTeam, myGoals, posContext) {
+    const total = homeGoals + awayGoals;
+    const winner = homeGoals > awayGoals ? home : awayGoals > homeGoals ? away : null;
+    const margin = Math.abs(homeGoals - awayGoals);
+    const isTopOpponent = TEAM_DATABASE[away] && TEAM_DATABASE[away].attack >= 86 || TEAM_DATABASE[home] && TEAM_DATABASE[home].attack >= 86;
+    const playerWon = winner === state.club;
+    const playerLost = winner && winner !== state.club;
+    const lines = [];
+    if (isDerby(home, away)) lines.push(`Derby day ${homeGoals}-${awayGoals}`);
+    if (posContext && posContext.titleRace && margin <= 1) lines.push(`A crucial result in the title race`);
+    if (posContext && posContext.relegationBattle && margin <= 1) lines.push(`A huge result in the relegation battle`);
+    if (margin >= 4) lines.push(`${winner} ran riot in a ${margin}-goal demolition`);
+    if (homeGoals > 0 && awayGoals > 0 && winner && Math.abs(homeGoals - awayGoals) === 1) lines.push(`A tight, back-and-forth contest`);
+    if (homeGoals === 0 && awayGoals === 0) lines.push(`A stale, goalless draw`);
+    if (isPlayerTeam && myGoals >= 3) lines.push(`${state.player.name} hit a hat-trick`);
+    if (isPlayerTeam && myGoals === 2) lines.push(`${state.player.name} scored a brace`);
+    if (isPlayerTeam && playerWon && isTopOpponent) lines.push(`A statement win against a top side`);
+    if (isPlayerTeam && playerLost && isTopOpponent) lines.push(`Outclassed by elite opposition`);
+    if (lines.length === 0) return null;
+    return lines.join(" — ");
+  }
   function applyTacticalMatchup(homeStyle, awayStyle) {
     const h = TACTICAL[homeStyle] || {}, a = TACTICAL[awayStyle] || {};
     let homeAtkMod = h.atk || 1, awayAtkMod = a.atk || 1;
@@ -1130,13 +1290,15 @@
     const chaos = randomBetween(-chaosRange, chaosRange) / 100;
     return Math.max(0.1, baseXG * (1 + chaos));
   }
-  function simulateMatch(home, away, homeForm, awayForm) {
+  function simulateMatch(home, away, homeForm, awayForm, derby) {
     const t = applyTacticalMatchup(home.tacticalStyle, away.tacticalStyle);
     const midDiff = home.midfield - away.midfield;
     const homeMid = 1 + midDiff / 200, awayMid = 1 - midDiff / 200;
     const mgrSwing = (home.manager - away.manager) / 300;
-    let homeXG = resolveDuel(home.attack * t.homeAtkMod, away.defence * t.awayDefMod, t.chaosMod);
-    let awayXG = resolveDuel(away.attack * t.awayAtkMod, home.defence * t.homeDefMod, t.chaosMod);
+    // Derby matches are more volatile and unpredictable
+    const derbyChaos = derby ? 8 : 0;
+    let homeXG = resolveDuel(home.attack * t.homeAtkMod, away.defence * t.awayDefMod, t.chaosMod + derbyChaos);
+    let awayXG = resolveDuel(away.attack * t.awayAtkMod, home.defence * t.homeDefMod, t.chaosMod + derbyChaos);
     homeXG *= homeMid; awayXG *= awayMid;
     homeXG += mgrSwing + (home.homeAdvantage || 0) / 100;
     awayXG -= mgrSwing;
@@ -1184,12 +1346,19 @@
     const r = agedRating();
     const teamAtk = TEAM_DATABASE[state.club].attack;
     const gap = r - teamAtk;
+    let role;
     if (state.age <= 19 && state.academyTier !== "World Class" && state.academyTier !== "Strong")
-      return gap > 6 ? "Starter" : "Rotation";
-    if (gap >= 6) return "Star";
-    if (gap >= -3) return "Starter";
-    if (gap >= -10) return "Rotation";
-    return "Bench";
+      role = gap > 6 ? "Starter" : "Rotation";
+    else if (gap >= 6) role = "Star";
+    else if (gap >= -3) role = "Starter";
+    else if (gap >= -10) role = "Rotation";
+    else role = "Bench";
+    // A powerful agent can negotiate a stronger squad place
+    if (state.agent && state.agent.influence >= 0.25) {
+      if (role === "Bench") return "Rotation";
+      if (role === "Rotation") return "Starter";
+    }
+    return role;
   }
   function formModifier() {
     let f = 0;
@@ -1201,7 +1370,7 @@
 
   function newTable() {
     const t = {};
-    LEAGUE_CLUBS.forEach((c) => (t[c] = { team: c, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, Pts: 0 }));
+    getLeagueClubs(state.club).forEach((c) => (t[c] = { team: c, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, Pts: 0 }));
     return t;
   }
   function recordResult(row, gf, ga) {
@@ -1227,31 +1396,55 @@
     const mentClutch = mentTag(state.mentality);
     const clutchBonus = ["clutch", "winner", "talisman"].includes(mentClutch) ? state.mentalityRating / 100 : 0;
 
-    // injuries
+    // injuries — driven by hidden injury proneness, fitness, age, and playstyle risk
     const fitness = state.attrs.fitness;
-    let gamesMissed = randInt(LEVERS.injuryFreqMin, LEVERS.injuryFreqMax) +
+    const styleRisk = (PLAYSTYLE_PROFILES[state.playstyle] || {}).injuryRisk || 1;
+    let gamesMissed = Math.round((randInt(LEVERS.injuryFreqMin, LEVERS.injuryFreqMax) + state.injuryProneness / 18) * styleRisk) +
       (state.injuryProneSeasons > 0 ? randInt(2, 6) : 0) + (state.age >= 32 ? randInt(1, 4) : 0);
-    if (hasTrait("Iron Man")) gamesMissed = Math.max(0, gamesMissed - 3);
-    else if (fitness >= 90) gamesMissed = Math.max(0, gamesMissed - 2);
+    if (hasTrait("Iron Man")) gamesMissed = Math.max(0, gamesMissed - 4);
+    else if (fitness >= 90) gamesMissed = Math.max(0, gamesMissed - 3);
+    else if (fitness >= 80) gamesMissed = Math.max(0, gamesMissed - 1);
     if (hasTrait("Injury Prone")) gamesMissed += randInt(2, 5);
     if (["workrate"].includes(mentClutch)) gamesMissed = Math.max(0, gamesMissed - 1);
     gamesMissed = clamp(gamesMissed, 0, 30);
 
     let leagueGoals = 0, assists = 0, apps = 0, cleanSheets = 0, playerMatch = 0;
+    let momentum = 0; // shifts with recent results, from -3 to +3
+    let lastResults = [];
+    const matchHighlights = [];
 
-    for (const h of LEAGUE_CLUBS) {
-      for (const a of LEAGUE_CLUBS) {
+    const seasonClubs = getLeagueClubs(club);
+    for (const h of seasonClubs) {
+      for (const a of seasonClubs) {
         if (h === a) continue;
         const home = TEAM_DATABASE[h], away = TEAM_DATABASE[a];
         const involves = h === club || a === club;
-        const hForm = h === club ? fm * 0.2 : 0, aForm = a === club ? fm * 0.2 : 0;
-        const res = simulateMatch(home, away, hForm, aForm);
+        const derby = isDerby(h, a);
+        const hForm = h === club ? (fm + momentum * 3) * 0.2 : 0, aForm = a === club ? (fm + momentum * 3) * 0.2 : 0;
+        const res = simulateMatch(home, away, hForm, aForm, derby);
         recordResult(table[h], res.homeGoals, res.awayGoals);
         recordResult(table[a], res.awayGoals, res.homeGoals);
         if (!involves) continue;
         playerMatch++;
         const myGoals = h === club ? res.homeGoals : res.awayGoals;
         const oppGoals = h === club ? res.awayGoals : res.homeGoals;
+        const playerWon = (h === club && res.homeGoals > res.awayGoals) || (a === club && res.awayGoals > res.homeGoals);
+        const opp = h === club ? a : h;
+        const oppData = TEAM_DATABASE[opp];
+        const isTopOpponent = oppData.attack >= 86;
+        const isTitleRace = playerMatch > 28 && (clubData.attack >= 85 || state.reputation >= 70);
+        const relegationBattle = playerMatch > 28 && clubData.defence <= 54;
+
+        // Update momentum based on result
+        if (playerWon) {
+          lastResults.push(1); momentum = clamp(momentum + 0.5, -3, 3);
+        } else if (myGoals === oppGoals) {
+          lastResults.push(0); momentum = clamp(momentum - 0.2, -3, 3);
+        } else {
+          lastResults.push(-1); momentum = clamp(momentum - 0.6, -3, 3);
+        }
+        if (lastResults.length > 5) lastResults.shift();
+
         const playing = playerMatch > gamesMissed && rand() < appearanceChance;
         if (!playing) continue;
         apps++;
@@ -1259,16 +1452,34 @@
         const posMod = getPositionModifiers();
         const teammateThreat = clubData.attack * 3.2;
         let share = threat / (threat + teammateThreat);
-        share *= fitMult * roleMult * getTraitMatchMultiplier(clubData.tacticalStyle) * getPositionTacticalMultiplier(clubData.tacticalStyle) * (1 + fm / 100) * (1 + clutchBonus * 0.12);
-        share = clamp(share, 0.03, 0.62);
+        const styleMod = (PLAYSTYLE_PROFILES[state.playstyle] || {}).goalMod || 1;
+        share *= fitMult * roleMult * styleMod * getTraitMatchMultiplier(clubData.tacticalStyle) * getPositionTacticalMultiplier(clubData.tacticalStyle) * (1 + (fm + momentum * 3) / 100) * (1 + clutchBonus * 0.12);
+        // Big games: top opponents and derbies bring the best out of stars
+        if (isTopOpponent || derby) share *= 1.08;
+        if (isTitleRace && (state.role === "Star" || state.role === "Starter")) share *= 1.05;
+        share = clamp(share, 0.03, 0.78);
         const mine = poissonRandom(myGoals * share * posMod.goal * LEVERS.conversionMultiplier);
         leagueGoals += mine;
         if (myGoals - mine > 0 && rand() < 0.35) assists += poissonRandom((myGoals - mine) * 0.25 * posMod.assist);
+
+        // Capture notable match narratives
+        const narrative = generateMatchNarrative(h, a, res.homeGoals, res.awayGoals, true, mine, { titleRace: isTitleRace, relegationBattle: relegationBattle });
+        if (narrative) matchHighlights.push({ match: playerMatch, text: narrative, opponent: opp, mine, myGoals });
+      }
+    }
+
+    // Log a couple of the most dramatic highlights so the season feels like matches, not just numbers
+    if (matchHighlights.length) {
+      const topHighlights = matchHighlights
+        .sort((x, y) => (y.mine - y.myGoals * 0.5) - (x.mine - x.myGoals * 0.5))
+        .slice(0, 2);
+      for (const hl of topHighlights) {
+        log(`   Match ${hl.match}: ${esc(hl.text)}`, "info");
       }
     }
 
     // cup + european goals (all comps count toward 1000)
-    const compFactor = { Elite: 0.38, Europe: 0.26, Mid: 0.12, Lower: 0.05 }[clubData.league] || 0.08;
+    const compFactor = { Elite: 0.38, Europe: 0.26, Mid: 0.12, Lower: 0.05, LaLiga: 0.34, SerieA: 0.32, Bundesliga: 0.32 }[clubData.league] || 0.08;
     const cupEuroGoals = poissonRandom(leagueGoals * compFactor);
     const cupApps = Math.round(cupEuroGoals * 1.3) + (apps > 0 ? randInt(2, 6) : 0);
     const seasonGoals = leagueGoals + cupEuroGoals;
@@ -1302,7 +1513,7 @@
       state.competitionHistory.push({ season: state.season, club, text: `🏆 League champions with ${club}` });
     }
     // domestic cup (weighted by strength)
-    const cupWinner = weightedRandomPick(LEAGUE_CLUBS.map((c) => {
+    const cupWinner = weightedRandomPick(seasonClubs.map((c) => {
       const t = TEAM_DATABASE[c];
       return { item: c, weight: t.attack + t.defence + t.midfield + t.manager };
     }));
@@ -1323,7 +1534,7 @@
     }
     // individual awards
     const awards = [];
-    const bestAttack = Math.max(...LEAGUE_CLUBS.map((c) => TEAM_DATABASE[c].attack));
+    const bestAttack = Math.max(...seasonClubs.map((c) => TEAM_DATABASE[c].attack));
     const rivalTop = clamp(randInt(19, 26) + Math.round((bestAttack - 84) / 3), 15, 40);
     const isTopScorer = leagueGoals >= rivalTop && leagueGoals >= 16;
     if (isTopScorer) { state.honours.goldenBoots++; awards.push("Golden Boot"); }
@@ -1369,6 +1580,31 @@
     return seasonData;
   }
 
+  function calculateInjuryProneness(a, academyTier, luck) {
+    const bmi = a.weight / Math.pow(a.height / 100, 2);
+    // Ideal durability builds: moderate BMI with strong frame
+    let buildScore = 0;
+    if (bmi >= 22 && bmi <= 25) buildScore = 8;
+    else if (bmi >= 20 && bmi < 22) buildScore = 4;
+    else if (bmi > 25 && bmi <= 28) buildScore = 2;
+    else buildScore = -2;
+    // Extreme heights are harder on the body over a long career
+    if (a.height >= 196) buildScore -= 4;
+    else if (a.height <= 170) buildScore -= 2;
+    const academyMod = { "World Class": -6, "Strong": -3, "Average": 0, "Weak": +5 }[academyTier] || 0;
+    let p = 50
+      - a.fitness * 0.28
+      - a.strength * 0.18
+      + buildScore
+      + academyMod
+      + luck;
+    return Math.round(clamp(p, 5, 95));
+  }
+  function calculateRetirementAge(injuryProneness, fitness) {
+    return Math.round(clamp(36 + (100 - injuryProneness) / 22 + fitness / 45, 34, 42));
+  }
+  function rollLuck() { return Math.round(randBetween(-8, 8)); }
+
   function recomputePlayerStats() {
     const syn = applyPhysicalSynergy(state.attrs);
     state.attrs = syn.attrs;
@@ -1380,6 +1616,12 @@
     state.baseRating = Math.round(clamp(state.baseRating * syn2.multiplier, 40, 99));
     state.synergyNotes = state.synergyNotes.concat(syn2.notes);
     state.playstyle = inferPlaystyle(state.attrs);
+    // Recalculate longevity if core physicals changed
+    const academyTier = state.academyTier || (state.academy && state.academy.tier);
+    if (academyTier && state.luck !== undefined) {
+      state.injuryProneness = calculateInjuryProneness(state.attrs, academyTier, state.luck);
+      state.retirementAge = calculateRetirementAge(state.injuryProneness, state.attrs.fitness);
+    }
   }
 
   function applySeasonalAttributeChanges(sd) {
@@ -1387,12 +1629,29 @@
     const age = state.age;
     const perf = sd.perfTier;
 
-    // Growth phase: young players improve
+    // Growth phase: young players improve — playstyle and mentality shape the path
     if (age <= 22) {
       let growthPoints = { Sensational: 3, Overperformed: 2, "Met Expectation": 1, Underperformed: 0, Flop: -1 }[perf] || 0;
       if (hasTrait("High Ceiling")) growthPoints += 1;
+      const tag = mentTag(state.mentality);
+      const style = state.playstyle;
+      const growthPool = (() => {
+        const base = ["heading", "speed", "strength", "leftFoot", "rightFoot", "fitness"];
+        // playstyle pushes its favoured attributes
+        if (style === "Pace Merchant") return ["speed", "speed", "fitness", "leftFoot", "rightFoot"];
+        if (style === "Target Man") return ["heading", "heading", "strength", "fitness", "leftFoot"];
+        if (style === "Powerhouse") return ["strength", "strength", "heading", "fitness", "leftFoot"];
+        if (style === "Clinical Finisher") return ["leftFoot", "rightFoot", "heading", "speed", "fitness"];
+        if (style === "Dribbler") return ["leftFoot", "rightFoot", "speed", "fitness", "heading"];
+        // mentality adds a secondary bias
+        if (tag === "workrate") return ["fitness", "fitness", "strength", "speed", "heading"];
+        if (tag === "clutch") return ["leftFoot", "rightFoot", "heading", "fitness", "speed"];
+        if (tag === "aggressive") return ["strength", "heading", "fitness", "speed", "leftFoot"];
+        if (tag === "consistency") return ["fitness", "leftFoot", "rightFoot", "heading", "speed"];
+        return base;
+      })();
       for (let i = 0; i < growthPoints; i++) {
-        const key = choice(["heading", "speed", "strength", "leftFoot", "rightFoot", "fitness"]);
+        const key = choice(growthPool);
         a[key] = clamp(a[key] + randInt(1, 2), 40, 99);
       }
     }
@@ -1706,9 +1965,231 @@
         { label: "Play the elder statesman", fx: { attrChange: { key: "fitness", delta: 2 }, positionChange: "CF", rep: 2, carryOver: true, carryOverLog: "Veteran savvy improves fitness next season." } },
         { label: "Go out on your own terms", fx: { rep: 1 } },
       ] },
+
+    // ---- AGENT SYSTEM EVENTS ----
+    { id: "agent_power_play", category: "AGENT", base: 5, req: { repMin: 30 },
+      text: (n) => `${n}'s agent goes to war with the board — demanding a better squad status and improved terms.`,
+      choices: [
+        { label: "Back the agent", fx: { rep: 2, contract: 1, flag: "unsettled" } },
+        { label: "Calm it down — don't upset the club", fx: { rep: 1 } },
+      ] },
+    { id: "agent_sponsor", category: "AGENT", base: 4, req: { repMin: 40 },
+      text: (n) => `${n}'s agent lands a lucrative commercial deal — boots, watches, and a billboard in the city centre.`,
+      choices: [
+        { label: "Sign every deal", fx: { wealth: 12, fame: 8, rep: 2, flag: "mediaTarget" } },
+        { label: "Pick one quality partner", fx: { wealth: 6, fame: 3, rep: 1 } },
+      ] },
+    { id: "agent_transfer_push", category: "AGENT", base: 4, req: { repMin: 50, yearsMin: 2 },
+      text: (n) => `${n}'s agent has been talking to bigger clubs. A move could be on the cards.`,
+      choices: [
+        { label: "Let the agent explore options", fx: { forceTransfer: true, rep: 1 } },
+        { label: "Commit to the current club", fx: { rep: 3, flag: "fanFavorite" } },
+      ] },
+    { id: "agent_conflict", category: "AGENT", base: 3, req: { perf: ["Underperformed", "Flop"] },
+      text: (n) => `${n} and their agent clash publicly over a failed move — the relationship is fraying.`,
+      choices: [
+        { label: "Sack the agent", fx: { rep: -2, wealth: -5, agent: { key: "poor", label: "Poor", influence: 0, contractBonus: 0 } } },
+        { label: "Patch things up", fx: { rep: -1, flag: "unsettled" } },
+      ] },
+    { id: "agent_new_contract", category: "AGENT", base: 4, req: { repMin: 35, yearsMin: 1 },
+      text: (n) => `${n}'s agent negotiates an early contract extension with the current club.`,
+      choices: [
+        { label: "Sign the extension", fx: { contract: 2, rep: 2, flag: "fanFavorite" } },
+        { label: "Hold out for more money", fx: { contract: 1, wealth: 5, rep: -1, flag: "unsettled" } },
+      ] },
+
+    // ---- WEALTH / FAME EVENTS (rare, unlocked by wealth/fame) ----
+    { id: "fashion_brand", category: "FAME", base: 2, req: { repMin: 60, ageMin: 22 }, rare: true,
+      text: (n) => `${n} launches a clothing line — the launch party is packed with celebrities.`,
+      choices: [
+        { label: "Go all-in on the brand", fx: { wealth: 15, fame: 10, rep: 3, flag: "mediaTarget" } },
+        { label: "Keep it small and authentic", fx: { wealth: 6, fame: 3, rep: 2 } },
+      ] },
+    { id: "documentary_deal", category: "FAME", base: 2, req: { repMin: 70, ageMin: 24 }, rare: true,
+      text: (n) => `A streaming giant wants to make a documentary about ${n}'s rise.`,
+      choices: [
+        { label: "Give them full access", fx: { wealth: 12, fame: 12, rep: 2, flag: "mediaTarget" } },
+        { label: "Control the narrative", fx: { wealth: 8, fame: 6, rep: 3 } },
+      ] },
+    { id: "charity_foundation", category: "FAME", base: 2, req: { repMin: 50, ageMin: 23 }, rare: true,
+      text: (n) => `${n} sets up a foundation for underprivileged kids. The media calls it a legacy move.`,
+      choices: [
+        { label: "Donate a season's wages", fx: { wealth: -10, fame: 15, rep: 8, flag: "fanFavorite" } },
+        { label: "Use your platform quietly", fx: { fame: 5, rep: 4 } },
+      ] },
+    { id: "nightclub_scandal", category: "FAME", base: 3, req: { perf: ["Underperformed", "Flop"], ageMin: 20 }, rare: true,
+      text: (n) => `${n} is photographed leaving a nightclub at 4am before a big match.`,
+      choices: [
+        { label: "Apologise to the fans", fx: { rep: -1, fame: 5, flag: "redemptionArc" } },
+        { label: "My private life is my own", fx: { rep: -4, fame: 8, flag: "mediaTarget" } },
+      ] },
+    { id: "luxury_lifestyle", category: "FAME", base: 2, req: { wealth: 40, ageMin: 22 }, rare: true,
+      text: (n) => `${n} buys a mansion and a supercar collection — the lifestyle is starting to draw attention.`,
+      choices: [
+        { label: "Show it off on social media", fx: { wealth: -8, fame: 10, rep: -2, flag: "mediaTarget" } },
+        { label: "Keep it private", fx: { wealth: -3, fame: 3 } },
+      ] },
+    { id: "autobiography", category: "FAME", base: 2, req: { ageMin: 27, repMin: 55 }, rare: true,
+      text: (n) => `${n} is offered a seven-figure book deal for an autobiography.`,
+      choices: [
+        { label: "Write it all — the good and the bad", fx: { wealth: 12, fame: 8, rep: -2, flag: "mediaTarget" } },
+        { label: "Keep it focused on football", fx: { wealth: 8, fame: 4, rep: 2 } },
+      ] },
+    { id: "reality_show", category: "FAME", base: 1, req: { fame: 40, ageMin: 24 }, rare: true,
+      text: (n) => `A reality TV producer wants ${n} and their family in a fly-on-the-wall series.`,
+      choices: [
+        { label: "Sign the deal", fx: { wealth: 14, fame: 15, rep: -3, flag: "mediaTarget" } },
+        { label: "Protect your family privacy", fx: { rep: 3, fame: 2 } },
+      ] },
+
+    // ---- MORE INJURY EVENTS (age-weighted by getEventWeight) ----
+    { id: "muscle_tear", category: "INJURY", base: 3, req: { ageMin: 26 },
+      text: (n) => `${n} tears a thigh muscle in training and misses the run-in.`,
+      choices: [
+        { label: "Undergo intensive rehab", fx: { attrChange: { key: "fitness", delta: -1 }, rep: 1 } },
+        { label: "Rush back for the playoffs", fx: { attrChange: { key: "fitness", delta: -2 }, flag: "injuryProne", injuryProne: 1 } },
+      ] },
+    { id: "ankle_surgery", category: "INJURY", base: 3, req: { ageMin: 28 },
+      text: (n) => `${n} needs ankle surgery after a bad tackle. The recovery is six to eight weeks.`,
+      choices: [
+        { label: "Take the full rehab route", fx: { attrChange: { key: "speed", delta: -1 }, rep: 1 } },
+        { label: "Play through the pain", fx: { attrChange: { key: "speed", delta: -2 }, flag: "injuryProne", injuryProne: 2 } },
+      ] },
+    { id: "concussion", category: "INJURY", base: 3, req: { ageMin: 24 },
+      text: (n) => `${n} takes a heavy blow to the head. The medical team recommends a cautious protocol.`,
+      choices: [
+        { label: "Follow the full protocol", fx: { rep: 2 } },
+        { label: "Return early — the team needs you", fx: { attrChange: { key: "fitness", delta: -1 }, flag: "injuryProne", injuryProne: 1 } },
+      ] },
+    { id: "back_injury", category: "INJURY", base: 3, req: { ageMin: 30 },
+      text: (n) => `${n} is struggling with a chronic back issue. It might never fully go away.`,
+      choices: [
+        { label: "Manage it with specialists", fx: { attrChange: { key: "strength", delta: -1 }, rep: 1 } },
+        { label: "Mask it and keep playing", fx: { attrChange: { key: "strength", delta: -2 }, flag: "injuryProne", injuryProne: 2 } },
+      ] },
+    { id: "hip_surgery", category: "INJURY", base: 2, req: { ageMin: 33 },
+      text: (n) => `${n}'s hip is bone-on-bone. Surgery could end the season — or the career.`,
+      choices: [
+        { label: "Have the surgery", fx: { attrChange: { key: "fitness", delta: -3 }, rep: 2 } },
+        { label: "Delay it and gamble", fx: { attrChange: { key: "fitness", delta: -4 }, flag: "injuryProne", injuryProne: 3, retireNow: true } },
+      ] },
+
+    // ---- CONTRACT & FINANCE EVENTS ----
+    { id: "pay_rise", category: "CONTRACT", base: 4, req: { perf: ["Sensational", "Overperformed"], yearsMin: 1 },
+      text: (n) => `The club rewards ${n} with a surprise pay rise after an outstanding season.`,
+      choices: [
+        { label: "Accept it graciously", fx: { wealth: 8, rep: 2, flag: "fanFavorite" } },
+        { label: "Demand even more", fx: { wealth: 4, rep: -2, flag: "unsettled" } },
+      ] },
+    { id: "wage_dispute", category: "CONTRACT", base: 3, req: { perf: ["Sensational"], yearsMin: 2 },
+      text: (n) => `${n} feels underpaid compared to new signings. The dressing room is watching.`,
+      choices: [
+        { label: "Go public with the dispute", fx: { wealth: 6, rep: -3, flag: "mediaTarget" } },
+        { label: "Negotiate privately", fx: { wealth: 4, rep: 1 } },
+      ] },
+    { id: "release_clause", category: "CONTRACT", base: 3, req: { repMin: 50, ageMin: 22 },
+      text: (n) => `A release clause is inserted into ${n}'s new contract. It could change everything.`,
+      choices: [
+        { label: "Accept — it gives flexibility", fx: { rep: 1, flag: "unsettled" } },
+        { label: "Refuse — I want stability", fx: { contract: 1, rep: 2 } },
+      ] },
+
+    // ---- INTERNATIONAL EVENTS ----
+    { id: "world_cup_call", category: "INTERNATIONAL", base: 4, req: { repMin: 50, ageMin: 20, ageMax: 34 },
+      text: (n) => `${n} is called up for a major international tournament.`,
+      choices: [
+        { label: "Give everything for the country", fx: { rep: 5, intlCaps: 1, intlGoals: () => randInt(0, 2), flag: "inForm" } },
+        { label: "Focus on club fitness", fx: { rep: -2 } },
+      ] },
+    { id: "international_captain", category: "INTERNATIONAL", base: 3, req: { repMin: 70, ageMin: 26, intlCaps: 5 },
+      text: (n) => `${n} is named national team captain.`,
+      choices: [
+        { label: "Lead with pride", fx: { rep: 8, fame: 6, flag: "fanFavorite", setIntlCaptain: true } },
+        { label: "Share the armband", fx: { rep: 3 } },
+      ] },
+    { id: "international_retirement", category: "INTERNATIONAL", base: 3, req: { ageMin: 32, intlCaps: 10 },
+      text: (n) => `${n} is asked to retire from international duty to prolong club form.`,
+      choices: [
+        { label: "Retire from internationals", fx: { attrChange: { key: "fitness", delta: 2 }, rep: -2 } },
+        { label: "Keep playing for the country", fx: { rep: 4, attrChange: { key: "fitness", delta: -1 }, flag: "injuryProne", injuryProne: 1 } },
+      ] },
+
+    // ---- PERSONAL LIFE & CAREER DEVELOPMENT ----
+    { id: "new_baby", category: "PERSONAL", base: 3, req: { ageMin: 22, ageMax: 35 },
+      text: (n) => `${n} becomes a parent. Sleep is about to become a luxury.`,
+      choices: [
+        { label: "Family comes first", fx: { attrChange: { key: "fitness", delta: -1 }, rep: 2, fame: 2 } },
+        { label: "Hire full-time help", fx: { wealth: -4, attrChange: { key: "fitness", delta: 1 } } },
+      ] },
+    { id: "family_bereavement", category: "PERSONAL", base: 2, req: { ageMin: 24 },
+      text: (n) => `${n} loses a close family member. The season feels insignificant.`,
+      choices: [
+        { label: "Take time away from football", fx: { attrChange: { key: "fitness", delta: -2 }, rep: 3, carryOver: true, carryOverLog: "Grief affects form early next season." } },
+        { label: "Play through it", fx: { attrChange: { key: "fitness", delta: -1 }, rep: 1 } },
+      ] },
+    { id: "coaching_badge", category: "PERSONAL", base: 3, req: { ageMin: 28 },
+      text: (n) => `${n} starts a coaching badge, thinking about life after boots.`,
+      choices: [
+        { label: "Study hard", fx: { rep: 2, mentalityChange: 2 } },
+        { label: "Dip in and out", fx: { rep: 1 } },
+      ] },
+    { id: "language_lessons", category: "PERSONAL", base: 2, req: { ageMin: 23, repMin: 45 },
+      text: (n) => `${n} takes language lessons — rumours of a move abroad are swirling.`,
+      choices: [
+        { label: "Learn Spanish", fx: { rep: 2, fame: 2 } },
+        { label: "Learn French", fx: { rep: 2, fame: 2 } },
+        { label: "Learn Italian", fx: { rep: 2, fame: 2 } },
+      ] },
+
+    // ---- TEAM / MANAGER / FAN EVENTS ----
+    { id: "manager_praise", category: "TEAM", base: 4, req: { perf: ["Sensational", "Overperformed"], yearsMin: 1 },
+      text: (n) => `The manager calls ${n} "unplayable" in a post-match interview.`,
+      choices: [
+        { label: "Praise the team system", fx: { rep: 3, flag: "fanFavorite" } },
+        { label: "Say you're just getting started", fx: { rep: 2, flag: "inForm" } },
+      ] },
+    { id: "fan_protest", category: "TEAM", base: 3, req: { perf: ["Flop"], yearsMin: 2 },
+      text: (n) => `Fans protest outside the ground, demanding ${n} be dropped.`,
+      choices: [
+        { label: "Address the fans directly", fx: { rep: -1, flag: "redemptionArc" } },
+        { label: "Ignore them and train harder", fx: { rep: 1, flag: "inForm" } },
+      ] },
+    { id: "statue_campaign", category: "TEAM", base: 2, req: { repMin: 75, yearsMin: 5 }, rare: true,
+      text: (n) => `Supporters start a campaign for a statue of ${n} outside the stadium.`,
+      choices: [
+        { label: "Humbly ask them to wait until you retire", fx: { rep: 6, fame: 5, flag: "fanFavorite" } },
+        { label: "Enjoy the love", fx: { rep: 3, fame: 8, flag: "mediaTarget" } },
+      ] },
+    { id: "dressing_room_leader", category: "TEAM", base: 3, req: { ageMin: 28, yearsMin: 2 },
+      text: (n) => `Younger players look to ${n} as the dressing-room leader.`,
+      choices: [
+        { label: "Mentor them", fx: { rep: 3, mentalityChange: 1 } },
+        { label: "Focus on your own game", fx: { rep: 1 } },
+      ] },
+
+    // ---- MEDIA & SOCIAL EVENTS ----
+    { id: "twitter_spat", category: "MEDIA", base: 3, req: { perf: ["Underperformed", "Flop"], repMin: 40 },
+      text: (n) => `${n} gets into a public Twitter spat with a rival player.`,
+      choices: [
+        { label: "Delete the tweet and apologise", fx: { rep: 1, fame: 2 } },
+        { label: "Double down", fx: { rep: -3, fame: 6, flag: "mediaTarget" } },
+      ] },
+    { id: "podcast_guest", category: "MEDIA", base: 3, req: { repMin: 45, ageMin: 22 },
+      text: (n) => `A popular podcast wants ${n} as a guest. The host asks controversial questions.`,
+      choices: [
+        { label: "Be brutally honest", fx: { rep: -1, fame: 5, flag: "mediaTarget" } },
+        { label: "Play it safe", fx: { rep: 2 } },
+      ] },
+    { id: "tabloid_rumours", category: "MEDIA", base: 3, req: { repMin: 50 },
+      text: (n) => `Tabloids run a story about ${n}'s private life. Some of it is true.`,
+      choices: [
+        { label: "Issue a legal statement", fx: { rep: 2, wealth: -3 } },
+        { label: "Let it blow over", fx: { rep: -2, fame: 4 } },
+      ] },
   ];
 
   const FLAG_DEFAULT_DURATION = 2;
+  const EVENT_REWARD_MULTIPLIER = 1.7; // events are rarer now, so each one should pack a bigger punch
 
   function buildContext(sd) {
     return {
@@ -1736,15 +2217,32 @@
     if (r.gamesMin != null && (ctx.gamesMissed || 0) < r.gamesMin) return false;
     if (r.posIn && !r.posIn.includes(ctx.position)) return false;
     if (r.posNot && r.posNot.includes(ctx.position)) return false;
+    if (r.wealth != null && (state.wealth || 0) < r.wealth) return false;
+    if (r.fame != null && (state.fame || 0) < r.fame) return false;
     return true;
   }
   function getEventWeight(ev, ctx) {
     if (!meetsHardRequirements(ev, ctx)) return 0;
     if (state.cooldowns[ev.id] > 0) return 0;
-    let w = ev.base;
+    let w = ev.base * 0.65; // events are intentionally rarer now
     if (ctx.flags.mediaTarget && ev.category === "MEDIA") w += 4;
     if (ctx.flags.managerConflict && ev.id === "manager_sacked") w += 6;
     if (ctx.flags.injuryProne && ev.category === "INJURY") w += 6;
+    // Age dramatically increases injury risk
+    if (ev.category === "INJURY") {
+      if (ctx.age >= 32) w += 3;
+      if (ctx.age >= 35) w += 5;
+      if (ctx.age >= 38) w += 8;
+    }
+    // Wealth and fame unlock rare, high-profile events
+    if (ev.rare) {
+      const fame = (state.fame || 0) + (state.wealth || 0) / 4;
+      w += fame / 15;
+    }
+    // Agent-related events are more frequent with a powerful agent
+    if (ev.category === "AGENT" && state.agent) {
+      w += state.agent.influence * 10;
+    }
     return Math.max(0, w);
   }
 
@@ -1765,8 +2263,6 @@
     return null;
   }
   function pickSeasonEvent(ctx) {
-    const milestone = checkMilestoneInterrupt();
-    if (milestone) return milestone;
     const eligible = EVENTS.map((e) => ({ item: e, weight: getEventWeight(e, ctx) })).filter((e) => e.weight > 0);
     if (!eligible.length) return null;
     return weightedRandomPick(eligible);
@@ -1776,14 +2272,25 @@
     return state.season >= 3 && state.age >= 21 && state.age <= 33;
   }
   function determineEventCount() {
-    if (!isMidCareer()) return 1;
-    const roll = rand();
-    if (roll < 0.05) return 3;
-    if (roll < 0.15) return 2;
-    return 1;
+    // Fewer events overall, but each one should carry more weight
+    if (state.age >= 30) {
+      const roll = rand();
+      if (roll < 0.10) return 3;
+      if (roll < 0.45) return 2;
+      return 1;
+    }
+    if (isMidCareer()) {
+      const roll = rand();
+      if (roll < 0.15) return 2;
+      if (roll < 0.55) return 1;
+      return 0;
+    }
+    return 0;
   }
   function pickSeasonEvents(ctx, count) {
     const events = [];
+    const milestone = checkMilestoneInterrupt();
+    if (milestone) events.push(milestone);
     for (let i = 0; i < count; i++) {
       const ev = pickSeasonEvent(ctx);
       if (!ev) break;
@@ -1793,7 +2300,7 @@
     return events;
   }
 
-  function applyEffects(fx) {
+  function applyEffects(fx, multiplier = 1) {
     if (!fx) return;
     // Carry-over: some choices have a 50% chance to affect NEXT season instead of now
     if (fx.carryOver && rand() < 0.5) {
@@ -1801,29 +2308,51 @@
       state.pendingCarryOver.push(fx);
       return;
     }
-    applyEffectsRaw(fx);
+    applyEffectsRaw(fx, multiplier);
   }
-  function applyEffectsRaw(fx) {
+  function applyEffectsRaw(fx, multiplier = 1) {
     if (!fx) return;
-    if (fx.rep) adjustReputation(fx.rep);
-    if (fx.goals) { const g = typeof fx.goals === "function" ? fx.goals() : fx.goals; state.totalGoals += g; if (state.seasonHistory.length) state.seasonHistory[state.seasonHistory.length - 1].goals += g; }
-    if (fx.assists) { const a = typeof fx.assists === "function" ? fx.assists() : fx.assists; state.totalAssists += a; }
+    if (fx.rep) adjustReputation(Math.round(fx.rep * multiplier));
+    if (fx.goals) { const g = Math.round((typeof fx.goals === "function" ? fx.goals() : fx.goals) * multiplier); state.totalGoals += g; if (state.seasonHistory.length) state.seasonHistory[state.seasonHistory.length - 1].goals += g; }
+    if (fx.assists) { const a = Math.round((typeof fx.assists === "function" ? fx.assists() : fx.assists) * multiplier); state.totalAssists += a; }
     if (fx.flag) setFlag(fx.flag, FLAG_DEFAULT_DURATION);
     if (fx.injuryProne) state.injuryProneSeasons = Math.max(state.injuryProneSeasons, fx.injuryProne);
-    if (fx.ratingBoost) state.baseRating = clamp(state.baseRating + fx.ratingBoost, 40, 99);
+    if (fx.ratingBoost) state.baseRating = clamp(state.baseRating + Math.round(fx.ratingBoost * multiplier), 40, 99);
     if (fx.forceTransfer) state.pendingTransfer = true;
     if (fx.attrChange) {
       const { key, delta } = fx.attrChange;
-      state.attrs[key] = clamp(state.attrs[key] + delta, 40, 99);
+      state.attrs[key] = clamp(state.attrs[key] + Math.round(delta * multiplier), 40, 99);
+    }
+    if (fx.mentalityChange) {
+      state.mentalityRating = clamp(state.mentalityRating + Math.round(fx.mentalityChange * multiplier), 15, 99);
     }
     if (fx.positionChange) {
       state.position = fx.positionChange;
     }
     if (fx.contract) {
-      state.contractYears += fx.contract;
+      state.contractYears += Math.round(fx.contract * multiplier);
+    }
+    if (fx.wealth) {
+      state.wealth = clamp(state.wealth + Math.round(fx.wealth * multiplier), 0, 100);
+    }
+    if (fx.fame) {
+      state.fame = clamp(state.fame + Math.round(fx.fame * multiplier), 0, 100);
+    }
+    if (fx.agent) {
+      state.agent = fx.agent;
+    }
+    if (fx.intlCaps) {
+      state.intlCaps += fx.intlCaps;
+    }
+    if (fx.intlGoals) {
+      const g = Math.round((typeof fx.intlGoals === "function" ? fx.intlGoals() : fx.intlGoals) * multiplier);
+      state.intlGoals += g;
     }
     if (fx.retireNow) {
       state.retireNow = true;
+    }
+    if (fx.setIntlCaptain) {
+      state.intlCaptain = true;
     }
   }
   function applyPendingCarryOver() {
@@ -1831,7 +2360,7 @@
     const list = state.pendingCarryOver;
     state.pendingCarryOver = [];
     for (const fx of list) {
-      applyEffectsRaw(fx);
+      applyEffectsRaw(fx, EVENT_REWARD_MULTIPLIER);
       if (fx.carryOverLog) log(fx.carryOverLog, "decision");
     }
     recomputePlayerStats();
@@ -1859,6 +2388,50 @@
   }
 
   /* ------------------------------ SEASON FLOW --------------------------- */
+  function renderCareerStats() {
+    const el = document.getElementById("career-stats-content");
+    if (!el) return;
+    const h = state.honours;
+    const trophies = [];
+    if (h.leagueTitles) trophies.push({ label: `League Titles ${h.leagueTitles}`, cls: "" });
+    if (h.domesticCups) trophies.push({ label: `Domestic Cups ${h.domesticCups}`, cls: "" });
+    if (h.europeanCups) trophies.push({ label: `European Cups ${h.europeanCups}`, cls: "" });
+    if (h.intlTrophies) trophies.push({ label: `Intl Trophies ${h.intlTrophies}`, cls: "intl" });
+    const awards = [];
+    if (h.goldenBoots) awards.push({ label: `Golden Boots ${h.goldenBoots}`, cls: "award" });
+    if (h.ballonDors) awards.push({ label: `Ballon d'Or ${h.ballonDors}`, cls: "award" });
+    if (h.playerOfSeason) awards.push({ label: `POTS ${h.playerOfSeason}`, cls: "award" });
+    if (h.youngPlayer) awards.push({ label: `Young POTY ${h.youngPlayer}`, cls: "award" });
+    if (h.tots) awards.push({ label: `TOTS ${h.tots}`, cls: "award" });
+    const trophyHtml = trophies.length
+      ? `<div class="cs-honours">${trophies.map((t) => `<span class="cs-hon ${t.cls}">${esc(t.label)}</span>`).join("")}</div>`
+      : `<div class="cs-empty">No trophies yet</div>`;
+    const awardsHtml = awards.length
+      ? `<div class="cs-honours">${awards.map((a) => `<span class="cs-hon ${a.cls}">${esc(a.label)}</span>`).join("")}</div>`
+      : `<div class="cs-empty">No individual awards yet</div>`;
+    const intlHtml = state.intlCaps
+      ? `<div class="cs-honours"><span class="cs-hon intl">${state.intlCaps} caps / ${state.intlGoals} goals</span></div>`
+      : `<div class="cs-empty">No international caps yet</div>`;
+    const radarId = "career-radar";
+    el.innerHTML = `
+      <div class="career-stats-grid">
+        <div class="cs-box"><div class="cs-num">${state.totalGoals}</div><div class="cs-lab">Goals</div></div>
+        <div class="cs-box"><div class="cs-num">${state.totalApps}</div><div class="cs-lab">Apps</div></div>
+        <div class="cs-box"><div class="cs-num">${state.totalAssists}</div><div class="cs-lab">Assists</div></div>
+        <div class="cs-box"><div class="cs-num">${state.leagueGoals}</div><div class="cs-lab">League</div></div>
+        <div class="cs-box"><div class="cs-num">${state.teamCleanSheets}</div><div class="cs-lab">Clean Sheets</div></div>
+        <div class="cs-box"><div class="cs-num">${state.totalYellow}/${state.totalRed}</div><div class="cs-lab">Y/R</div></div>
+      </div>
+      <div class="cs-radar"><canvas id="${radarId}" width="240" height="180"></canvas></div>
+      <div class="cs-section-title">Trophies</div>${trophyHtml}
+      <div class="cs-section-title">Awards</div>${awardsHtml}
+      <div class="cs-section-title">International</div>${intlHtml}`;
+    requestAnimationFrame(() => {
+      const canvas = document.getElementById(radarId);
+      if (canvas && state.attrs) drawRadarChart(canvas, state.attrs);
+    });
+  }
+
   function renderCareerHeader() {
     document.getElementById("career-season").textContent = `SEASON ${state.season}`;
     document.getElementById("hdr-age").textContent = state.age;
@@ -1868,9 +2441,13 @@
     document.getElementById("hdr-position").innerHTML = `${pos.label} <span class="career-pos">${state.position}</span>`;
     document.getElementById("hdr-contract").innerHTML = `${state.contractYears}yr <span class="career-contract">${state.contractSignedAt ? "S" + state.contractSignedAt : "new"}</span>`;
     document.getElementById("hdr-rep").textContent = `${state.reputationTier} (${state.reputation})`;
+    const agent = state.agent || { label: "—" };
+    document.getElementById("hdr-agent").textContent = agent.label;
+    document.getElementById("hdr-wealth").textContent = state.wealth;
     const pct = clamp((state.totalGoals / LEVERS.goalTarget) * 100, 0, 100);
     document.getElementById("goal-progress-fill").style.width = pct + "%";
     document.getElementById("goal-progress-label").textContent = `${state.totalGoals} / ${LEVERS.goalTarget} career goals`;
+    renderCareerStats();
   }
 
   function renderSeasonReady() {
@@ -1953,7 +2530,7 @@
     box.querySelectorAll(".choice").forEach((btn) => {
       btn.addEventListener("click", () => {
         const c = ev.choices[parseInt(btn.dataset.i, 10)];
-        applyEffects(c.fx);
+        applyEffects(c.fx, ev.milestone ? 1 : EVENT_REWARD_MULTIPLIER);
         log(`   ↳ ${ev.milestone ? "🏅" : "🗲"} ${text.replace(/\.$/, "")} → "${c.label}"`, "decision");
         renderCareerHeader();
         saveState();
@@ -1968,14 +2545,20 @@
     if (state.totalGoals >= LEVERS.goalTarget) { beginRetirement("goal"); return; }
     applySeasonalAttributeChanges(sd);
     state.yearsAtClub++;
-    const wantsMove = state.pendingTransfer ||
+    // Players now see out their contract unless an end-of-season event forces a move
+    // or the club decides to sell them. Automatic restlessness is suppressed while contracted.
+    const hasContract = state.contractYears > 0;
+    const eventForcedMove = state.pendingTransfer;
+    const restless = !hasContract && (
       (mentTag(state.mentality) === "winner" && state.age >= 24 && state.age <= 27 && TEAM_DATABASE[state.club].league !== "Elite") ||
       (state.reputation >= 70 && TEAM_DATABASE[state.club].league === "Lower") ||
-      (rand() < 0.18 && state.yearsAtClub >= 3);
-    const loyalStay = (mentTag(state.mentality) === "leader" || mentTag(state.mentality) === "consistency") && rand() < 0.6;
+      (rand() < 0.18 && state.yearsAtClub >= 3)
+    );
+    const wantsMove = eventForcedMove || restless;
+    const loyalStay = hasContract && (mentTag(state.mentality) === "leader" || mentTag(state.mentality) === "consistency") && rand() < 0.6;
     const clubSells = shouldClubTransferOut(sd);
     if (clubSells) presentTransfer(generateOffers(), sd, intl, true);
-    else if (wantsMove && !(loyalStay && !state.pendingTransfer)) presentTransfer(generateOffers(), sd, intl, false);
+    else if (wantsMove && !loyalStay) presentTransfer(generateOffers(), sd, intl, false);
     else handleContractPhase(sd, intl);
   }
 
@@ -2063,7 +2646,11 @@
     if (state.injuryProneSeasons > 0) state.injuryProneSeasons--;
     if (state.finalSeasonForced) { beginRetirement("planned"); return; }
     state.age++; state.season++;
-    const retireChance = state.age >= 39 ? 1 : state.age >= 36 ? 0.5 + (state.age - 36) * 0.15 : state.age >= 34 ? 0.2 : 0;
+    const ra = state.retirementAge || 40;
+    let retireChance = 0;
+    if (state.age >= ra) retireChance = 1;
+    else if (state.age >= ra - 2) retireChance = 0.35 + (state.age - (ra - 2)) * 0.25;
+    else if (state.age >= ra - 4) retireChance = 0.10;
     const retireMod = contractRetireModifier();
     if (rand() < retireChance * retireMod) { beginRetirement("age"); return; }
     renderCareerHeader();
@@ -2129,8 +2716,9 @@
     if (rep >= 80) repMod = 1;
     else if (rep < 30) repMod = -1;
 
-    let offerYears = clamp(baseYears + perfMod + repMod, 1, 5);
-    let maxYears = clamp(offerYears + 1, 1, 5);
+    let agentBonus = state.agent ? state.agent.contractBonus : 0;
+    let offerYears = clamp(baseYears + perfMod + repMod + agentBonus, 1, 5);
+    let maxYears = clamp(offerYears + 1 + agentBonus, 1, 5);
 
     // Refusal conditions — club may simply not offer a new deal
     let refused = false;
@@ -2163,6 +2751,7 @@
     if (age <= 28) chance += 0.1;
     if (age >= 33) chance -= 0.15;
     if (overAsk >= 2) chance -= 0.3;
+    if (state.agent) chance += state.agent.influence;
     chance = clamp(chance, 0, 1);
 
     if (rand() < chance) return { accept: true };
@@ -2292,6 +2881,32 @@
       choices: [{ label: "Bow out with head held high", fx: { rep: -1 } }] },
     { id: "testimonial", base: 4, req: (s) => s.honours.leagueTitles > 0 || s.reputation >= 70, text: (n) => `A packed stadium turns out for ${n}'s legendary testimonial match.`,
       choices: [{ label: "Soak up the adoration", fx: { rep: 2 } }] },
+
+    // ---- RARE END-OF-CAREER GOAL SURGES (the only path from ~800 to 1000) ----
+    { id: "golden_twilight", base: 2, req: (s) => s.age >= 34 && s.reputation >= 75 && s.totalGoals >= 650 && TEAM_DATABASE[s.club].league === "Elite", rare: true,
+      text: (n) => `In a golden twilight, ${n} defies age and delivers a season for the ages.`,
+      choices: [
+        { label: "Rewrite the record books", fx: { goals: () => randInt(80, 150), rep: 5, fame: 8, trophy: true } },
+        { label: "Retire while the legend is intact", fx: { rep: 3 } },
+      ] },
+    { id: "record_chase_finale", base: 2, req: (s) => s.totalGoals >= 700 && s.reputation >= 80 && s.honours.ballonDors >= 1, rare: true,
+      text: (n) => `The world watches as ${n} chases the impossible 1000-goal mark.`,
+      choices: [
+        { label: "One more year, one last chase", fx: { goals: () => randInt(100, 200), rep: 6, fame: 10, extend: true } },
+        { label: "Stop at the summit", fx: { rep: 4 } },
+      ] },
+    { id: "international_swan_song", base: 2, req: (s) => s.age >= 32 && s.intlCaptain && s.intlGoals >= 15 && s.reputation >= 75, rare: true,
+      text: (n) => `${n} leads the national team on a triumphant international swansong.`,
+      choices: [
+        { label: "Give everything for the country", fx: { goals: () => randInt(50, 100), intlGoals: () => randInt(6, 12), rep: 5, fame: 6 } },
+        { label: "Focus on club football", fx: { rep: 2 } },
+      ] },
+    { id: "one_last_dance", base: 2, req: (s) => s.age >= 35 && s.reputation >= 70 && s.clubsPlayed.size >= 3 && s.totalGoals >= 600, rare: true,
+      text: (n) => `A former club offers ${n} one final dance — and the fans believe in miracles.`,
+      choices: [
+        { label: "Return and chase the thousand", fx: { goals: () => randInt(70, 130), returnHome: true, rep: 4, fame: 5 } },
+        { label: "Retire here instead", fx: { rep: 2 } },
+      ] },
   ];
 
   function beginRetirement(reason) {
@@ -2326,7 +2941,8 @@
   function handleEndChoice(fx, text, label) {
     fx = fx || {};
     log(`   ↳ 🎬 ${text.replace(/\.$/, "")} → "${label}"`, "milestone");
-    if (fx.rep) adjustReputation(fx.rep);
+    // Apply standard numeric effects (goals, assists, rep, fame, wealth) directly — end-of-career events are not subject to the seasonal reward multiplier
+    applyEffects(fx, 1);
     if (fx.trophy) {
       state.honours.domesticCups++;
       state.competitionHistory.push({ season: state.season, club: state.club, text: `🏆 Lifted a final trophy in a farewell season` });
@@ -2353,6 +2969,11 @@
     state.retired = true;
     showScreen("screen-legacy");
     const won = reachedGoal || state.totalGoals >= LEVERS.goalTarget;
+    const newAchievements = unlockAchievements(checkCareerAchievements());
+    if (newAchievements.length) {
+      const names = newAchievements.map((id) => (ACHIEVEMENTS.find((a) => a.id === id) || {}).name || id);
+      log(`Unlocked ${newAchievements.length} account achievement${newAchievements.length > 1 ? "s" : ""}: ${names.join(", ")}`, "achievement");
+    }
     const statusEl = document.getElementById("legacy-status");
     statusEl.textContent = won ? "⚽ FOOTBALL GOD — 1000 GOALS!" : (state.totalGoals >= 500 ? "LEGENDARY CAREER!" : "CAREER COMPLETE");
     statusEl.className = "legacy-status " + (won ? "god" : (state.totalGoals >= 500 ? "legend" : ""));
@@ -2473,6 +3094,175 @@
     return { Sensational: "great", Overperformed: "good", "Met Expectation": "ok", Underperformed: "bad", Flop: "awful" }[tier] || "";
   }
 
+  /* ----------------------------- ACCOUNT SYSTEM ------------------------- */
+  const ACC_KEY = "football-dna-account";
+  const ACHIEVEMENTS = [
+    { id: "1000_goals", name: "1000 Club", desc: "Reach 1000 career goals", rare: true },
+    { id: "50_season", name: "Half-Century Season", desc: "Score 50+ goals in a single season", rare: true },
+    { id: "golden_boot_haul", name: "Golden Boot Haul", desc: "Win 3 Golden Boots", rare: true },
+    { id: "ballon_dor", name: "World's Best", desc: "Win the Ballon d'Or", rare: true },
+    { id: "title_dynasty", name: "Title Dynasty", desc: "Win 5 league titles", rare: true },
+    { id: "europe_king", name: "Continental King", desc: "Win 2 European Cups", rare: true },
+    { id: "intl_star", name: "International Star", desc: "Score 20+ international goals", rare: true },
+    { id: "one_club_man", name: "One Club Man", desc: "Spend 10+ seasons at a single club", rare: true },
+    { id: "world_traveller", name: "World Traveller", desc: "Play for clubs in 3+ different countries", rare: true },
+    { id: "journeyman", name: "Journeyman", desc: "Play for 5+ different clubs", rare: false },
+    { id: "wonderkid", name: "Wonderkid", desc: "Win Young Player of the Year", rare: false },
+    { id: "captain", name: "Captain", desc: "Become international captain", rare: true },
+    { id: "cup_hero", name: "Cup Hero", desc: "Win 3 domestic cups", rare: true },
+    { id: "statue_worthy", name: "Statue Worthy", desc: "Reach 90+ reputation at one club", rare: true },
+    { id: "perfect_10", name: "Perfect 10", desc: "Achieve a 10.0 season rating", rare: true },
+  ];
+  function generateId(len) {
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    let out = "";
+    for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+    return out;
+  }
+  function generatePassword() {
+    return generateId(4) + "-" + generateId(4) + "-" + generateId(4);
+  }
+  function generateUsername() {
+    return "striker_" + generateId(8);
+  }
+  function createAccount() {
+    const account = { username: generateUsername(), password: generatePassword(), achievements: [] };
+    try { localStorage.setItem(ACC_KEY, JSON.stringify(account)); } catch (e) {}
+    return account;
+  }
+  function loadAccount() {
+    try {
+      const raw = localStorage.getItem(ACC_KEY);
+      if (!raw) return null;
+      const acc = JSON.parse(raw);
+      acc.achievements = acc.achievements || [];
+      return acc;
+    } catch (e) { return null; }
+  }
+  function saveAccount(acc) {
+    try { localStorage.setItem(ACC_KEY, JSON.stringify(acc)); } catch (e) {}
+  }
+  function loginAccount(username, password) {
+    const acc = loadAccount();
+    if (!acc) return { ok: false, message: "No account found. Create one first." };
+    if (acc.username === username && acc.password === password) return { ok: true, message: "Logged in successfully." };
+    return { ok: false, message: "Invalid username or password." };
+  }
+
+  function getClubCountry(club) {
+    const league = (TEAM_DATABASE[club] || {}).league;
+    if (["LaLiga"].includes(league)) return "Spain";
+    if (["SerieA"].includes(league)) return "Italy";
+    if (["Bundesliga"].includes(league)) return "Germany";
+    return "England";
+  }
+  function getCountriesPlayed() {
+    return new Set([...state.clubsPlayed].map(getClubCountry)).size;
+  }
+  function getMaxYearsAtClub() {
+    return Math.max(0, ...Object.values(state.clubStats || {}).map((c) => c.years || 0));
+  }
+  function getSeasonBestGoals() {
+    return Math.max(0, ...(state.seasonHistory || []).map((s) => s.goals || 0));
+  }
+  function checkCareerAchievements() {
+    const h = state.honours;
+    const newIds = [];
+    const tests = {
+      "1000_goals": state.totalGoals >= 1000,
+      "50_season": getSeasonBestGoals() >= 50,
+      "golden_boot_haul": h.goldenBoots >= 3,
+      "ballon_dor": h.ballonDors >= 1,
+      "title_dynasty": h.leagueTitles >= 5,
+      "europe_king": h.europeanCups >= 2,
+      "intl_star": state.intlGoals >= 20,
+      "one_club_man": getMaxYearsAtClub() >= 10,
+      "world_traveller": getCountriesPlayed() >= 3,
+      "journeyman": state.clubsPlayed.size >= 5,
+      "wonderkid": h.youngPlayer >= 1,
+      "captain": state.intlCaptain,
+      "cup_hero": h.domesticCups >= 3,
+      "statue_worthy": state.reputation >= 90,
+      "perfect_10": state.bestRating >= 10,
+    };
+    const acc = loadAccount();
+    const unlocked = acc ? acc.achievements : [];
+    for (const [id, ok] of Object.entries(tests)) {
+      if (ok && !unlocked.includes(id)) newIds.push(id);
+    }
+    return newIds;
+  }
+  function unlockAchievements(ids) {
+    if (!ids || !ids.length) return [];
+    const acc = loadAccount();
+    if (!acc) return ids;
+    const before = new Set(acc.achievements);
+    for (const id of ids) before.add(id);
+    acc.achievements = [...before];
+    saveAccount(acc);
+    return ids;
+  }
+  function renderAchievements() {
+    const acc = loadAccount();
+    const unlocked = acc ? acc.achievements : [];
+    const list = ACHIEVEMENTS.map((a) => {
+      const got = unlocked.includes(a.id);
+      return `<div class="ach-row ${got ? "unlocked" : "locked"}"><span class="ach-name">${got ? "✓" : "○"} ${a.name}</span><span class="ach-desc">${a.desc}</span>${a.rare ? '<span class="ach-rare">RARE</span>' : ""}</div>`;
+    }).join("");
+    return list;
+  }
+  function renderAccountModal() {
+    const modal = document.getElementById("account-modal");
+    const createBox = document.getElementById("account-create");
+    const infoBox = document.getElementById("account-info");
+    const status = document.getElementById("account-status");
+    const acc = loadAccount();
+    modal.style.display = "flex";
+    if (acc) {
+      createBox.style.display = "none";
+      infoBox.style.display = "block";
+      document.getElementById("acc-username").value = acc.username;
+      document.getElementById("acc-password").value = acc.password;
+      document.getElementById("achievements-list").innerHTML = renderAchievements();
+      document.getElementById("account-achievements").style.display = "block";
+      status.textContent = "Account loaded. Use the credentials below to log in on this device.";
+    } else {
+      createBox.style.display = "block";
+      infoBox.style.display = "none";
+      status.textContent = "No account yet. Create one to save your credentials on this browser.";
+    }
+  }
+  function closeAccountModal() {
+    document.getElementById("account-modal").style.display = "none";
+  }
+  function wireAccount() {
+    document.getElementById("btn-account").addEventListener("click", renderAccountModal);
+    document.getElementById("btn-close-account").addEventListener("click", closeAccountModal);
+    document.querySelector("#account-modal .modal-backdrop").addEventListener("click", closeAccountModal);
+    document.getElementById("btn-create-account").addEventListener("click", () => {
+      const acc = createAccount();
+      renderAccountModal();
+      document.getElementById("account-status").textContent = "Account created! Copy and save your username and password.";
+    });
+    document.getElementById("btn-copy-user").addEventListener("click", () => {
+      const el = document.getElementById("acc-username");
+      el.select();
+      document.execCommand("copy");
+      document.getElementById("account-status").textContent = "Username copied to clipboard.";
+    });
+    document.getElementById("btn-show-pass").addEventListener("click", () => {
+      const el = document.getElementById("acc-password");
+      el.type = el.type === "password" ? "text" : "password";
+      document.getElementById("btn-show-pass").textContent = el.type === "password" ? "Show" : "Hide";
+    });
+    document.getElementById("btn-login").addEventListener("click", () => {
+      const user = document.getElementById("acc-login-user").value.trim();
+      const pass = document.getElementById("acc-login-pass").value.trim();
+      const res = loginAccount(user, pass);
+      document.getElementById("account-status").textContent = res.message;
+    });
+  }
+
   /* ----------------------------- WIRING --------------------------------- */
   function init() {
     document.getElementById("btn-start").addEventListener("click", () => showScreen("screen-difficulty"));
@@ -2493,7 +3283,26 @@
       document.getElementById("continue-box").style.display = "none";
       showScreen("screen-welcome");
     }));
+    wireAccount();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
+
+  function resolveEndOfCareerEvent() {
+    if (state.totalGoals >= LEVERS.goalTarget) return { extended: false, event: "goal_target" };
+    const eligible = END_EVENTS.filter((e) => !e.req || e.req(state)).map((e) => ({ item: e, weight: e.base }));
+    if (!eligible.length) return { extended: false, event: "none" };
+    const ev = weightedRandomPick(eligible);
+    const c = weightedRandomPick(ev.choices.map((ch) => ({ item: ch, weight: 1 })));
+    handleEndChoice(c.fx, ev.text(state.player.name), c.label);
+    if (c.fx && (c.fx.extend || c.fx.returnHome)) return { extended: true, event: ev.id };
+    return { extended: false, event: ev.id };
+  }
+
+  // DEBUG expose for stress testing
+  window.__STRESS_TEST__ = {
+    startCreation, compilePlayer, simulateSeason, applySeasonalAttributeChanges,
+    recomputePlayerStats, getState: () => state, setState: (s) => { state = s; },
+    LEAGUE_CLUBS, FOREIGN_LEAGUES, TEAM_DATABASE, resolveEndOfCareerEvent
+  };
 })();

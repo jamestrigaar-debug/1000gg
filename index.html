@@ -52,20 +52,49 @@
   .btn:hover { background: #243152; transform: translateY(-1px); }
   .btn:active { transform: translateY(0); }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
-  .btn.primary { background: linear-gradient(135deg, var(--accent), #18a45e); border-color: transparent; color: #06210f; }
-  .btn.primary:hover { filter: brightness(1.08); background: linear-gradient(135deg, var(--accent), #18a45e); }
+  .btn.primary { background: linear-gradient(135deg, var(--accent), #18a45e); border-color: transparent; color: #06210f;
+    box-shadow: 0 5px 0 #0d5c33; text-transform: uppercase; letter-spacing: .5px; }
+  .btn.primary:hover { filter: brightness(1.08); transform: translateY(-2px); box-shadow: 0 7px 0 #0d5c33; }
+  .btn.primary:active { transform: translateY(3px); box-shadow: 0 2px 0 #0d5c33; }
+  .card, .panel, .season-report, .decision { box-shadow: 5px 5px 0 rgba(54,163,255,.12); border: 1px solid var(--line); }
   .btn.ghost { background: transparent; }
   .btn.big { font-size: 18px; padding: 16px 30px; }
   .btn.danger { border-color: var(--bad); color: var(--bad); }
 
   /* ---------- Welcome ---------- */
   .hero { text-align: center; padding: 60px 16px; }
-  .hero h1 { font-size: clamp(34px, 7vw, 64px); letter-spacing: 1px;
-    background: linear-gradient(135deg, #fff, var(--accent2), var(--accent));
-    -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .hero .sub { font-size: 18px; color: var(--muted); margin-bottom: 8px; }
+  .hero h1 { font-size: clamp(38px, 8vw, 76px); letter-spacing: 2px; line-height: .95;
+    font-family: Impact, "Arial Black", "Helvetica Neue", sans-serif; text-transform: uppercase;
+    background: linear-gradient(180deg, #fff 0%, #fff 40%, var(--accent2) 70%, var(--accent) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 4px 0px rgba(54,163,255,.25), 0 6px 0px rgba(37,208,122,.15); }
+  .hero .sub { font-size: 18px; color: var(--muted); margin-bottom: 8px; font-style: italic; letter-spacing: 1px; }
+  .retro-badge { display: inline-block; background: linear-gradient(135deg, var(--accent2), var(--accent));
+    color: #04223f; font-weight: 900; padding: 4px 14px; border-radius: 6px; transform: rotate(-2deg);
+    text-transform: uppercase; letter-spacing: 1px; font-size: 12px; margin-bottom: 10px; box-shadow: 3px 3px 0 rgba(54,163,255,.3); }
   .hero .goal { display: inline-block; margin: 18px 0 28px; padding: 8px 18px; border: 1px dashed var(--gold);
     color: var(--gold); border-radius: 30px; font-weight: 700; }
+  .welcome-footer { margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line); display: flex; gap: 18px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .footer-link { color: var(--accent2); text-decoration: none; font-weight: 600; font-size: 15px; }
+  .footer-link:hover { color: var(--accent); text-decoration: underline; }
+  .bmc-wrap { display: flex; align-items: center; }
+  .modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; }
+  .modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.7); }
+  .modal-panel { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; width: min(420px, 92%); box-shadow: var(--shadow); }
+  .modal-panel .field { margin-bottom: 14px; }
+  .modal-panel label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .modal-panel input { background: var(--bg2); border: 1px solid var(--line); color: var(--txt); padding: 10px; border-radius: 8px; font-size: 14px; width: 100%; }
+  .copy-row { display: flex; gap: 8px; align-items: center; }
+  .copy-row input { flex: 1; }
+  .copy-row .btn { padding: 10px 12px; font-size: 13px; }
+  #achievements-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+  .ach-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; font-size: 13px; border: 1px solid var(--line); background: var(--bg2); }
+  .ach-row.unlocked { border-color: var(--gold); background: #2a1c00; }
+  .ach-row.locked { opacity: .55; }
+  .ach-name { font-weight: 700; min-width: 150px; }
+  .ach-row.unlocked .ach-name { color: var(--gold); }
+  .ach-desc { flex: 1; color: var(--muted); }
+  .ach-rare { background: var(--rare); color: #fff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; }
   .features { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 30px; }
   .feature { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
     padding: 14px 16px; width: 220px; text-align: left; }
@@ -95,6 +124,9 @@
     border-radius: 10px; padding: 10px 10px 8px; cursor: pointer; color: var(--txt); transition: .12s; }
   .donor-card:hover { border-color: var(--accent2); transform: translateY(-2px); }
   .donor-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+  .donor-card.used { opacity: .45; cursor: not-allowed; filter: grayscale(.6); }
+  .donor-card.used:hover { border-color: var(--line); transform: none; }
+  .used-tag { color: var(--bad); font-size: 11px; font-weight: 800; margin-left: 4px; }
   .donor-badge { position: absolute; top: 6px; right: 8px; font-weight: 800; color: var(--gold); font-size: 16px; }
   .donor-name { font-weight: 700; font-size: 14px; padding-right: 24px; }
   .donor-value { color: var(--accent); font-size: 13px; margin: 2px 0; }
@@ -137,6 +169,20 @@
 
   .career-grid { display: grid; grid-template-columns: 1fr 340px; gap: 18px; margin-top: 16px; }
   @media (max-width: 880px) { .career-grid { grid-template-columns: 1fr; } }
+  #career-stats-panel { margin-top: 14px; }
+  #career-stats-panel h3 { color: var(--gold); font-size: 15px; margin-bottom: 12px; }
+  .career-stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+  .cs-box { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 6px; text-align: center; }
+  .cs-num { font-size: 20px; font-weight: 900; color: var(--accent); }
+  .cs-lab { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .cs-radar { display: flex; justify-content: center; margin: 10px 0; }
+  .cs-radar canvas { width: 180px; height: 140px; }
+  .cs-honours { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .cs-hon { background: linear-gradient(135deg, #2a1f00, #1a1a2a); border: 1px solid var(--gold); color: var(--gold); border-radius: 30px; padding: 5px 12px; font-size: 11px; font-weight: 700; }
+  .cs-hon.award { border-color: var(--accent); color: var(--accent); background: #0a1a2a; }
+  .cs-hon.intl { border-color: #ff8a3c; color: #ff8a3c; background: #2a1a0a; }
+  .cs-section-title { font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+  .cs-empty { font-size: 12px; color: var(--muted); font-style: italic; }
 
   .simming { text-align: center; padding: 30px; color: var(--accent2); font-weight: 700; animation: pulse .4s infinite alternate; }
   .season-prompt { margin-bottom: 12px; color: var(--muted); }
@@ -178,6 +224,8 @@
   .log-entry.intl { border-left-color: #ff8a3c; }
   .log-entry.great { border-left-color: var(--accent); }
   .log-entry.bad, .log-entry.awful { border-left-color: var(--bad); }
+  .log-entry.info { border-left-color: var(--accent); color: #b8d4e8; font-size: 12px; }
+  .log-entry.achievement { border-left-color: var(--gold); background: #2a1c00; color: var(--gold); font-weight: 700; }
 
   /* ---------- Legacy ---------- */
   .legacy { text-align: center; padding: 30px 10px; }
@@ -213,7 +261,11 @@
   .academy-tier { font-size: 20px; font-weight: 900; color: var(--accent); }
   .academy-flavor { color: var(--muted); font-size: 13px; margin-top: 6px; }
   .acad-chip { display: inline-block; margin-top: 10px; background: var(--card2); border: 1px dashed var(--gold); color: var(--gold); padding: 5px 14px; border-radius: 30px; font-size: 12px; }
+  .agent-chip { display: inline-block; margin-top: 8px; background: var(--card2); border: 1px solid var(--accent); color: var(--accent); padding: 5px 14px; border-radius: 30px; font-size: 12px; }
+  .longevity-chip { display: inline-block; margin-top: 8px; background: var(--card2); border: 1px dashed var(--gold); color: var(--gold); padding: 5px 14px; border-radius: 30px; font-size: 12px; }
   .preview-hint { margin-top: 12px; font-size: 11px; color: var(--muted); font-style: italic; border-top: 1px dashed var(--line); padding-top: 10px; }
+  .scout-feedback { margin-top: 10px; padding: 10px 12px; background: #14233d; border: 1px dashed var(--accent2); border-radius: 8px; font-size: 13px; color: var(--txt); line-height: 1.4; }
+  .scout-feedback strong { color: var(--accent); }
   .synergy-block { margin-top: 18px; }
   .synergy-block h3 { color: var(--accent2); font-size: 15px; }
   .syn-note { font-size: 13px; padding: 6px 10px; border-radius: 8px; margin-bottom: 6px; background: var(--bg2); border-left: 3px solid var(--line); }
@@ -323,6 +375,7 @@
   <!-- ================= SCREEN 1: WELCOME ================= -->
   <section id="screen-welcome" class="screen active">
     <div class="hero">
+      <div class="retro-badge">Simulation Sports</div>
       <h1>FOOTBALL DNA SIMULATOR ⚽</h1>
       <div class="sub">Build a striker from 8 different football eras</div>
       <div class="goal">🎯 GOAL: 1000 CAREER GOALS</div>
@@ -330,12 +383,22 @@
         <button class="btn primary big" id="btn-continue">▶ CONTINUE CAREER</button>
       </div>
       <div><button class="btn primary big" id="btn-start">START CREATION</button></div>
+      <div style="margin-top: 14px;">
+        <button class="btn ghost" id="btn-account">Account</button>
+      </div>
       <div class="sub" style="font-size:13px">Alpha 1.2 — positions · build rolls · contracts · hidden traits · attribute evolution · radar charts</div>
       <div class="features">
         <div class="feature"><b>Free-Order Draft</b><br/>Spin a squad &amp; era, then choose which attribute to draft — in any order.</div>
         <div class="feature"><b>Hidden Influence</b><br/>Every donor secretly nudges your other stats. Real trade-offs, unique players.</div>
         <div class="feature"><b>Full Career Sim</b><br/>Real league tables, honours, Ballon d'Ors, Golden Boots &amp; end-of-career events.</div>
         <div class="feature"><b>The Chase</b><br/>League, cups, Europe &amp; England goals all count toward 1000.</div>
+      </div>
+      <div class="welcome-footer">
+        <a href="https://x.com/JamesTrigaar" target="_blank" rel="noopener" class="footer-link">X / Twitter</a>
+        <a href="https://1000goals.co.uk" target="_blank" rel="noopener" class="footer-link">1000goals.co.uk</a>
+        <div class="bmc-wrap">
+          <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="trigaar" data-color="#FFDD00" data-emoji="" data-font="Cookie" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
+        </div>
       </div>
     </div>
   </section>
@@ -388,6 +451,8 @@
         <div class="hdr-stat">Pos <b id="hdr-position">ST</b></div>
         <div class="hdr-stat">Contract <b id="hdr-contract">3yr</b></div>
         <div class="hdr-stat">Rep <b id="hdr-rep">Unknown</b></div>
+        <div class="hdr-stat">Agent <b id="hdr-agent">—</b></div>
+        <div class="hdr-stat">Wealth <b id="hdr-wealth">0</b></div>
       </div>
     </div>
     <div class="goal-progress"><div id="goal-progress-fill"></div><div id="goal-progress-label">0 / 1000 career goals</div></div>
@@ -400,6 +465,10 @@
       <div class="panel log-panel">
         <h3>Career Log</h3>
         <div id="career-log"></div>
+      </div>
+      <div class="panel" id="career-stats-panel">
+        <h3>Career Stats</h3>
+        <div id="career-stats-content"></div>
       </div>
     </div>
   </section>
@@ -419,6 +488,39 @@
       <div style="margin-top:28px"><button class="btn primary big btn-play-again">PLAY AGAIN ↻</button></div>
     </div>
   </section>
+
+  <!-- ================= ACCOUNT MODAL ================= -->
+  <div id="account-modal" class="modal" style="display:none">
+    <div class="modal-backdrop"></div>
+    <div class="modal-panel">
+      <h3>Account</h3>
+      <p class="muted">No email needed. We generate a unique username and password for you. Save these somewhere safe.</p>
+      <div id="account-create" style="display:none">
+        <button class="btn primary" id="btn-create-account">Create Account</button>
+      </div>
+      <div id="account-info" style="display:none">
+        <div class="field">
+          <label>Username</label>
+          <div class="copy-row"><input type="text" id="acc-username" readonly /><button class="btn" id="btn-copy-user">Copy</button></div>
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <div class="copy-row"><input type="password" id="acc-password" readonly /><button class="btn" id="btn-show-pass">Show</button></div>
+        </div>
+        <div class="field">
+          <label>Login</label>
+          <div class="copy-row"><input type="text" id="acc-login-user" placeholder="Username" /><input type="password" id="acc-login-pass" placeholder="Password" /></div>
+          <button class="btn primary" id="btn-login" style="margin-top:8px">Log in</button>
+        </div>
+      </div>
+      <div id="account-status" class="muted" style="margin-top:10px"></div>
+      <div id="account-achievements" style="margin-top:14px; display:none">
+        <h4>Achievements</h4>
+        <div id="achievements-list"></div>
+      </div>
+      <div style="margin-top:14px"><button class="btn" id="btn-close-account">Close</button></div>
+    </div>
+  </div>
 
   <div class="footer-note">Football DNA Simulator · Alpha 1.2 · Inspired by 38-0.app · Premier League donor data (1992–2024 real squads, peak ratings) is editable in <code>data.js</code>.</div>
 </div>
