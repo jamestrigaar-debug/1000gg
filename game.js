@@ -397,6 +397,7 @@
   const rand = Math.random;
   function randInt(min, max) { return Math.floor(rand() * (max - min + 1)) + min; }
   function randomBetween(min, max) { return rand() * (max - min) + min; }
+  function randBetween(min, max) { return randomBetween(min, max); }
   function choice(arr) { return arr[Math.floor(rand() * arr.length)]; }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
   function round1(v) { return Math.round(v * 10) / 10; }
