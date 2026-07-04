@@ -49,6 +49,64 @@ vm.runInContext(dataCode, ctx);
 vm.runInContext(gameCode, ctx);
 
 const g = ctx.window.__STRESS_TEST__;
+
+// Regression test: exercise the full player creation compile path
+// with both short and long academy names. This catches missing utility
+// functions (e.g. randBetween) that are only invoked during compilePlayer.
+(function testCompilePlayer() {
+  const db = ctx.window.GAME_DATA;
+  const keys = Object.keys(db.PLAYER_DATABASE);
+  const rand = () => Math.random();
+  const pick = (arr) => arr[Math.floor(rand() * arr.length)];
+  const samplePlayer = (key) => pick(db.PLAYER_DATABASE[key]);
+
+  const academies = [
+    "Manchester United", "Arsenal FC", "Chelsea FC", "AFC Bournemouth",
+    "Brighton and Hove Albion", "Wolverhampton Wanderers", "Leeds United",
+    "Luton Town", "Wimbledon FC (- 2004)"
+  ];
+
+  for (const academy of academies) {
+    if (!db.CLUB_ACADEMY[academy]) continue;
+    g.startCreation('easy');
+    const s = g.getState();
+    const squadKey = pick(keys);
+    const { team, year } = (() => {
+      const m = squadKey.match(/^(.*) \((\d{4})\)$/);
+      return m ? { team: m[1], year: parseInt(m[2], 10) } : { team: squadKey, year: 0 };
+    })();
+
+    const mkSlot = (key, pl, extra) => ({
+      donor: pl.name, donorObj: pl, team, year,
+      value: key === 'body' ? pl.fitness : key === 'mentality' ? pl.mentality : pl[key],
+      value2: key === 'body' ? pl.strength : undefined,
+      rating: key === 'mentality' ? pl.mentalityRating : undefined,
+      ...extra
+    });
+
+    s.player.slots = {
+      heading: mkSlot('heading', samplePlayer(pick(keys))),
+      body: mkSlot('body', samplePlayer(pick(keys))),
+      leftFoot: mkSlot('leftFoot', samplePlayer(pick(keys))),
+      rightFoot: mkSlot('rightFoot', samplePlayer(pick(keys))),
+      speed: mkSlot('speed', samplePlayer(pick(keys))),
+      mentality: mkSlot('mentality', samplePlayer(pick(keys))),
+      position: { position: 'ST', value: 'ST', donor: 'Rolled', team: '—', year: '—', type: 'position' },
+      build: { height: 180, weight: 75, value: 180, value2: 75, donor: 'Rolled', team: '—', year: '—', type: 'build' }
+    };
+    s.player.usedDonors = Object.values(s.player.slots).filter(Boolean).map((slot) => slot.donor);
+    s.academy = { club: academy, tier: db.CLUB_ACADEMY[academy] };
+    try {
+      g.compilePlayer();
+      console.log(`compilePlayer OK: ${academy} -> ${s.baseRating} ${s.playstyle}`);
+    } catch (err) {
+      console.error(`compilePlayer FAILED for ${academy}: ${err.message}`);
+      throw err;
+    }
+  }
+  console.log('Regression test passed: compilePlayer works for all academy name formats');
+})();
+
 const GOAL_TARGET = 1000;
 const MAX_AGE = 40;
 const RUNS = 100;

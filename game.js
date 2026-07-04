@@ -1999,6 +1999,51 @@
         { label: "Hold out for more money", fx: { contract: 1, wealth: 5, rep: -1, flag: "unsettled" } },
       ] },
 
+    // ---- AGENT-DRIVEN CAREER DIRECTIVES (Alpha 1.3 beta) ----
+    { id: "agent_ask_longer_contract", category: "AGENT", base: 5, req: { repMin: 35, yearsMin: 1 },
+      text: (n) => `${n}'s agent wants to lock in long-term security. The club is reluctant to add years.`,
+      choices: [
+        { label: "Demand a 4-year deal", fx: { contract: 3, rep: -2, wealth: 3, flag: "unsettled" } },
+        { label: "Take a 2-year extension and renegotiate later", fx: { contract: 1, rep: 1 } },
+        { label: "Ask the agent to drop it", fx: { rep: 2, flag: "fanFavorite" } },
+      ] },
+    { id: "agent_ask_more_playtime", category: "AGENT", base: 5, req: { roleIn: ["Rotation", "Bench"], repMin: 30 },
+      text: (n) => `${n}'s agent meets the manager to demand more minutes. The gaffer is not happy.`,
+      choices: [
+        { label: "Back the agent publicly", fx: { rep: -3, flag: "managerConflict", contract: 1 } },
+        { label: "Let your football do the talking", fx: { rep: 3, flag: "inForm" } },
+        { label: "Ask for a loan move", fx: { rep: 1, forceTransfer: true } },
+      ] },
+    { id: "agent_ask_wealth", category: "AGENT", base: 4, req: { repMin: 40, wealth: 15 },
+      text: (n) => `${n}'s agent says commercial opportunities are being left on the table.`,
+      choices: [
+        { label: "Chase every sponsorship", fx: { wealth: 12, fame: 6, rep: -2, flag: "mediaTarget" } },
+        { label: "Pick one prestige brand", fx: { wealth: 6, fame: 3, rep: 2 } },
+        { label: "Focus on football, not money", fx: { rep: 3, flag: "fanFavorite" } },
+      ] },
+    { id: "speak_to_agent", category: "AGENT", base: 6, req: { repMin: 25 },
+      text: (n) => `End-of-season review with the agent. The next 12 months can be shaped now.`,
+      choices: [
+        { label: "Push for a bigger club", fx: { rep: 1, forceTransfer: true } },
+        { label: "Lock down a better contract", fx: { contract: 2, wealth: 4, flag: "unsettled" } },
+        { label: "Invest in a personal skills coach", fx: { attrChange: { key: "fitness", delta: 2 }, carryOver: true, carryOverLog: "Personal skills coach improves fitness for next season." } },
+      ] },
+    { id: "career_position_training", category: "TRAINING", base: 5, req: { perf: ["Met Expectation", "Overperformed", "Sensational"], ageMax: 32 },
+      text: (n) => `${n}'s coach suggests a summer position camp to sharpen one specific area.`,
+      choices: [
+        { label: "Focus on heading", fx: { attrChange: { key: "heading", delta: 3 }, carryOver: true, carryOverLog: "Heading camp pays off next season." } },
+        { label: "Focus on finishing", fx: { attrChange: { key: "leftFoot", delta: 2 }, carryOver: true, carryOverLog: "Finishing camp sharpens the left foot next season." } },
+        { label: "Focus on pace", fx: { attrChange: { key: "speed", delta: 2 }, carryOver: true, carryOverLog: "Pace work adds yard next season." } },
+        { label: "Focus on physicality", fx: { attrChange: { key: "strength", delta: 2 }, carryOver: true, carryOverLog: "Strength work adds power next season." } },
+      ] },
+    { id: "career_force_move", category: "AGENT", base: 4, req: { repMin: 45, yearsMin: 2 },
+      text: (n) => `${n}'s agent has engineered a concrete bid from a bigger club. It's time to decide.`,
+      choices: [
+        { label: "Force the move — my level is higher", fx: { rep: -2, forceTransfer: true, flag: "unsettled" } },
+        { label: "Stay loyal — renegotiate instead", fx: { rep: 4, contract: 2, flag: "fanFavorite" } },
+        { label: "Let the agent handle it quietly", fx: { rep: 1, wealth: 3 } },
+      ] },
+
     // ---- WEALTH / FAME EVENTS (rare, unlocked by wealth/fame) ----
     { id: "fashion_brand", category: "FAME", base: 2, req: { repMin: 60, ageMin: 22 }, rare: true,
       text: (n) => `${n} launches a clothing line — the launch party is packed with celebrities.`,
@@ -2273,19 +2318,24 @@
     return state.season >= 3 && state.age >= 21 && state.age <= 33;
   }
   function determineEventCount() {
-    // Fewer events overall, but each one should carry more weight
-    if (state.age >= 30) {
+    // Fewer events overall, but each one should carry more weight.
+    // Prime years: mostly 0-2, very rare 3. Late career: more events (1-3).
+    if (state.age >= 34) {
       const roll = rand();
-      if (roll < 0.10) return 3;
-      if (roll < 0.45) return 2;
+      if (roll < 0.12) return 3;
+      if (roll < 0.55) return 2;
       return 1;
     }
     if (isMidCareer()) {
       const roll = rand();
-      if (roll < 0.15) return 2;
-      if (roll < 0.55) return 1;
+      if (roll < 0.08) return 3;
+      if (roll < 0.38) return 2;
+      if (roll < 0.78) return 1;
       return 0;
     }
+    // Early / twilight edges outside prime: small chance of a single event
+    const roll = rand();
+    if (roll < 0.25) return 1;
     return 0;
   }
   function pickSeasonEvents(ctx, count) {
@@ -2310,6 +2360,7 @@
       return;
     }
     applyEffectsRaw(fx, multiplier);
+    if (state.attrs && (fx.attrChange || fx.positionChange)) recomputePlayerStats();
   }
   function applyEffectsRaw(fx, multiplier = 1) {
     if (!fx) return;
@@ -2433,6 +2484,84 @@
     });
   }
 
+  function renderProfile() {
+    const el = document.getElementById("profile-content");
+    if (!el) return;
+    const agent = state.agent || { label: "—" };
+    const traits = state.hiddenTraits.length
+      ? state.hiddenTraits.map((t) => `<span class="trait-chip" title="${esc(HIDDEN_TRAITS[t].desc)}">${esc(t)}</span>`).join("")
+      : "<span class='muted'>No hidden traits discovered yet.</span>";
+    const a = state.attrs;
+    const dv = state.derived;
+    const radarId = "profile-radar";
+    el.innerHTML = `
+      <div class="profile-grid">
+        <div class="profile-card">
+          <div class="pc-label">Agent</div>
+          <div class="pc-val">${esc(agent.label)}</div>
+          <div class="pc-meta">Influence ${Math.round(agent.influence * 100)}% · Contract bonus ${agent.contractBonus}</div>
+        </div>
+        <div class="profile-card">
+          <div class="pc-label">Wealth</div>
+          <div class="pc-val">${state.wealth}</div>
+          <div class="pc-meta">Fame ${state.fame || 0}</div>
+        </div>
+        <div class="profile-card">
+          <div class="pc-label">Mentality</div>
+          <div class="pc-val ${mentIsSpecial(state.mentality) ? "rare" : ""}">${state.mentality}</div>
+          <div class="pc-meta">Hidden rating ${state.mentalityRating}</div>
+        </div>
+        <div class="profile-card">
+          <div class="pc-label">Playstyle</div>
+          <div class="pc-val">${state.playstyle}</div>
+          <div class="pc-meta">${PLAYSTYLE_PROFILES[state.playstyle]?.desc || ""}</div>
+        </div>
+        <div class="profile-card">
+          <div class="pc-label">Longevity</div>
+          <div class="pc-val">${state.retirementAge}</div>
+          <div class="pc-meta">Injury proneness ${state.injuryProneness}/100</div>
+        </div>
+        <div class="profile-card">
+          <div class="pc-label">Peak Rating</div>
+          <div class="pc-val">${state.baseRating}</div>
+          <div class="pc-meta">Synergy ${(state.synergyMultiplier * 100).toFixed(0)}%</div>
+        </div>
+      </div>
+      <div class="profile-section">
+        <h4>Attributes</h4>
+        <div class="profile-attrs">
+          <div><span>Heading</span><b>${a.heading}</b></div>
+          <div><span>Left Foot</span><b>${a.leftFoot}</b></div>
+          <div><span>Right Foot</span><b>${a.rightFoot}</b></div>
+          <div><span>Speed</span><b>${a.speed}</b></div>
+          <div><span>Strength</span><b>${a.strength}</b></div>
+          <div><span>Fitness</span><b>${a.fitness}</b></div>
+          <div><span>Height</span><b>${a.height}cm</b></div>
+          <div><span>Weight</span><b>${a.weight}kg</b></div>
+        </div>
+        <div class="profile-derived">
+          <span>Agility ${dv.agility}</span> · <span>Balance ${dv.balance}</span> · <span>Dribbling ${dv.dribbling}</span> · <span>Finishing ${dv.finishing}</span>
+        </div>
+      </div>
+      <div class="profile-section">
+        <h4>Hidden Traits</h4>
+        <div class="traits-list">${traits}</div>
+      </div>
+      <div class="profile-radar"><canvas id="${radarId}" width="260" height="200"></canvas></div>
+    `;
+    requestAnimationFrame(() => {
+      const canvas = document.getElementById(radarId);
+      if (canvas && state.attrs) drawRadarChart(canvas, state.attrs);
+    });
+  }
+
+  function toggleProfile(show) {
+    const panel = document.getElementById("profile-panel");
+    if (!panel) return;
+    panel.style.display = show ? "block" : "none";
+    if (show) renderProfile();
+  }
+
   function renderCareerHeader() {
     document.getElementById("career-season").textContent = `SEASON ${state.season}`;
     document.getElementById("hdr-age").textContent = state.age;
@@ -2442,9 +2571,6 @@
     document.getElementById("hdr-position").innerHTML = `${pos.label} <span class="career-pos">${state.position}</span>`;
     document.getElementById("hdr-contract").innerHTML = `${state.contractYears}yr <span class="career-contract">${state.contractSignedAt ? "S" + state.contractSignedAt : "new"}</span>`;
     document.getElementById("hdr-rep").textContent = `${state.reputationTier} (${state.reputation})`;
-    const agent = state.agent || { label: "—" };
-    document.getElementById("hdr-agent").textContent = agent.label;
-    document.getElementById("hdr-wealth").textContent = state.wealth;
     const pct = clamp((state.totalGoals / LEVERS.goalTarget) * 100, 0, 100);
     document.getElementById("goal-progress-fill").style.width = pct + "%";
     document.getElementById("goal-progress-label").textContent = `${state.totalGoals} / ${LEVERS.goalTarget} career goals`;
@@ -3277,11 +3403,16 @@
     document.getElementById("btn-accept").addEventListener("click", accept);
     document.getElementById("btn-reroll").addEventListener("click", reroll);
     document.getElementById("btn-confirm-career").addEventListener("click", startCareer);
+    const btnProfile = document.getElementById("btn-profile");
+    const btnCloseProfile = document.getElementById("btn-close-profile");
+    if (btnProfile) btnProfile.addEventListener("click", () => toggleProfile(true));
+    if (btnCloseProfile) btnCloseProfile.addEventListener("click", () => toggleProfile(false));
     document.querySelectorAll(".btn-play-again").forEach((b) => b.addEventListener("click", () => {
       clearSave();
       document.getElementById("career-log").innerHTML = "";
       document.getElementById("season-result").innerHTML = "";
       document.getElementById("continue-box").style.display = "none";
+      toggleProfile(false);
       showScreen("screen-welcome");
     }));
     wireAccount();

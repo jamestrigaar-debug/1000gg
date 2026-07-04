@@ -172,6 +172,24 @@
   #career-stats-panel { margin-top: 14px; }
   #career-stats-panel h3 { color: var(--gold); font-size: 15px; margin-bottom: 12px; }
   .career-stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+
+  .profile-panel { margin-top: 14px; margin-bottom: 14px; }
+  .profile-panel h3 { color: var(--gold); font-size: 16px; margin-bottom: 14px; }
+  .profile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .profile-card { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .profile-card .pc-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .profile-card .pc-val { font-size: 20px; font-weight: 800; color: var(--accent); margin: 4px 0; }
+  .profile-card .pc-val.rare { color: var(--rare); }
+  .profile-card .pc-meta { font-size: 11px; color: var(--muted); }
+  .profile-section { margin-top: 14px; }
+  .profile-section h4 { color: var(--accent2); font-size: 14px; margin-bottom: 8px; }
+  .profile-attrs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .profile-attrs div { background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; text-align: center; font-size: 12px; }
+  .profile-attrs b { display: block; font-size: 18px; color: var(--accent); margin-top: 2px; }
+  .profile-derived { margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .profile-radar { display: flex; justify-content: center; margin-top: 16px; }
+  .profile-radar canvas { width: 220px; height: 170px; }
+  @media (max-width: 600px) { .profile-attrs { grid-template-columns: repeat(2, 1fr); } .profile-grid { grid-template-columns: repeat(2, 1fr); } }
   .cs-box { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 6px; text-align: center; }
   .cs-num { font-size: 20px; font-weight: 900; color: var(--accent); }
   .cs-lab { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
@@ -451,11 +469,15 @@
         <div class="hdr-stat">Pos <b id="hdr-position">ST</b></div>
         <div class="hdr-stat">Contract <b id="hdr-contract">3yr</b></div>
         <div class="hdr-stat">Rep <b id="hdr-rep">Unknown</b></div>
-        <div class="hdr-stat">Agent <b id="hdr-agent">—</b></div>
-        <div class="hdr-stat">Wealth <b id="hdr-wealth">0</b></div>
+        <div class="hdr-stat"><button class="btn ghost" id="btn-profile" style="padding:6px 12px;font-size:13px">Player Profile</button></div>
       </div>
     </div>
     <div class="goal-progress"><div id="goal-progress-fill"></div><div id="goal-progress-label">0 / 1000 career goals</div></div>
+
+    <div id="profile-panel" class="panel profile-panel" style="display:none">
+      <h3>Player Profile <button class="btn ghost" id="btn-close-profile" style="float:right;padding:4px 10px;font-size:12px">Close</button></h3>
+      <div id="profile-content"></div>
+    </div>
 
     <div class="career-grid">
       <div>
