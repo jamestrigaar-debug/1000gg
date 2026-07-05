@@ -71,6 +71,46 @@
   ];
   const AGENT_BY_KEY = Object.fromEntries(AGENT_TIERS.map((a) => [a.key, a]));
 
+  // Premier League all-time records for the career stats comparison tables.
+  const ALL_TIME_RECORDS = {
+    goals: { recordHolder: "Alan Shearer", total: 260 },
+    assists: { recordHolder: "Ryan Giggs", total: 162 },
+    appearances: { recordHolder: "James Milner", total: 658 },
+    cleanSheets: { recordHolder: "Petr Čech", total: 202 },
+    penaltiesSaved: { recordHolder: "David James", total: 13 },
+  };
+  const TOP_10_GOALS = [
+    { name: "Alan Shearer", total: 260 },
+    { name: "Harry Kane", total: 213 },
+    { name: "Wayne Rooney", total: 208 },
+    { name: "Mohamed Salah", total: 193 },
+    { name: "Andy Cole", total: 187 },
+    { name: "Sergio Agüero", total: 184 },
+    { name: "Frank Lampard", total: 177 },
+    { name: "Thierry Henry", total: 175 },
+    { name: "Robbie Fowler", total: 163 },
+    { name: "Jermain Defoe", total: 162 },
+  ];
+  const TOP_10_ASSISTS = [
+    { name: "Ryan Giggs", total: 162 },
+    { name: "Kevin De Bruyne", total: 121 },
+    { name: "Cesc Fàbregas", total: 111 },
+    { name: "Wayne Rooney", total: 103 },
+    { name: "Frank Lampard", total: 102 },
+    { name: "Mohamed Salah", total: 94 },
+    { name: "Dennis Bergkamp", total: 94 },
+    { name: "David Silva", total: 93 },
+    { name: "Steven Gerrard", total: 92 },
+    { name: "James Milner", total: 90 },
+  ];
+  const TOP_10_APPEARANCES = [
+    { name: "James Milner", total: 658 },
+    { name: "Gareth Barry", total: 653 },
+    { name: "Ryan Giggs", total: 632 },
+    { name: "Frank Lampard", total: 609 },
+    { name: "David James", total: 572 },
+  ];
+
   const ATTRS = [
     { key: "heading", name: "Heading", short: "HDR", type: "numeric", desc: "Aerial threat — wins headers and attacks crosses." },
     { key: "mentality", name: "Mentality", short: "MEN", type: "mentality", desc: "Personality & temperament — hidden influence on big moments." },
@@ -612,6 +652,11 @@
     const b = document.getElementById(id);
     b.style.display = show ? "inline-block" : "none";
     b.disabled = !show;
+    const mobile = document.getElementById(id + "-mobile");
+    if (mobile) {
+      mobile.style.display = show ? "flex" : "none";
+      mobile.disabled = !show;
+    }
   }
 
   const COUNTRY_KEYS = Object.keys(COUNTRY_ORIGINS);
@@ -2704,17 +2749,64 @@
     const intlHtml = state.intlCaps
       ? `<div class="cs-honours"><span class="cs-hon intl">${state.intlCaps} caps / ${state.intlGoals} goals</span></div>`
       : `<div class="cs-empty">No international caps yet</div>`;
+
+    const g = state.totalGoals;
+    const a = state.totalAssists;
+    const apps = state.totalApps;
+    const seasons = Math.max(1, state.season);
+    const avgGoals = (g / seasons).toFixed(1);
+    const avgApps = (apps / seasons).toFixed(1);
+    const gpg = apps > 0 ? (g / apps).toFixed(2) : "0.00";
+    const apg = apps > 0 ? (a / apps).toFixed(2) : "0.00";
+    const gRate = Math.round((g / LEVERS.goalTarget) * 100);
+    const rec = ALL_TIME_RECORDS;
+    const recordsHtml = `
+      <div class="records-table">
+        <div class="rec-row head"><span>Stat</span><span>Record Holder</span><span>Total</span><span>You</span></div>
+        <div class="rec-row"><span>Goals</span><span>${rec.goals.recordHolder}</span><span>${rec.goals.total}</span><span>${g}</span></div>
+        <div class="rec-row"><span>Assists</span><span>${rec.assists.recordHolder}</span><span>${rec.assists.total}</span><span>${a}</span></div>
+        <div class="rec-row"><span>Appearances</span><span>${rec.appearances.recordHolder}</span><span>${rec.appearances.total}</span><span>${apps}</span></div>
+        <div class="rec-row"><span>Clean Sheets</span><span>${rec.cleanSheets.recordHolder}</span><span>${rec.cleanSheets.total}</span><span>${state.teamCleanSheets}</span></div>
+        <div class="rec-row"><span>Penalties Saved</span><span>${rec.penaltiesSaved.recordHolder}</span><span>${rec.penaltiesSaved.total}</span><span>—</span></div>
+      </div>`;
+
+    const topGoalRows = insertPlayerIntoTop10(TOP_10_GOALS, g, state.player.name || "You")
+      .map((r, i) => `<div class="top10-row${r.mine ? " mine" : ""}"><span>${i + 1}</span><span>${r.name}</span><span>${r.total}</span></div>`)
+      .join("");
+    const topAssistRows = insertPlayerIntoTop10(TOP_10_ASSISTS, a, state.player.name || "You")
+      .map((r, i) => `<div class="top10-row${r.mine ? " mine" : ""}"><span>${i + 1}</span><span>${r.name}</span><span>${r.total}</span></div>`)
+      .join("");
+    const topAppRows = insertPlayerIntoTop10(TOP_10_APPEARANCES, apps, state.player.name || "You")
+      .map((r, i) => `<div class="top10-row${r.mine ? " mine" : ""}"><span>${i + 1}</span><span>${r.name}</span><span>${r.total}</span></div>`)
+      .join("");
+
     const radarId = "career-radar";
     el.innerHTML = `
       <div class="career-stats-grid">
-        <div class="cs-box"><div class="cs-num">${state.totalGoals}</div><div class="cs-lab">Goals</div></div>
-        <div class="cs-box"><div class="cs-num">${state.totalApps}</div><div class="cs-lab">Apps</div></div>
-        <div class="cs-box"><div class="cs-num">${state.totalAssists}</div><div class="cs-lab">Assists</div></div>
+        <div class="cs-box"><div class="cs-num">${g}</div><div class="cs-lab">Goals</div></div>
+        <div class="cs-box"><div class="cs-num">${apps}</div><div class="cs-lab">Apps</div></div>
+        <div class="cs-box"><div class="cs-num">${a}</div><div class="cs-lab">Assists</div></div>
         <div class="cs-box"><div class="cs-num">${state.leagueGoals}</div><div class="cs-lab">League</div></div>
+        <div class="cs-box"><div class="cs-num">${state.intlGoals}</div><div class="cs-lab">Intl Goals</div></div>
         <div class="cs-box"><div class="cs-num">${state.teamCleanSheets}</div><div class="cs-lab">Clean Sheets</div></div>
-        <div class="cs-box"><div class="cs-num">${state.totalYellow}/${state.totalRed}</div><div class="cs-lab">Y/R</div></div>
       </div>
       <div class="cs-radar"><canvas id="${radarId}" width="240" height="180"></canvas></div>
+      <div class="cs-section-title">Averages</div>
+      <div class="career-stats-grid">
+        <div class="cs-box"><div class="cs-num">${avgGoals}</div><div class="cs-lab">Goals / Season</div></div>
+        <div class="cs-box"><div class="cs-num">${avgApps}</div><div class="cs-lab">Apps / Season</div></div>
+        <div class="cs-box"><div class="cs-num">${gpg}</div><div class="cs-lab">Goals / Game</div></div>
+        <div class="cs-box"><div class="cs-num">${apg}</div><div class="cs-lab">Assists / Game</div></div>
+        <div class="cs-box"><div class="cs-num">${gRate}%</div><div class="cs-lab">To 1000</div></div>
+        <div class="cs-box"><div class="cs-num">${state.bestRating}</div><div class="cs-lab">Best Rating</div></div>
+      </div>
+      <div class="cs-section-title">All-Time Records</div>${recordsHtml}
+      <div class="cs-section-title">Top Scorers</div>
+      <div class="top10-table">${topGoalRows}</div>
+      <div class="cs-section-title">Top Assists</div>
+      <div class="top10-table">${topAssistRows}</div>
+      <div class="cs-section-title">Top Appearances</div>
+      <div class="top10-table">${topAppRows}</div>
       <div class="cs-section-title">Trophies</div>${trophyHtml}
       <div class="cs-section-title">Awards</div>${awardsHtml}
       <div class="cs-section-title">International</div>${intlHtml}`;
@@ -2722,6 +2814,19 @@
       const canvas = document.getElementById(radarId);
       if (canvas && state.attrs) drawRadarChart(canvas, state.attrs);
     });
+  }
+
+  function insertPlayerIntoTop10(list, total, name) {
+    const copy = list.map((r) => ({ ...r, mine: false }));
+    if (total > 0) {
+      const idx = copy.findIndex((r) => total > r.total);
+      if (idx !== -1) {
+        copy.splice(idx, 0, { name, total, mine: true });
+      } else {
+        copy.push({ name, total, mine: true });
+      }
+    }
+    return copy.slice(0, 10);
   }
 
   function renderProfile() {
@@ -2813,6 +2918,14 @@
     if (show) renderProfile();
   }
 
+  function switchCareerTab(tab) {
+    document.querySelectorAll(".career-tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === tab));
+    document.querySelectorAll(".career-panel").forEach((p) => p.classList.toggle("active", p.dataset.tab === tab));
+    if (tab === "profile") renderProfile();
+    if (tab === "stats") renderCareerStats();
+    if (tab === "history") renderCareerLog();
+  }
+
   function renderCareerHeader() {
     document.getElementById("career-season").textContent = `SEASON ${state.season}`;
     document.getElementById("hdr-age").textContent = state.age;
@@ -2820,8 +2933,6 @@
     document.getElementById("hdr-club").textContent = state.club;
     const pos = POSITIONS[state.position] || POSITIONS.ST;
     document.getElementById("hdr-position").innerHTML = `${pos.label} <span class="career-pos">${state.position}</span>`;
-    document.getElementById("hdr-contract").innerHTML = `${state.contractYears}yr <span class="career-contract">${state.contractSignedAt ? "S" + state.contractSignedAt : "new"}</span>`;
-    document.getElementById("hdr-rep").textContent = `${state.reputationTier} (${state.reputation})`;
     const pct = clamp((state.totalGoals / LEVERS.goalTarget) * 100, 0, 100);
     document.getElementById("goal-progress-fill").style.width = pct + "%";
     document.getElementById("goal-progress-label").textContent = `${state.totalGoals} / ${LEVERS.goalTarget} career goals`;
@@ -2864,8 +2975,21 @@
     const intlHtml = intl ? `<div class="stat-box"><div class="sb-num">${intl.goals}</div><div class="sb-lab">England</div></div>` : "";
     const honoursHtml = (sd.honours.length || sd.awards.length)
       ? `<div class="season-honours">${sd.honours.map((h) => `<span class="hon-badge title">🏆 ${h}</span>`).join("")}${sd.awards.map((a) => `<span class="hon-badge award">🎖 ${a}</span>`).join("")}</div>` : "";
+    const seasonSummary = `
+      <div class="season-summary">
+        <div class="summary-row">
+          <span class="summary-label">Season total</span>
+          <span class="summary-val">${sd.goals} goals · ${sd.assists} assists · ${sd.apps} apps</span>
+        </div>
+        ${intl ? `<div class="summary-row"><span class="summary-label">International</span><span class="summary-val">${intl.caps} caps · ${intl.goals} goals</span></div>` : ""}
+        <div class="summary-row">
+          <span class="summary-label">Career total</span>
+          <span class="summary-val">${state.totalGoals} goals · ${state.totalAssists} assists · ${state.totalApps} apps</span>
+        </div>
+      </div>`;
     box.innerHTML = `
       <div class="result-banner ${perfClass(sd.perfTier)}">${sd.perfTier} season — finished ${ordinal(sd.pos)} (${sd.trajectory})${sd.champion === state.club ? " 🏆" : ""}</div>
+      ${seasonSummary}
       ${honoursHtml}
       <div class="stat-grid">
         <div class="stat-box"><div class="sb-num">${sd.goals}</div><div class="sb-lab">Goals</div></div>
@@ -3659,17 +3783,25 @@
     document.getElementById("btn-spin").addEventListener("click", spin);
     document.getElementById("btn-accept").addEventListener("click", accept);
     document.getElementById("btn-reroll").addEventListener("click", reroll);
+    const mSpin = document.getElementById("btn-spin-mobile");
+    if (mSpin) mSpin.addEventListener("click", spin);
+    const mAccept = document.getElementById("btn-accept-mobile");
+    if (mAccept) mAccept.addEventListener("click", accept);
+    const mReroll = document.getElementById("btn-reroll-mobile");
+    if (mReroll) mReroll.addEventListener("click", reroll);
     document.getElementById("btn-confirm-career").addEventListener("click", startCareer);
     const btnProfile = document.getElementById("btn-profile");
     const btnCloseProfile = document.getElementById("btn-close-profile");
-    if (btnProfile) btnProfile.addEventListener("click", () => toggleProfile(true));
-    if (btnCloseProfile) btnCloseProfile.addEventListener("click", () => toggleProfile(false));
+    if (btnProfile) btnProfile.addEventListener("click", () => switchCareerTab("profile"));
+    if (btnCloseProfile) btnCloseProfile.addEventListener("click", () => switchCareerTab("season"));
+    document.querySelectorAll(".career-tab").forEach((t) =>
+      t.addEventListener("click", () => switchCareerTab(t.dataset.tab)));
     document.querySelectorAll(".btn-play-again").forEach((b) => b.addEventListener("click", () => {
       clearSave();
       document.getElementById("career-log").innerHTML = "";
       document.getElementById("season-result").innerHTML = "";
       document.getElementById("continue-box").style.display = "none";
-      toggleProfile(false);
+      switchCareerTab("season");
       showScreen("screen-welcome");
     }));
     wireAccount();
