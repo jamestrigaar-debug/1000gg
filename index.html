@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Football DNA Simulator ⚽</title>
+<style>
+  :root {
+    --bg: #04120b;
+    --bg2: #0a1f15;
+    --card: #0f2b1d;
+    --card2: #163a27;
+    --line: #1e4d35;
+    --txt: #f4fff8;
+    --muted: #7b9b8b;
+    --accent: #00d06c;
+    --accent2: #38b6ff;
+    --gold: #f5e050;
+    --rare: #c47bff;
+    --bad: #ff6b7a;
+    --radius: 12px;
+    --shadow: 0 2px 8px rgba(0,0,0,.45);
+    --tab-active: #0a291a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, "Arial Narrow", sans-serif;
+    background:
+      repeating-linear-gradient(0deg, rgba(0,0,0,0.08) 0px, rgba(0,0,0,0.08) 1px, transparent 1px, transparent 4px),
+      radial-gradient(1200px 600px at 50% -10%, #0d3d25 0%, var(--bg) 60%);
+    color: var(--txt);
+    min-height: 100vh;
+    line-height: 1.45;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 16px 14px 100px; }
+  .screen { display: none; animation: fade .25s ease; }
+  .screen.active { display: block; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  @media (max-width: 600px) { .wrap { padding: 12px 12px 120px; } }
+
+  h1, h2, h3 { margin: 0 0 .4em; }
+  .muted { color: var(--muted); }
+
+  .btn {
+    display: inline-block;
+    border: 1px solid var(--line);
+    background: var(--card2);
+    color: var(--txt);
+    padding: 11px 18px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background .12s, border-color .12s, transform .05s;
+  }
+  .btn:hover { background: #24304a; border-color: var(--accent2); }
+  .btn:active { transform: translateY(0); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn.primary { background: var(--accent); border-color: transparent; color: #052211; }
+  .btn.primary:hover { background: #4ce29a; }
+  .card, .panel, .season-report, .decision { box-shadow: var(--shadow); border: 1px solid var(--line); }
+  .btn.ghost { background: transparent; }
+  .btn.big { font-size: 16px; padding: 14px 26px; }
+  .btn.danger { border-color: var(--bad); color: var(--bad); }
+  @media (max-width: 600px) { .btn { padding: 12px 16px; font-size: 14px; } }
+
+  /* ---------- Welcome ---------- */
+  .hero { text-align: center; padding: 48px 14px; }
+  .hero h1 { font-size: clamp(38px, 7vw, 72px); letter-spacing: 2px; line-height: .95;
+    font-family: Impact, "Arial Black", "Helvetica Neue", sans-serif; text-transform: uppercase;
+    color: var(--txt); text-shadow: 3px 3px 0 #1a4a2e; }
+  .hero .sub { font-size: 16px; color: var(--muted); margin-bottom: 8px; }
+  .barclays-strip { height: 8px; background: linear-gradient(90deg, var(--accent), var(--accent2), var(--gold)); margin: 16px 0; border-radius: 4px; }
+  .retro-badge { display: inline-block; background: var(--accent2);
+    color: #04223f; font-weight: 800; padding: 4px 12px; border-radius: 6px;
+    text-transform: uppercase; letter-spacing: 1px; font-size: 11px; margin-bottom: 10px; }
+  .beta-badge { display: inline-block; background: var(--gold);
+    color: #2a1c00; font-weight: 900; padding: 4px 14px; border-radius: 6px;
+    text-transform: uppercase; letter-spacing: 2px; font-size: 11px; margin-left: 8px; }
+  .hero .goal { display: inline-block; margin: 14px 0 24px; padding: 8px 16px; border: 1px solid var(--gold);
+    color: var(--gold); border-radius: 30px; font-weight: 700; font-size: 14px; }
+  .leaderboard-teaser { background: var(--card); border: 2px solid var(--gold); border-radius: 10px; padding: 14px 16px; margin: 18px auto; max-width: 420px; }
+  .lt-title { color: var(--gold); font-weight: 900; font-size: 14px; letter-spacing: 2px; margin-bottom: 4px; }
+  .lt-body { font-size: 13px; color: var(--muted); }
+  .lt-soon { color: var(--gold); font-weight: 700; }
+  @media (max-width: 600px) { .hero { padding: 28px 10px; } }
+  .welcome-footer { margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line); display: flex; gap: 18px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .footer-link { color: var(--accent2); text-decoration: none; font-weight: 600; font-size: 15px; }
+  .footer-link:hover { color: var(--accent); text-decoration: underline; }
+  .bmc-wrap { display: flex; align-items: center; }
+  .modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; }
+  .modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.7); }
+  .modal-panel { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; width: min(420px, 92%); box-shadow: var(--shadow); }
+  .modal-panel .field { margin-bottom: 14px; }
+  .modal-panel label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .modal-panel input { background: var(--bg2); border: 1px solid var(--line); color: var(--txt); padding: 10px; border-radius: 8px; font-size: 14px; width: 100%; }
+  .copy-row { display: flex; gap: 8px; align-items: center; }
+  .copy-row input { flex: 1; }
+  .copy-row .btn { padding: 10px 12px; font-size: 13px; }
+  #achievements-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+  .ach-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; font-size: 13px; border: 1px solid var(--line); background: var(--bg2); }
+  .ach-row.unlocked { border-color: var(--gold); background: #2a1c00; }
+  .ach-row.locked { opacity: .55; }
+  .ach-name { font-weight: 700; min-width: 150px; }
+  .ach-row.unlocked .ach-name { color: var(--gold); }
+  .ach-desc { flex: 1; color: var(--muted); }
+  .ach-rare { background: var(--rare); color: #fff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; }
+  .features { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 30px; }
+  .feature { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 14px 16px; width: 220px; text-align: left; }
+  .feature b { color: var(--accent2); }
+
+  /* ---------- Genesis ---------- */
+  .genesis-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+  .pill { background: var(--card); border: 1px solid var(--line); padding: 6px 12px; border-radius: 30px; font-weight: 700; font-size: 13px; }
+  .pill .accent { color: var(--accent); }
+  .genesis-grid { display: grid; grid-template-columns: 1fr 300px; gap: 14px; }
+  @media (max-width: 880px) { .genesis-grid { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+  .attr-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+  .attr-head h2 { color: var(--gold); font-size: 22px; }
+  #attr-desc { font-size: 14px; }
+  #roll-result { min-height: 140px; margin: 12px 0; }
+  .placeholder { color: var(--muted); text-align: center; padding: 40px 10px; border: 1px dashed var(--line); border-radius: 12px; }
+
+  .spinner-team { text-align: center; font-size: 26px; font-weight: 800; padding: 46px 0; animation: pulse .15s infinite alternate; }
+  .spinner-year { display: block; font-size: 15px; color: var(--accent2); }
+  @keyframes pulse { from { opacity: .7; } to { opacity: 1; } }
+
+  .genesis-actions-bar {
+    display: none;
+  }
+  @media (max-width: 600px) {
+    .genesis-actions-bar {
+      display: flex;
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      background: var(--bg);
+      border-top: 1px solid var(--line);
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      gap: 10px;
+      z-index: 50;
+      justify-content: stretch;
+    }
+    .genesis-actions-bar .btn { flex: 1; justify-content: center; }
+    .genesis-actions { display: none; }
+    #roll-result { min-height: 100px; }
+  }
+
+  .roll-landed { margin-bottom: 12px; }
+  .year-chip { background: var(--accent2); color: #04223f; padding: 1px 8px; border-radius: 6px; font-weight: 700; font-size: 13px; }
+  .roster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  @media (max-width: 600px) { .roster-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; } }
+  .donor-card { position: relative; text-align: left; background: var(--card2); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 10px 8px; cursor: pointer; color: var(--txt); transition: .12s; }
+  @media (max-width: 600px) { .donor-card { padding: 8px 8px 6px; } }
+  .donor-card:hover { border-color: var(--accent2); transform: translateY(-2px); }
+  .donor-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+  .donor-card.used { opacity: .45; cursor: not-allowed; filter: grayscale(.6); }
+  .donor-card.used:hover { border-color: var(--line); transform: none; }
+  .used-tag { color: var(--bad); font-size: 11px; font-weight: 800; margin-left: 4px; }
+  .donor-badge { position: absolute; top: 6px; right: 8px; font-weight: 800; color: var(--gold); font-size: 16px; }
+  .donor-name { font-weight: 700; font-size: 14px; padding-right: 24px; }
+  .donor-value { color: var(--accent); font-size: 13px; margin: 2px 0; }
+  .donor-mini { color: var(--muted); font-size: 11px; }
+  .donor-attrs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin-top: 6px; font-size: 11px; }
+  .donor-attr { display: flex; justify-content: space-between; background: rgba(0,0,0,0.2); padding: 2px 5px; border-radius: 4px; color: var(--muted); }
+  .donor-attr.highlight { color: var(--accent); background: rgba(0,255,170,0.12); }
+  .donor-attr b { font-weight: 700; }
+  .selected-donor { margin-top: 12px; padding: 10px 12px; background: #14361f; border: 1px solid var(--accent); border-radius: 8px; }
+
+  .genesis-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+
+  .preview h3 { color: var(--accent2); font-size: 15px; }
+  .prev-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .prev-row.empty { color: var(--muted); }
+  .prev-val { font-weight: 700; color: var(--accent); }
+  .prev-src { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
+
+  /* ---------- Confirm ---------- */
+  .rating-hero { text-align: center; padding: 14px; }
+  .rating-num { font-size: 70px; font-weight: 900; line-height: 1;
+    background: linear-gradient(135deg, var(--gold), #ff9d3c); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .rating-label { letter-spacing: 3px; color: var(--muted); font-size: 13px; }
+  .playstyle-chip { display: inline-block; margin: 10px 6px 0; background: var(--accent2); color: #04223f; padding: 4px 14px; border-radius: 30px; font-weight: 700; }
+  .ment-chip { display: inline-block; margin-top: 10px; background: var(--card2); border: 1px solid var(--line); padding: 6px 14px; border-radius: 30px; font-size: 13px; }
+  .ment-chip.rare { border-color: var(--rare); color: var(--rare); }
+  .dna-table, .dna-key { margin-top: 16px; }
+  .dna-row { display: grid; grid-template-columns: 130px 70px 1fr; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .dna-k { color: var(--muted); }
+  .dna-v { font-weight: 800; color: var(--accent); }
+  .dna-s { color: var(--muted); font-size: 12px; text-align: right; }
+  .name-field { margin: 18px 0; }
+  .name-field input { width: 100%; padding: 14px; font-size: 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2); color: var(--txt); }
+
+  /* ---------- Career ---------- */
+  .career-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; background: var(--card); border: 2px solid var(--accent); border-radius: 10px; padding: 12px 14px; }
+  .career-head h2 { color: var(--gold); font-size: 22px; font-family: "Arial Black", "Arial Narrow", sans-serif; letter-spacing: 1px; margin: 0; }
+  .hdr-stats { display: flex; gap: 8px; flex-wrap: wrap; }
+  .hdr-stat { background: var(--bg2); border: 1px solid var(--line); padding: 5px 10px; border-radius: 6px; font-size: 13px; font-weight: 700; }
+  .hdr-stat b { color: var(--accent); margin-left: 4px; }
+  .goal-progress { margin: 12px 0; background: var(--bg2); border: 1px solid var(--line); border-radius: 30px; height: 20px; position: relative; overflow: hidden; }
+  #goal-progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--gold)); transition: width .6s ease; }
+  #goal-progress-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+
+  .career-tabs { display: flex; gap: 4px; margin-top: 12px; border-bottom: 1px solid var(--line); }
+  .career-tab { flex: 1; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--muted); padding: 10px 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .career-tab.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--tab-active); }
+  .career-panels { margin-top: 14px; }
+  .career-panel { display: none; }
+  .career-panel.active { display: block; }
+  .career-panel .panel { margin-bottom: 12px; }
+  @media (max-width: 600px) { .career-tab { font-size: 12px; padding: 10px 4px; } }
+
+  .career-grid { display: grid; grid-template-columns: 1fr 340px; gap: 18px; margin-top: 16px; }
+  @media (max-width: 880px) { .career-grid { grid-template-columns: 1fr; } }
+  #career-stats-panel h3 { color: var(--gold); font-size: 15px; margin-bottom: 12px; }
+  .career-stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+  @media (max-width: 600px) { .career-stats-grid { grid-template-columns: repeat(2, 1fr); } }
+
+  .profile-panel { margin-top: 14px; margin-bottom: 14px; }
+  .profile-panel h3 { color: var(--gold); font-size: 16px; margin-bottom: 14px; }
+  .profile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .profile-card { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .profile-card .pc-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .profile-card .pc-val { font-size: 20px; font-weight: 800; color: var(--accent); margin: 4px 0; }
+  .profile-card .pc-val.rare { color: var(--rare); }
+  .profile-card .pc-meta { font-size: 11px; color: var(--muted); }
+  .profile-section { margin-top: 14px; }
+  .profile-section h4 { color: var(--accent2); font-size: 14px; margin-bottom: 8px; }
+  .profile-attrs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .profile-attrs div { background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; text-align: center; font-size: 12px; }
+  .profile-attrs b { display: block; font-size: 18px; color: var(--accent); margin-top: 2px; }
+  .profile-derived { margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .profile-radar { display: flex; justify-content: center; margin-top: 16px; }
+  .profile-radar canvas { width: 220px; height: 170px; }
+  @media (max-width: 600px) { .profile-attrs { grid-template-columns: repeat(2, 1fr); } .profile-grid { grid-template-columns: repeat(2, 1fr); } }
+  .cs-box { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 6px; text-align: center; }
+  .cs-num { font-size: 20px; font-weight: 900; color: var(--accent); }
+  .cs-lab { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .cs-radar { display: flex; justify-content: center; margin: 10px 0; }
+  .cs-radar canvas { width: 180px; height: 140px; }
+  .cs-honours { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .cs-hon { background: var(--bg2); border: 1px solid var(--gold); color: var(--gold); border-radius: 30px; padding: 5px 12px; font-size: 11px; font-weight: 700; }
+  .cs-hon.award { border-color: var(--accent); color: var(--accent); }
+  .cs-hon.intl { border-color: #ff8a3c; color: #ff8a3c; }
+  .cs-section-title { font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+  .cs-empty { font-size: 12px; color: var(--muted); font-style: italic; }
+
+  .records-table, .top10-table { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 14px; font-size: 13px; }
+  .rec-row, .top10-row { display: grid; grid-template-columns: 1fr 1.5fr 60px 60px; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); align-items: center; }
+  .top10-row { grid-template-columns: 28px 1fr 60px; }
+  .rec-row:last-child, .top10-row:last-child { border-bottom: none; }
+  .rec-row.head { font-weight: 700; color: var(--muted); background: var(--card); }
+  .top10-row.mine { background: #14361f; color: var(--accent); }
+  .top10-row span:first-child { color: var(--muted); font-weight: 700; }
+  .top10-row span:last-child { text-align: right; font-weight: 700; }
+  .rec-row span:last-child { text-align: right; font-weight: 700; color: var(--accent); }
+  @media (max-width: 600px) { .rec-row { grid-template-columns: 1fr 1fr 55px 55px; font-size: 12px; padding: 8px; } .top10-row { font-size: 12px; } }
+
+  .simming { text-align: center; padding: 30px; color: var(--accent2); font-weight: 700; animation: pulse .4s infinite alternate; }
+  .season-prompt { margin-bottom: 12px; color: var(--muted); }
+  .result-banner { padding: 10px 14px; border-radius: 10px; font-weight: 700; margin-bottom: 12px; }
+  .result-banner.great { background: #123a22; color: var(--accent); }
+  .result-banner.good { background: #14304a; color: var(--accent2); }
+  .result-banner.ok { background: var(--card2); }
+  .result-banner.bad { background: #3a2a14; color: var(--gold); }
+  .result-banner.awful { background: #3a1620; color: var(--bad); }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; }
+  .stat-box { background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; text-align: center; }
+  .sb-num { font-size: 26px; font-weight: 900; color: var(--accent); }
+  .sb-lab { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+
+  .decision { background: linear-gradient(180deg, var(--card2), var(--card)); border: 1px solid var(--accent2); border-radius: 12px; padding: 16px; }
+  .decision.milestone-event { border-color: var(--gold); box-shadow: 0 0 24px rgba(246,196,83,.25); }
+  .decision-tag { display: inline-block; font-size: 11px; letter-spacing: 2px; color: var(--accent2); border: 1px solid var(--accent2); padding: 2px 10px; border-radius: 20px; margin-bottom: 10px; }
+  .milestone-event .decision-tag { color: var(--gold); border-color: var(--gold); }
+  .decision-text { font-size: 16px; margin-bottom: 14px; }
+  .decision-choices { display: flex; flex-direction: column; gap: 8px; }
+  .btn.choice { text-align: left; }
+  .contract-offer { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
+  .contract-club { font-weight: 800; font-size: 18px; color: var(--accent); }
+  .contract-terms { font-size: 22px; font-weight: 900; margin: 4px 0; }
+  .contract-meta { color: var(--muted); font-size: 12px; }
+  .contract-risk { font-size: 12px; margin-top: 4px; color: var(--muted); }
+  .transfer { background: var(--card2); border: 1px solid var(--gold); border-radius: 12px; padding: 16px; }
+  .offers { display: grid; gap: 8px; margin: 12px 0; }
+  .btn.offer { text-align: left; }
+  .offer-club { font-weight: 800; }
+  .offer-meta { color: var(--muted); font-size: 12px; }
+  .offer-contract { color: var(--gold); font-size: 11px; font-weight: 700; margin-top: 4px; }
+  .offer-wage { color: var(--accent); font-size: 11px; font-weight: 700; margin-top: 2px; }
+  .offer-risk { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .log-panel h3 { color: var(--accent2); font-size: 15px; }
+  #career-log { max-height: 560px; overflow-y: auto; padding-right: 6px; }
+  .log-entry { font-size: 13px; padding: 8px 10px; border-radius: 8px; margin-bottom: 6px; background: var(--bg2); border-left: 3px solid var(--line); }
+  .log-entry.milestone { border-left-color: var(--gold); }
+  .log-entry.decision { border-left-color: var(--accent2); background: #10243a; }
+  .log-entry.transfer { border-left-color: var(--rare); }
+  .log-entry.intl { border-left-color: #ff8a3c; }
+  .log-entry.great { border-left-color: var(--accent); }
+  .log-entry.bad, .log-entry.awful { border-left-color: var(--bad); }
+  .log-entry.info { border-left-color: var(--accent); color: #b8d4e8; font-size: 12px; }
+  .log-entry.achievement { border-left-color: var(--gold); background: #2a1c00; color: var(--gold); font-weight: 700; }
+
+  /* ---------- Legacy ---------- */
+  .legacy { text-align: center; padding: 30px 10px; }
+  .legacy-status { font-size: clamp(26px, 5vw, 44px); font-weight: 900; letter-spacing: 1px; }
+  .legacy-status.god { background: linear-gradient(135deg, var(--gold), #ff7b3c); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .legacy-status.legend { color: var(--accent2); }
+  .legacy-big { font-size: 90px; font-weight: 900; color: var(--accent); line-height: 1; margin: 10px 0; }
+  .legacy-big-lab { color: var(--muted); letter-spacing: 3px; }
+  .legacy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 28px 0; }
+  .leg-box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .leg-num { font-size: 28px; font-weight: 900; color: var(--gold); }
+  .leg-lab { font-size: 12px; color: var(--muted); }
+  .dna-summary { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 10px 0 18px; }
+  .tag { background: var(--card2); border: 1px solid var(--line); padding: 5px 14px; border-radius: 30px; font-weight: 700; font-size: 13px; }
+  .tag.rare { border-color: var(--rare); color: var(--rare); }
+  .legacy-dna { max-width: 620px; margin: 0 auto; text-align: left; }
+
+  .footer-note { text-align: center; color: var(--muted); font-size: 12px; margin-top: 40px; }
+
+  /* ---------- Alpha 1.1 additions ---------- */
+  .chooser-label { color: var(--muted); font-size: 13px; margin: 10px 0 6px; }
+  .attr-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .attr-chip { background: var(--card2); border: 1px solid var(--line); color: var(--txt);
+    padding: 8px 14px; border-radius: 30px; font-weight: 700; font-size: 13px; cursor: pointer; transition: .12s; }
+  .attr-chip:hover { border-color: var(--accent2); transform: translateY(-1px); }
+  .attr-chip.active { background: var(--accent2); color: #04223f; border-color: transparent; }
+  .donor-pos { position: absolute; bottom: 8px; right: 8px; font-size: 10px; font-weight: 700; color: var(--muted); }
+  .legend-chip { display: inline-block; background: var(--gold); color: #2a1c00; font-size: 10px;
+    font-weight: 800; padding: 0 5px; border-radius: 5px; vertical-align: middle; }
+  .academy-card { background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin: 10px 0; text-align: center; }
+  .academy-card.tierWorldClass { border-color: var(--gold); }
+  .academy-card.tierStrong { border-color: var(--accent2); }
+  .academy-tier { font-size: 20px; font-weight: 900; color: var(--accent); }
+  .academy-flavor { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .acad-chip { display: inline-block; margin-top: 10px; background: var(--card2); border: 1px dashed var(--gold); color: var(--gold); padding: 5px 14px; border-radius: 30px; font-size: 12px; }
+  .agent-chip { display: inline-block; margin-top: 8px; background: var(--card2); border: 1px solid var(--accent); color: var(--accent); padding: 5px 14px; border-radius: 30px; font-size: 12px; }
+  .longevity-chip { display: inline-block; margin-top: 8px; background: var(--card2); border: 1px dashed var(--gold); color: var(--gold); padding: 5px 14px; border-radius: 30px; font-size: 12px; }
+  .preview-hint { margin-top: 12px; font-size: 11px; color: var(--muted); font-style: italic; border-top: 1px dashed var(--line); padding-top: 10px; }
+  .scout-feedback { margin-top: 10px; padding: 10px 12px; background: #14233d; border: 1px dashed var(--accent2); border-radius: 8px; font-size: 13px; color: var(--txt); line-height: 1.4; }
+  .scout-feedback strong { color: var(--accent); }
+  .synergy-block { margin-top: 18px; }
+  .synergy-block h3 { color: var(--accent2); font-size: 15px; }
+  .mutation-block { margin-top: 14px; }
+  .mutation-block h3 { color: var(--gold); font-size: 15px; }
+  .pillars-block { margin-top: 18px; }
+  .pillars-block h3 { color: var(--gold); font-size: 15px; margin-bottom: 8px; }
+  .pillar-row { display: flex; align-items: center; gap: 10px; font-size: 12px; margin-bottom: 5px; }
+  .pillar-k { width: 110px; color: var(--text2); }
+  .pillar-bar { flex: 1; height: 8px; background: var(--bg2); border-radius: 4px; overflow: hidden; }
+  .pillar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+  .pillar-v { width: 28px; text-align: right; color: var(--text); }
+  .season-decision { border-left-color: var(--gold); }
+  .syn-note { font-size: 13px; padding: 6px 10px; border-radius: 8px; margin-bottom: 6px; background: var(--bg2); border-left: 3px solid var(--line); }
+  .syn-note.good { border-left-color: var(--accent); }
+  .syn-note.bad { border-left-color: var(--bad); color: #ffb0b8; }
+
+  .season-summary { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+  .summary-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--line); }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-label { color: var(--muted); }
+  .summary-val { font-weight: 700; color: var(--txt); }
+  .season-honours { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .hon-badge { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--line); }
+  .hon-badge.title { color: var(--gold); border-color: var(--gold); }
+  .hon-badge.award { color: var(--accent2); border-color: var(--accent2); }
+  @media (max-width: 600px) { .summary-row { flex-direction: column; gap: 2px; } }
+
+  .league-details { margin-top: 14px; }
+  .league-details summary { cursor: pointer; color: var(--accent2); font-weight: 700; font-size: 13px; padding: 6px 0; }
+  .league-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; font-family: "Arial Black", "Arial Narrow", sans-serif; }
+  .league-table th, .league-table td { padding: 5px 6px; text-align: center; border-bottom: 1px solid rgba(0,0,0,0.25); }
+  .league-table th { background: var(--accent); color: #052211; font-weight: 900; text-transform: uppercase; font-size: 11px; }
+  .league-table td { background: var(--bg2); }
+  .league-table td.lt-team { text-align: left; font-weight: 700; }
+  .league-table td.lt-pts { font-weight: 900; color: var(--gold); }
+  .league-table tr.mine td { background: rgba(0, 208, 108, 0.18); color: var(--accent); }
+  .league-table tr.mine td.lt-team { color: var(--accent); }
+  .league-table tr.champ td:first-child { color: var(--gold); font-weight: 800; }
+  .league-table tr.ucl td:first-child { color: var(--accent2); }
+  .league-table tr.uel td:first-child { color: var(--accent); }
+  .league-table tr.releg td:first-child { color: var(--bad); }
+
+  .honours-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 10px; }
+  .hon-item { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; align-items: center; gap: 8px; }
+  .hon-ic { font-size: 20px; }
+  .hon-count { font-weight: 900; color: var(--gold); font-size: 18px; }
+  .hon-name { font-size: 12px; color: var(--muted); }
+  .legacy-section { max-width: 720px; margin: 24px auto 0; text-align: left; }
+  .legacy-section h3 { color: var(--accent2); font-size: 16px; }
+  .legacy-summary-text { font-size: 15px; line-height: 1.6; color: var(--txt); background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .legacy-summary-text .highlight { color: var(--accent); font-weight: 700; }
+  .clubs-table td.lt-pts { color: var(--accent); }
+  .history-list { list-style: none; padding: 0; margin: 8px 0 0; }
+  .history-list li { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .hist-season { display: inline-block; min-width: 34px; color: var(--muted); font-weight: 700; }
+  .epilogue { background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 14px; font-size: 14px; line-height: 1.6; }
+  .epilogue div { margin: 2px 0; }
+  .decision.endcareer { border-color: var(--gold); box-shadow: 0 0 24px rgba(246,196,83,.2); }
+  .difficulty-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; max-width: 480px; margin: 0 auto; }
+  .difficulty-card { flex-direction: column; padding: 18px 14px; text-align: center; }
+  .difficulty-card .diff-name { font-size: 18px; font-weight: 800; letter-spacing: 1px; margin-bottom: 4px; }
+  .difficulty-card .diff-detail { font-size: 12px; color: var(--muted); }
+  .difficulty-card:hover { border-color: var(--accent); }
+  .club-assigned { margin-top: 16px; padding: 14px; background: var(--card2); border: 1px solid var(--line); border-radius: 10px; text-align: center; }
+  .club-assigned-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .club-assigned-name { font-size: 22px; font-weight: 800; color: var(--accent); }
+  .club-assigned-tier { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .club-offers { margin-top: 16px; }
+  .club-offers-label { font-size: 14px; margin-bottom: 10px; color: var(--muted); }
+  .club-offers-grid { display: flex; flex-direction: column; gap: 10px; }
+  .club-offer-card { display: block; text-align: left; padding: 14px; background: var(--card2); border: 2px solid var(--line); border-radius: 10px; cursor: pointer; transition: border-color .15s; }
+  .club-offer-card:hover { border-color: var(--accent); }
+  .club-offer-card.selected { border-color: var(--accent); box-shadow: 0 0 12px rgba(58,134,255,.2); }
+  .club-offer-name { font-size: 18px; font-weight: 700; }
+  .club-offer-tier { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .club-offer-role { font-size: 12px; color: var(--accent2); margin-top: 4px; }
+  .club-offer-manager { font-size: 13px; color: var(--text); margin-top: 8px; font-weight: 600; }
+  .club-offer-tags { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+  .club-offer-tags .tag { font-size: 10px; padding: 2px 6px; background: var(--card); border: 1px solid var(--line); border-radius: 4px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .club-offer-project { font-size: 12px; color: var(--muted); margin-top: 4px; font-style: italic; }
+  .club-assigned-manager { font-size: 13px; color: var(--text); margin-top: 8px; font-weight: 600; }
+  .club-assigned-project { font-size: 12px; color: var(--muted); margin-top: 4px; font-style: italic; }
+  .confirm-body { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 700px) { .confirm-body { grid-template-columns: 1fr; } }
+  .radar-wrap { display: flex; justify-content: center; align-items: center; min-height: 240px; }
+  .traits-block { margin-top: 14px; }
+  .traits-block h3 { color: var(--accent2); font-size: 15px; margin-bottom: 8px; }
+  .traits-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .trait-chip { display: inline-block; background: var(--card2); border: 1px solid var(--line); padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: help; }
+  .trait-chip small { font-size: 9px; font-weight: 900; margin-left: 3px; opacity: 0.8; }
+  .trait-tier-1 { border-color: #cd7f32 !important; color: #cd7f32 !important; }
+  .trait-tier-2 { border-color: #c0c0c0 !important; color: #c0c0c0 !important; }
+  .trait-tier-3 { border-color: #f5e050 !important; color: #f5e050 !important; box-shadow: 0 0 8px rgba(245, 224, 80, 0.15); }
+  .legacy-radar { display: flex; justify-content: center; margin-top: 18px; }
+  .roll-result { font-size: 28px; font-weight: 900; color: var(--accent); text-align: center; padding: 30px 0; }
+  .roll-placeholder { color: var(--muted); text-align: center; padding: 30px 0; font-style: italic; }
+  .career-pos { display: inline-block; background: var(--gold); color: #2a1c00; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 11px; margin-left: 4px; }
+  .career-contract { display: inline-block; background: var(--card2); border: 1px solid var(--line); padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px; color: var(--accent2); margin-left: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ================= SCREEN 1b: DIFFICULTY ================= -->
+  <section id="screen-difficulty" class="screen">
+    <div class="hero">
+      <h2>SELECT DIFFICULTY</h2>
+      <div class="sub" style="margin-bottom:24px">Choose your challenge level</div>
+      <div class="difficulty-grid">
+        <button class="btn difficulty-card btn-difficulty" data-difficulty="easy">
+          <div class="diff-name">EASY</div>
+          <div class="diff-detail">3 rerolls · all attributes visible</div>
+        </button>
+        <button class="btn difficulty-card btn-difficulty" data-difficulty="medium">
+          <div class="diff-name">MEDIUM</div>
+          <div class="diff-detail">1 reroll · all attributes visible</div>
+        </button>
+        <button class="btn difficulty-card btn-difficulty" data-difficulty="hard">
+          <div class="diff-name">HARD</div>
+          <div class="diff-detail">0 rerolls · all attributes visible</div>
+        </button>
+        <button class="btn difficulty-card btn-difficulty" data-difficulty="impossible">
+          <div class="diff-name">IMPOSSIBLE</div>
+          <div class="diff-detail">0 rerolls · names only, no attributes</div>
+        </button>
+      </div>
+      <div style="margin-top:20px"><button class="btn" onclick="document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById('screen-welcome').classList.add('active')">← Back</button></div>
+    </div>
+  </section>
+
+  <!-- ================= SCREEN 1c: SETUP ================= -->
+  <section id="screen-setup" class="screen">
+    <div class="hero">
+      <h2>SETUP YOUR CAREER</h2>
+      <div class="sub" style="margin-bottom:24px">Pick the era and rating mode</div>
+      <div class="setup-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:720px;margin:0 auto;text-align:left">
+        <div class="panel">
+          <h3 style="font-size:16px;color:var(--gold);margin-bottom:12px">Era</h3>
+          <div class="setup-options" id="setup-era-options">
+            <label class="setup-option"><input type="radio" name="setup-era" value="all" checked> All Eras (1992–2025)</label>
+            <label class="setup-option"><input type="radio" name="setup-era" value="classic"> Classic Era (1992–2004)</label>
+            <label class="setup-option"><input type="radio" name="setup-era" value="modern"> Modern Era (2005–2014)</label>
+            <label class="setup-option"><input type="radio" name="setup-era" value="recent"> Recent Era (2015–2024)</label>
+            <label class="setup-option"><input type="radio" name="setup-era" value="current"> Current Season (2025–26)</label>
+          </div>
+        </div>
+        <div class="panel">
+          <h3 style="font-size:16px;color:var(--gold);margin-bottom:12px">Rating Mode</h3>
+          <div class="setup-options" id="setup-mode-options">
+            <label class="setup-option"><input type="radio" name="setup-mode" value="peak" checked> Peak Rating</label>
+            <label class="setup-option"><input type="radio" name="setup-mode" value="at-time"> Rating at the Time</label>
+          </div>
+          <div class="muted" style="font-size:12px;margin-top:10px">Peak: donors always use their career-best attributes. At-the-time: attributes reflect the selected season.</div>
+        </div>
+      </div>
+      <div style="margin-top:24px">
+        <button class="btn primary big" id="btn-setup-continue">CONTINUE TO CREATION ▶</button>
+      </div>
+      <div style="margin-top:12px"><button class="btn" id="btn-setup-back">← Back</button></div>
+    </div>
+  </section>
+
+  <style>
+    .setup-options { display: flex; flex-direction: column; gap: 8px; }
+    .setup-option { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px; }
+    .setup-option:hover { border-color: var(--accent2); }
+    .setup-option input { margin: 0; }
+  </style>
+
+  <!-- ================= SCREEN 1: WELCOME ================= -->
+  <section id="screen-welcome" class="screen active">
+    <div class="hero">
+      <div class="retro-badge">Simulation Sports</div>
+      <div class="beta-badge">BETA</div>
+      <h1>FOOTBALL DNA SIMULATOR ⚽</h1>
+      <div class="barclays-strip"></div>
+      <div class="sub">Pick an era and a rating mode — then roll your country, build, and draft attributes from squads</div>
+      <div class="goal">🎯 GOAL: 1000 CAREER GOALS</div>
+      <div id="continue-box" style="display:none; margin-bottom: 14px;">
+        <button class="btn primary big" id="btn-continue">▶ CONTINUE CAREER</button>
+      </div>
+      <div><button class="btn primary big" id="btn-start">START CREATION</button></div>
+      <div class="hero-actions" style="margin-top: 16px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+        <button class="btn ghost" id="btn-account">Account</button>
+        <a href="https://x.com/JamesTrigaar" target="_blank" rel="noopener" class="btn ghost" id="btn-feedback">Help / Feedback</a>
+        <button class="btn ghost" id="btn-leaderboard" disabled>🏆 Leaderboard — Coming Soon</button>
+      </div>
+      <div class="sub" style="font-size:13px">Beta — era &amp; mode select · rolled country origins · multi-draft DNA · potential · longevity · dynamic events · international caps</div>
+      <div class="leaderboard-teaser">
+        <div class="lt-title">GLOBAL LEADERBOARD</div>
+        <div class="lt-body">Compare your 1000-goal legends against the world. <span class="lt-soon">Coming Soon</span></div>
+      </div>
+      <div class="features">
+        <div class="feature"><b>Era &amp; Mode</b><br/>Choose a classic/modern/recent era and Peak or At-the-Time ratings.</div>
+        <div class="feature"><b>Multi-Draft DNA</b><br/>Roll a country, academy, build &amp; position, then draft each attribute from a different squad.</div>
+        <div class="feature"><b>Country Origins</b><br/>Birthplace is rolled and shapes development speed, hidden traits, and career narrative.</div>
+        <div class="feature"><b>Full Career Sim</b><br/>Real league tables, honours, Ballon d'Ors, Golden Boots &amp; end-of-career events.</div>
+      </div>
+      <div class="welcome-footer">
+        <a href="https://x.com/JamesTrigaar" target="_blank" rel="noopener" class="footer-link">X / Twitter</a>
+        <a href="https://1000goals.co.uk" target="_blank" rel="noopener" class="footer-link">1000goals.co.uk</a>
+        <div class="bmc-wrap">
+          <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="trigaar" data-color="#FFDD00" data-emoji="" data-font="Cookie" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SCREEN 2: GENESIS ================= -->
+  <section id="screen-genesis" class="screen">
+    <div class="genesis-top">
+      <h2>CHARACTER CREATION</h2>
+      <div>
+        <span class="pill"><span class="accent" id="roll-counter">Roll 1 of 6</span></span>
+        <span class="pill">Rerolls: <span class="accent" id="reroll-count">3</span></span>
+      </div>
+    </div>
+    <div class="genesis-grid">
+      <div class="panel">
+        <div class="attr-head">
+          <h2 id="attr-name">Heading Ability</h2>
+        </div>
+        <div class="muted" id="attr-desc">Aerial threat — wins headers and attacks crosses.</div>
+        <div id="roll-result"><div class="placeholder">Press <strong>SPIN</strong> to begin.</div></div>
+        <div class="genesis-actions">
+          <button class="btn primary" id="btn-spin">🎲 SPIN</button>
+          <button class="btn primary" id="btn-accept" style="display:none">✓ ACCEPT</button>
+          <button class="btn" id="btn-reroll" style="display:none">↻ REROLL</button>
+        </div>
+      </div>
+      <div class="panel preview" id="player-preview"></div>
+    </div>
+    <div class="genesis-actions-bar">
+      <button class="btn primary" id="btn-spin-mobile">🎲 SPIN</button>
+      <button class="btn primary" id="btn-accept-mobile" style="display:none">✓ ACCEPT</button>
+      <button class="btn" id="btn-reroll-mobile" style="display:none">↻ REROLL</button>
+    </div>
+  </section>
+
+  <!-- ================= SCREEN 3: CONFIRM ================= -->
+  <section id="screen-confirm" class="screen">
+    <h2>PLAYER PROFILE</h2>
+    <div class="panel" id="confirm-card"></div>
+    <div class="name-field">
+      <label class="muted" for="player-name-input">Name your player</label>
+      <input id="player-name-input" type="text" placeholder="e.g. Marcus Steel" maxlength="28" />
+    </div>
+    <button class="btn primary big" id="btn-confirm-career">START CAREER SIMULATION ▶</button>
+  </section>
+
+  <!-- ================= SCREEN 4: CAREER ================= -->
+  <section id="screen-career" class="screen">
+    <div class="career-head">
+      <h2 id="career-season">SEASON 1</h2>
+      <div class="hdr-stats">
+        <div class="hdr-stat">Age <b id="hdr-age">17</b></div>
+        <div class="hdr-stat">Goals <b id="hdr-goals">0</b></div>
+        <div class="hdr-stat">Club <b id="hdr-club">—</b></div>
+        <div class="hdr-stat">Pos <b id="hdr-position">ST</b></div>
+      </div>
+    </div>
+    <div class="goal-progress"><div id="goal-progress-fill"></div><div id="goal-progress-label">0 / 1000 career goals</div></div>
+
+    <div class="career-tabs">
+      <button class="career-tab active" data-tab="season">Season</button>
+      <button class="career-tab" data-tab="stats">Career Stats</button>
+      <button class="career-tab" data-tab="profile">Profile</button>
+      <button class="career-tab" data-tab="history">History</button>
+    </div>
+
+    <div class="career-panels">
+      <div class="career-panel active" data-tab="season">
+        <div class="panel" id="season-result"></div>
+        <div class="panel" id="season-action"></div>
+      </div>
+      <div class="career-panel" data-tab="stats">
+        <div class="panel" id="career-stats-panel">
+          <div id="career-stats-content"></div>
+        </div>
+      </div>
+      <div class="career-panel" data-tab="profile">
+        <div class="panel" id="profile-content"></div>
+      </div>
+      <div class="career-panel" data-tab="history">
+        <div class="panel log-panel">
+          <h3>Career Log</h3>
+          <div id="career-log"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SCREEN 5: LEGACY ================= -->
+  <section id="screen-legacy" class="screen">
+    <div class="legacy">
+      <div class="legacy-status" id="legacy-status">CAREER COMPLETE</div>
+      <div class="legacy-big" id="legacy-goals">0</div>
+      <div class="legacy-big-lab">CAREER GOALS</div>
+      <div class="legacy-grid" id="legacy-grid"></div>
+      <div class="legacy-section" id="legacy-summary"></div>
+      <div class="legacy-section" id="legacy-honours"></div>
+      <div class="legacy-section" id="legacy-clubs"></div>
+      <div class="legacy-section" id="legacy-history"></div>
+      <div class="legacy-section" id="legacy-epilogue"></div>
+      <div class="legacy-dna" id="legacy-dna"></div>
+      <div style="margin-top:28px"><button class="btn primary big btn-play-again">PLAY AGAIN ↻</button></div>
+    </div>
+  </section>
+
+  <!-- ================= ACCOUNT MODAL ================= -->
+  <div id="account-modal" class="modal" style="display:none">
+    <div class="modal-backdrop"></div>
+    <div class="modal-panel">
+      <h3>Account</h3>
+      <p class="muted">No email needed. We generate a unique username and password for you. Save these somewhere safe.</p>
+      <div id="account-create" style="display:none">
+        <button class="btn primary" id="btn-create-account">Create Account</button>
+      </div>
+      <div id="account-info" style="display:none">
+        <div class="field">
+          <label>Username</label>
+          <div class="copy-row"><input type="text" id="acc-username" readonly /><button class="btn" id="btn-copy-user">Copy</button></div>
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <div class="copy-row"><input type="password" id="acc-password" readonly /><button class="btn" id="btn-show-pass">Show</button></div>
+        </div>
+        <div class="field">
+          <label>Login</label>
+          <div class="copy-row"><input type="text" id="acc-login-user" placeholder="Username" /><input type="password" id="acc-login-pass" placeholder="Password" /></div>
+          <button class="btn primary" id="btn-login" style="margin-top:8px">Log in</button>
+        </div>
+      </div>
+      <div id="account-status" class="muted" style="margin-top:10px"></div>
+      <div id="account-achievements" style="margin-top:14px; display:none">
+        <h4>Achievements</h4>
+        <div id="achievements-list"></div>
+      </div>
+      <div style="margin-top:14px"><button class="btn" id="btn-close-account">Close</button></div>
+    </div>
+  </div>
+
+  <div class="footer-note">Football DNA Simulator · Beta · Inspired by 38-0.app · Premier League donor data (1992–2024 real squads, peak &amp; at-the-time ratings) is editable in <code>data.js</code>.</div>
+</div>
+
+<script src="data.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
