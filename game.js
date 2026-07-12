@@ -768,7 +768,7 @@
       potentialRating: 50, determination: 50, longevity: 50, injuryRating: 50,
       baseRating: 0, synergyNotes: [], mutationNotes: [], derived: null, hiddenTraits: [], traitProgress: {},
       pillars: { Ambition: 50, Loyalty: 50, Professionalism: 50, Ego: 50, Leadership: 50, Durability: 50, KillerInstinct: 50, Adaptability: 50, Consistency: 50, Longevity: 50 },
-      position: "ST", contractYears: 0, contractSignedAt: 0, contractRole: null,
+      position: "ST", contractYears: 0, contractSignedAt: 0, contractEndSeason: 0, contractRole: null,
       retireNow: false, agent: null, wealth: 0, fame: 0,
       // career
       season: 0, age: LEVERS.debutAge, club: null, role: "Rotation",
@@ -831,9 +831,16 @@
 
   function poissonRandom(lambda) {
     if (lambda <= 0) return 0;
+    // Cap lambda to avoid underflow of Math.exp(-lambda) and infinite loops.
+    if (lambda > 700) lambda = 700;
     const L = Math.exp(-lambda);
     let k = 0, p = 1;
-    do { k++; p *= rand(); } while (p > L);
+    do {
+      k++;
+      p *= rand();
+      // Hard safety cap: if L underflows to 0, p will always be > 0 and we'd loop forever.
+      if (L <= 0 || k > 10000) return Math.round(lambda);
+    } while (p > L);
     return k - 1;
   }
   function weightedRandomPick(items) {
@@ -859,6 +866,8 @@
     if (!s || typeof s !== "object") return migrateState({});
     s.contractYears = Math.max(0, Number.isFinite(Number(s.contractYears)) ? Number(s.contractYears) : 0);
     if (s.contractYears === 0 && s.contractRole == null && s.role) s.contractRole = s.role;
+    s.contractForceStays = Number.isFinite(Number(s.contractForceStays)) ? Number(s.contractForceStays) : 0;
+    s.contractEndSeason = Number.isFinite(Number(s.contractEndSeason)) ? Number(s.contractEndSeason) : s.contractSignedAt + s.contractYears;
     return s;
   }
   function migrateState(raw) {
@@ -1923,6 +1932,8 @@
     state.age = LEVERS.debutAge + (tier === "Strong" || tier === "World Class" ? 0 : randInt(0, 1));
     state.contractYears = 3;
     state.contractSignedAt = 1;
+    state.contractEndSeason = 4;
+    state.contractForceStays = 0;
     state.contractRole = tier === "World Class" ? "Starter" : "Rotation";
 
     showScreen("screen-career");
@@ -3741,6 +3752,40 @@
     return offers;
   }
 
+  // Agent forces a better offer. Better agents pull from higher tiers and have a
+  // higher chance of finding a destination at all.
+  function generateAgentForcedOffers(sd, agent) {
+    const offers = [];
+    const rep = state.reputation;
+    // Start at the player's natural tier then push upward based on agent.
+    let tierByRep = rep >= 80 ? ["Elite", "Europe"] :
+      rep >= 60 ? ["Elite", "Europe", "Mid"] :
+      rep >= 40 ? ["Europe", "Mid", "Lower"] : ["Mid", "Lower", "Championship"];
+    if (agent.influence >= 0.08 && !tierByRep.includes("Elite")) tierByRep.push("Elite");
+    if (agent.influence >= 0.18 && !tierByRep.includes("Europe")) tierByRep.push("Europe");
+    const englishPool = [...getPLLeagueClubs(), ...getChampionshipClubs(), ...getLeague1Clubs(), ...getLeague2Clubs()];
+    const pool = englishPool.filter((t) => t !== state.club && tierByRep.includes(TEAM_DATABASE[t].league));
+    if (agent.key === "worldclass" && rep >= 50) {
+      const foreign = getForeignLeagueClubs().filter((t) => t !== state.club && ["LaLiga", "SerieA", "Bundesliga"].includes(TEAM_DATABASE[t].league));
+      pool.push(...foreign);
+    }
+    if (!pool.length) return [];
+    // Agent influence also improves the quality of the club chosen (sort by strength, weight top).
+    const sorted = pool.map((c) => ({ c, str: TEAM_DATABASE[c].attack + TEAM_DATABASE[c].midfield + TEAM_DATABASE[c].defence + TEAM_DATABASE[c].manager })).sort((a, b) => b.str - a.str);
+    const top = sorted.slice(0, Math.min(sorted.length, 8));
+    const n = Math.min(3, top.length);
+    const used = new Set();
+    while (offers.length < n) {
+      const pick = weightedRandomPick(top.map((x) => ({ item: x, weight: x.str })));
+      if (!pick || used.has(pick.c)) continue;
+      used.add(pick.c);
+      const offer = computeClubContractOffer(sd, pick.c);
+      if (offer.refused) continue;
+      offers.push({ club: pick.c, years: offer.years, playtime: offer.playtime, injuryRisk: offer.injuryRisk, wage: offer.wage });
+    }
+    return offers;
+  }
+
   // Forced offers to MLS/Saudi/Championship for aging players only (33+).
   // Prime star players at elite clubs should never be randomly forced abroad
   // or down to the Championship.
@@ -4162,28 +4207,40 @@
   function playSeason() {
     document.getElementById("season-action").innerHTML = `<div class="simming">Simulating season ${state.season}…</div>`;
     setTimeout(() => {
-      applyPendingCarryOver(); // delayed effects from previous season decisions
-      if (state.retireNow) { state.retireNow = false; beginRetirement("injury"); return; }
-      const sd = simulateSeason();
-      const intl = simulateInternational();
-      renderSeasonResult(sd, intl);
-      renderCareerHeader();
-      let line = `S${state.season} (age ${state.age}) — ${state.club}: ${sd.goals}g ${sd.assists}a in ${sd.apps} apps (${sd.rating}). ${ordinal(sd.pos)} [${sd.trajectory}]. ${sd.role}.`;
-      if (sd.honours.length) line += ` 🏆 ${sd.honours.join(", ")}.`;
-      if (sd.awards.length) line += ` 🎖 ${sd.awards.join(", ")}.`;
-      if (intl && intl.goals) line += ` 🦁 +${intl.goals} for England.`;
-      log(line, perfClass(sd.perfTier));
-      if (state.finalSeasonForced) {
-        state.finalSeasonForced = false;
-        log(`   ↳ 🕯️ Last Dance complete. ${state.player.name} is forced into retirement.`, "milestone");
-        beginRetirement("planned");
-        return;
-      }
+      try {
+        applyPendingCarryOver(); // delayed effects from previous season decisions
+        if (state.retireNow) { state.retireNow = false; beginRetirement("injury"); return; }
+        const sd = simulateSeason();
+        const intl = simulateInternational();
+        renderSeasonResult(sd, intl);
+        renderCareerHeader();
+        let line = `S${state.season} (age ${state.age}) — ${state.club}: ${sd.goals}g ${sd.assists}a in ${sd.apps} apps (${sd.rating}). ${ordinal(sd.pos)} [${sd.trajectory}]. ${sd.role}.`;
+        if (sd.honours.length) line += ` 🏆 ${sd.honours.join(", ")}.`;
+        if (sd.awards.length) line += ` 🎖 ${sd.awards.join(", ")}.`;
+        if (intl && intl.goals) line += ` 🦁 +${intl.goals} for England.`;
+        log(line, perfClass(sd.perfTier));
+        if (state.finalSeasonForced) {
+          state.finalSeasonForced = false;
+          log(`   ↳ 🕯️ Last Dance complete. ${state.player.name} is forced into retirement.`, "milestone");
+          beginRetirement("planned");
+          return;
+        }
 
-      // Career milestone (age-gated) first, then mandatory season decision, then random events.
-      const milestone = checkCareerMilestone();
-      if (milestone) presentCareerMilestone(milestone, sd, intl);
-      else presentSeasonDecision(sd, intl);
+        // Career milestone (age-gated) first, then mandatory season decision, then random events.
+        const milestone = checkCareerMilestone();
+        if (milestone) presentCareerMilestone(milestone, sd, intl);
+        else presentSeasonDecision(sd, intl);
+      } catch (err) {
+        // Failsafe: if the season simulation crashes, end the career as a career-ending injury
+        // rather than leaving the player stuck on a frozen screen.
+        console.error("Season simulation failed", err);
+        log(`   ↳ 🚑 ${state.player.name} suffered a career-ending injury in pre-season and is forced to retire.`, "milestone");
+        state.retired = true;
+        state.endCareerReason = "injury";
+        state.seasonHistory.push({ season: state.season, club: state.club, goals: 0, apps: 0, assists: 0, pos: 0 });
+        saveState();
+        beginRetirement("injury");
+      }
     }, 400);
   }
 
@@ -4353,6 +4410,12 @@
   function presentTransfer(offers, sd, intl, forced, forcedReason) {
     const box = document.getElementById("season-action");
     const isContractOffer = offers.length > 0 && offers[0].years != null;
+    const isForeignForced = forced && offers.length > 0 && offers.every((o) => o.foreign);
+    const isFreeAgent = isContractOffer && !forced;
+    const isSold = forced && !isForeignForced;
+
+    // Free agent / expired contract: cannot stay at the same club, must pick an offer or retire.
+    // If the board is selling the player (not a free agent), force-stay is allowed but capped.
     const cards = offers.map((o, i) => {
       const t = TEAM_DATABASE[o.club];
       const roleEmoji = { Star: "⭐", Starter: "▶️", Rotation: "🔄", Bench: "🪑" }[o.playtime] || "";
@@ -4367,28 +4430,38 @@
         <div class="offer-risk">Injury risk <span style="color:${riskColor}">${riskLabel}</span></div>
       </button>`;
     }).join("");
-    const isForeignForced = forced && offers.length > 0 && offers.every((o) => o.foreign);
-    const text = forced
-      ? isForeignForced
-        ? `A move abroad has come in for ${esc(state.player.name)}. Pick one of the offers — this is a one-time path that will define the rest of your career.`
-        : `The board wants to sell ${esc(state.player.name)}${forcedReason ? ` because ${esc(forcedReason)}` : ""}. You can refuse, but it may damage your role.`
-      : isContractOffer
-        ? `Clubs want you on a free. Each offer below comes with a contract.`
-        : `Offers are on the table${state.pendingTransfer ? " — and you've pushed to leave." : ""}. Where next?`;
-    const stayBtn = isForeignForced
+
+    const text = isForeignForced
+      ? `A move abroad has come in for ${esc(state.player.name)}. Pick one of the offers — this is a one-time path that will define the rest of your career.`
+      : isFreeAgent
+        ? `Your contract at ${esc(state.club)} has expired. Clubs want you on a free transfer. Pick one or retire.`
+        : isSold
+          ? `The board wants to sell ${esc(state.player.name)}${forcedReason ? ` because ${esc(forcedReason)}` : ""}. You can force a stay, but the manager will likely reduce your role.`
+          : `Offers are on the table${state.pendingTransfer ? " — and you've pushed to leave." : ""}. Where next?`;
+
+    const stayBtn = isForeignForced || isFreeAgent
       ? `<button class="btn ghost" id="btn-stay">Retire instead</button>`
-      : forced
+      : isSold
         ? `<button class="btn ghost" id="btn-stay">Refuse all offers — force a stay</button>`
-        : isContractOffer
-          ? `<button class="btn ghost" id="btn-stay">Retire instead</button>`
-          : `<button class="btn ghost" id="btn-stay">Stay at ${esc(state.club)}</button>`;
+        : `<button class="btn ghost" id="btn-stay">Stay at ${esc(state.club)}</button>`;
+
+    // Agent can force a better move if the player has an agent and this is a transfer (not already free-agent contract offers).
+    const canAgentForce = state.agent && !isFreeAgent && !isForeignForced;
+    const agentBtn = canAgentForce
+      ? `<button class="btn choice" id="btn-agent-force">🤝 Ask agent to force a better move</button>`
+      : "";
+
     box.innerHTML = `
       <div class="transfer">
-        <div class="decision-tag">${forced ? "CLUB FORCES TRANSFER" : isContractOffer ? "FREE AGENT OFFERS" : "TRANSFER WINDOW"}</div>
+        <div class="decision-tag">${forced ? "CLUB FORCES TRANSFER" : isFreeAgent ? "FREE AGENT" : "TRANSFER WINDOW"}</div>
         <div class="decision-text">${esc(text)}</div>
         <div class="offers">${cards}</div>
-        ${stayBtn}
+        <div class="decision-choices" style="margin-top:12px; flex-wrap:wrap; gap:8px;">
+          ${agentBtn}
+          ${stayBtn}
+        </div>
       </div>`;
+
     box.querySelectorAll(".offer").forEach((btn) => {
       btn.addEventListener("click", () => {
         const o = offers[parseInt(btn.dataset.i, 10)];
@@ -4400,21 +4473,59 @@
         }
       });
     });
-    document.getElementById("btn-stay").addEventListener("click", () => {
-      if (isForeignForced || (isContractOffer && !forced)) {
-        log(`   ↳ ${state.player.name} turns down the offers and hangs up the boots.`, "decision");
-        beginRetirement("planned");
-      } else {
-        state.pendingTransfer = false;
-        if (forced && rand() < 0.25) {
-          applyEffectsRaw({ role: "down", pillars: { Loyalty: -4, Ego: 3 } });
-          log(`   ↳ ✋ ${state.player.name} refuses the sale and stays at ${state.club}, but loses standing with the manager.`, "decision");
+
+    const stayEl = document.getElementById("btn-stay");
+    if (stayEl) {
+      stayEl.addEventListener("click", () => {
+        if (isForeignForced || isFreeAgent) {
+          log(`   ↳ ${state.player.name} turns down the offers and hangs up the boots.`, "decision");
+          beginRetirement("planned");
+          return;
+        }
+        if (isSold) {
+          const forceStays = (state.contractForceStays || 0) + 1;
+          state.contractForceStays = forceStays;
+          state.pendingTransfer = false;
+          if (forceStays >= 2) {
+            // After two forced stays the board refuses to keep the player; they must leave.
+            log(`   ↳ ✋ ${state.player.name} tries to refuse the sale again, but the board has made its decision.`, "decision");
+            presentTransfer(offers, sd, intl, true, forcedReason);
+            return;
+          }
+          // 75% chance the manager reduces the player's role after forcing a stay.
+          if (rand() < 0.75) {
+            applyEffectsRaw({ role: "down", pillars: { Loyalty: -4, Ego: 3 } });
+            log(`   ↳ ✋ ${state.player.name} refuses the sale and stays at ${state.club}, but the manager drops their role.`, "decision");
+          } else {
+            log(`   ↳ ✋ ${state.player.name} refuses the sale and stays at ${state.club} — for now.`, "decision");
+          }
         } else {
+          state.pendingTransfer = false;
           log(`   ↳ ✋ ${state.player.name} snubs the offers and stays at ${state.club}.`, "decision");
         }
         handleContractPhase(sd, intl);
-      }
-    });
+      });
+    }
+
+    const agentEl = document.getElementById("btn-agent-force");
+    if (agentEl) {
+      agentEl.addEventListener("click", () => {
+        const agent = state.agent || { key: "poor", influence: 0 };
+        // Better agent = higher chance to find a better destination, and the pool is pulled higher.
+        const chance = 0.25 + agent.influence;
+        if (rand() < chance) {
+          const betterOffers = generateAgentForcedOffers(sd, agent);
+          if (betterOffers.length) {
+            log(`   ↳ 🤝 ${agent.label} agent forces a better offer for ${state.player.name}.`, "decision");
+            presentTransfer(betterOffers, sd, intl, forced, forcedReason);
+            return;
+          }
+        }
+        log(`   ↳ 😬 ${agent.label} agent couldn't find a better move.`, "decision");
+        state.reputation = Math.max(0, state.reputation - 2);
+        renderCareerHeader();
+      });
+    }
   }
 
   function moveToClub(club) {
@@ -4616,6 +4727,8 @@
   function signContract(years, wage) {
     state.contractYears = years;
     state.contractSignedAt = state.season;
+    state.contractEndSeason = state.season + years;
+    state.contractForceStays = 0;
     const fx = { rep: 0, attrChange: null, injuryProne: 0 };
     if (years === 1) fx.rep = 3;
     else if (years === 2) fx.rep = 1;
@@ -4683,7 +4796,7 @@
     if (hasTrait("Iron Man")) injuryRisk = Math.max(5, injuryRisk - 25);
     if (hasTrait("Injury Prone")) injuryRisk = Math.min(95, injuryRisk + 20);
 
-    // Refusal conditions — clubs can decline, especially for aging or injury-hit players
+    // Refusal conditions — clubs decide whether to renew based on age, performance, reputation, injury and agent.
     let refused = false;
     if (age >= 39 && rep < 55) refused = true;
     if (age >= 37 && rep < 30) refused = true;
@@ -4692,10 +4805,13 @@
     if (age >= 33 && rep < 25 && perf === "Flop") refused = true;
     if (age >= 34 && playtime === "Bench" && rep < 50 && rand() < 0.35) refused = true;
 
-    // Star players should not randomly become unwanted without a board-sale event.
-    if (refused && (state.role === "Star" || rep >= 70 || ["Sensational", "Overperformed"].includes(perf))) refused = false;
+    // A poor/mediocre agent makes the club more likely to let the player leave on a free.
+    // A world-class agent fights harder to keep a deal on the table.
     if (refused && rand() < agentInfluence) refused = false;
     if (refused && rand() < (loyalty - 50) / 200) refused = false;
+
+    // Star/performing players at big clubs should almost always be renewed unless there is a clear reason not to.
+    if (refused && (state.role === "Star" || rep >= 70 || ["Sensational", "Overperformed"].includes(perf))) refused = false;
 
     // Wage estimate (k/week) influenced by league wealth, reputation, performance, fame, and age.
     // Fame (driven by agent negotiation) amplifies wage offers — higher fame = higher market value.
@@ -5027,6 +5143,8 @@
     renderEpilogue();
     renderCareerSummary();
     renderLegacyDNA();
+    renderShareCard();
+    renderShareTagline();
     saveState();
   }
 
@@ -5164,6 +5282,311 @@
       const canvas = document.getElementById(radarId);
       if (canvas) drawRadarChart(canvas, a);
     });
+  }
+
+  /* ------------------------- SHAREABLE CAREER CARD ------------------------- */
+  function computeCareerRarity() {
+    const goals = state.totalGoals;
+    const h = state.honours;
+    const trophies = h.leagueTitles + h.domesticCups + h.europeanCups + h.intlTrophies;
+    if (goals >= 1000 || h.ballonDors >= 1 || trophies >= 5) return { label: "FOOTBALL GOD", color: "#f6c453", border: "#ff8a3c" };
+    if (goals >= 700 || h.ballonDors >= 1 || trophies >= 3) return { label: "LEGENDARY", color: "#f6c453", border: "#f6c453" };
+    if (goals >= 400 || trophies >= 2) return { label: "WORLD CLASS", color: "#4de0b4", border: "#4de0b4" };
+    if (goals >= 200 || trophies >= 1 || state.reputation >= 70) return { label: "CULT HERO", color: "#70a7ff", border: "#70a7ff" };
+    if (state.clubsPlayed.size >= 5) return { label: "JOURNEYMAN", color: "#b8c0d0", border: "#b8c0d0" };
+    return { label: "PROFESSIONAL", color: "#b8c0d0", border: "#b8c0d0" };
+  }
+
+  function getCardDNA() {
+    // Gather donor names from the drafted attribute slots.
+    const slots = state.player.slots || {};
+    const donors = [];
+    Object.values(slots).forEach((s) => {
+      if (s && s.donor && !donors.includes(s.donor)) donors.push(s.donor);
+    });
+    if (!donors.length && state.player.usedDonors) {
+      state.player.usedDonors.forEach((n) => { if (!donors.includes(n)) donors.push(n); });
+    }
+    return donors.slice(0, 4);
+  }
+
+  function renderShareCard() {
+    const canvas = document.getElementById("share-card-canvas");
+    const cardWrap = document.getElementById("share-card");
+    if (!canvas || !cardWrap) return;
+    // Skip in headless/test environments where the canvas context is unavailable.
+    if (typeof canvas.getContext !== "function") return;
+    cardWrap.style.display = "block";
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width, h = canvas.height;
+
+    // Clear
+    ctx.clearRect(0, 0, w, h);
+
+    // Background gradient
+    const grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, "#0f111a");
+    grad.addColorStop(0.5, "#171a27");
+    grad.addColorStop(1, "#0c0d14");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Card border
+    const rarity = computeCareerRarity();
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = rarity.color;
+    ctx.strokeRect(4, 4, w - 8, h - 8);
+
+    // Rarity badge
+    ctx.fillStyle = rarity.color;
+    ctx.beginPath();
+    ctx.roundRect(40, 40, 200, 36, 8);
+    ctx.fill();
+    ctx.fillStyle = "#0f111a";
+    ctx.font = "bold 18px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(rarity.label, 140, 65);
+
+    // Name & position
+    const pos = POSITIONS[state.position] || POSITIONS.ST;
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 42px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(state.player.name.toUpperCase(), w / 2, 160);
+
+    ctx.fillStyle = rarity.color;
+    ctx.font = "bold 22px Arial, sans-serif";
+    ctx.fillText(`${pos.label} · ${state.country}`, w / 2, 200);
+
+    // Overall rating circle
+    const rating = state.baseRating;
+    ctx.beginPath();
+    ctx.arc(w / 2, 290, 60, 0, Math.PI * 2);
+    ctx.fillStyle = "#1a1d2b";
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = rarity.color;
+    ctx.stroke();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 52px Arial, sans-serif";
+    ctx.fillText(String(rating), w / 2, 305);
+    ctx.fillStyle = "#b8c0d0";
+    ctx.font = "12px Arial, sans-serif";
+    ctx.fillText("OVERALL", w / 2, 330);
+
+    // Career stats
+    const h2 = state.honours;
+    const stats = [
+      ["GOALS", state.totalGoals],
+      ["APPS", state.totalApps],
+      ["TROPHIES", h2.leagueTitles + h2.domesticCups + h2.europeanCups + h2.intlTrophies],
+      ["ASSISTS", state.totalAssists],
+    ];
+    const startX = 80, gap = 120, statY = 420;
+    stats.forEach(([label, val], i) => {
+      const x = startX + i * gap;
+      ctx.fillStyle = "#f6c453";
+      ctx.font = "bold 34px Arial, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(String(val), x, statY);
+      ctx.fillStyle = "#b8c0d0";
+      ctx.font = "bold 12px Arial, sans-serif";
+      ctx.fillText(label, x, statY + 20);
+    });
+
+    // DNA
+    const dna = getCardDNA();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 16px Arial, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("DNA", 55, 500);
+    dna.forEach((name, i) => {
+      ctx.fillStyle = "#1a1d2b";
+      ctx.strokeStyle = "#3a4055";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(55, 520 + i * 34, 260, 28, 6);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#b8c0d0";
+      ctx.font = "14px Arial, sans-serif";
+      ctx.fillText(name, 65, 540 + i * 34);
+    });
+
+    // Honours
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 16px Arial, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("HONOURS", 325, 500);
+    const hon = [
+      ["League Titles", h2.leagueTitles],
+      ["Domestic Cups", h2.domesticCups],
+      ["European Cups", h2.europeanCups],
+      ["Ballon d'Ors", h2.ballonDors],
+    ].filter(([, v]) => v > 0);
+    if (!hon.length) hon.push(["No major honours", 0]);
+    hon.forEach(([label, val], i) => {
+      const text = val > 0 ? `${val}× ${label}` : label;
+      ctx.fillStyle = "#b8c0d0";
+      ctx.font = "14px Arial, sans-serif";
+      ctx.fillText(text, 325, 525 + i * 26);
+    });
+
+    // Branding + QR
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 24px Arial, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("1000GOALS.CO.UK", 55, h - 80);
+    ctx.fillStyle = "#b8c0d0";
+    ctx.font = "14px Arial, sans-serif";
+    ctx.fillText("Football DNA Simulator", 55, h - 55);
+
+    // QR code image
+    const qr = new Image();
+    qr.crossOrigin = "anonymous";
+    qr.src = "https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://1000goals.co.uk";
+    qr.onload = () => {
+      ctx.drawImage(qr, w - 140, h - 150, 100, 100);
+    };
+
+    // Buttons
+    document.getElementById("btn-download-card").onclick = downloadShareCard;
+    document.getElementById("btn-share-card").onclick = shareShareCard;
+  }
+
+  function downloadShareCard() {
+    const canvas = document.getElementById("share-card-canvas");
+    if (!canvas) return;
+    const link = document.createElement("a");
+    link.download = `${state.player.name.replace(/\s+/g, "_")}_career_card.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  }
+
+  async function shareShareCard() {
+    const canvas = document.getElementById("share-card-canvas");
+    if (!canvas) return;
+    canvas.toBlob(async (blob) => {
+      const file = new File([blob], `${state.player.name.replace(/\s+/g, "_")}_career_card.png`, { type: "image/png" });
+      const text = generateShareTagline();
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ title: "Football DNA Simulator Career Card", text, files: [file] });
+          return;
+        } catch (e) {
+          // Fall through to clipboard fallback
+        }
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        alert("Tagline copied to clipboard. Use the Download button to save the image.");
+      } catch (e) {
+        alert("Use the Download button to save your career card.");
+      }
+    }, "image/png");
+  }
+
+  function generateShareTagline() {
+    const clubCount = state.clubsPlayed.size;
+    const rarity = computeCareerRarity().label;
+    return `My Football DNA player, ${state.player.name}, scored ${state.totalGoals} goals across ${clubCount} club${clubCount !== 1 ? "s" : ""} and is rated ${rarity}. Build yours and try to beat me → https://1000goals.co.uk`;
+  }
+
+  function renderShareTagline() {
+    const taglineEl = document.getElementById("share-tagline");
+    const cardEl = document.getElementById("share-tagline-card");
+    const codeEl = document.getElementById("career-code");
+    const codeBox = document.getElementById("career-code-box");
+    if (!taglineEl || !cardEl) return;
+    cardEl.style.display = "block";
+    taglineEl.textContent = generateShareTagline();
+    if (codeEl && codeBox) {
+      codeBox.style.display = "block";
+      try {
+        const code = generateCareerCode();
+        codeEl.value = code || "Career code unavailable";
+      } catch (e) {
+        codeEl.value = "Career code unavailable";
+      }
+    }
+    document.getElementById("btn-copy-tagline").onclick = copyShareTagline;
+    document.getElementById("btn-copy-url").onclick = copyCareerURL;
+  }
+
+  function copyShareTagline() {
+    const text = generateShareTagline();
+    try {
+      navigator.clipboard.writeText(text).then(() => alert("Tagline copied!"));
+    } catch (e) {
+      alert(text);
+    }
+  }
+
+  function copyCareerURL() {
+    try {
+      const code = generateCareerCode();
+      const url = `https://1000goals.co.uk/#career=${code}`;
+      navigator.clipboard.writeText(url).then(() => alert("Career link copied!"));
+    } catch (e) {
+      alert("Could not copy career link.");
+    }
+  }
+
+  function generateCareerCode() {
+    // Encode the full career state as a base64 fragment. This is client-side only
+    // (no server required) and allows a full career breakdown to be shared as a URL.
+    const payload = serializeState(state);
+    const code = btoa(unescape(encodeURIComponent(payload))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    return code;
+  }
+
+  function loadCareerCode(code) {
+    try {
+      const base64 = code.replace(/-/g, "+").replace(/_/g, "/");
+      const padded = base64 + "=".repeat((4 - base64.length % 4) % 4);
+      const json = decodeURIComponent(escape(atob(padded)));
+      const loaded = deserializeState(json);
+      if (!loaded) return false;
+      state = loaded;
+      resetTeamDatabase();
+      setRatingMode(state.ratingMode || RATING_MODE.PEAK);
+      endCareer(true);
+      return true;
+    } catch (e) {
+      console.error("Career code failed", e);
+      return false;
+    }
+  }
+
+  function checkUrlHashCareer() {
+    try {
+      const hash = window.location.hash || "";
+      if (hash.startsWith("#career=")) {
+        const code = hash.slice(8);
+        if (code && loadCareerCode(code)) {
+          window.location.hash = "";
+        }
+      }
+    } catch (e) {
+      console.error("Hash check failed", e);
+    }
+  }
+
+  function startDailyChallenge() {
+    // Every player gets the same seed for a given UTC day, so the same DNA and start is available to all.
+    const now = new Date();
+    const dateSeed = `daily-${now.getUTCFullYear()}-${now.getUTCMonth() + 1}-${now.getUTCDate()}`;
+    clearSave();
+    resetTeamDatabase();
+    state = freshState();
+    setSeed(dateSeed);
+    state.difficulty = "medium";
+    state.rerolls = DIFFICULTIES.medium.rerolls;
+    state.era = "all";
+    state.ratingMode = RATING_MODE.PEAK;
+    log(`🔥 Daily Challenge: ${dateSeed}`, "milestone");
+    showScreen("screen-genesis");
+    beginTurn();
   }
 
   /* ----------------------------- LOG ------------------------------------ */
@@ -5355,6 +5778,7 @@
 
   /* ----------------------------- WIRING --------------------------------- */
   function init() {
+    checkUrlHashCareer();
     document.getElementById("btn-start").addEventListener("click", () => showScreen("screen-difficulty"));
     document.querySelectorAll(".btn-difficulty").forEach((b) =>
       b.addEventListener("click", () => startCreation(b.dataset.difficulty)));
@@ -5362,6 +5786,11 @@
     const btnSetupBack = document.getElementById("btn-setup-back");
     if (btnSetupContinue) btnSetupContinue.addEventListener("click", beginSetup);
     if (btnSetupBack) btnSetupBack.addEventListener("click", () => showScreen("screen-difficulty"));
+    const dailyBtn = document.getElementById("btn-daily-challenge");
+    if (dailyBtn) {
+      dailyBtn.addEventListener("click", startDailyChallenge);
+      document.getElementById("daily-challenge-box").style.display = "block";
+    }
     if (hasSave()) {
       document.getElementById("continue-box").style.display = "block";
       document.getElementById("btn-continue").addEventListener("click", resumeGame);

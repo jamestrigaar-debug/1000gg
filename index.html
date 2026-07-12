@@ -13,7 +13,20 @@
 
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Football DNA Simulator ⚽</title>
+<title>Football DNA Simulator ⚽ | Build Your Player, Chase 1000 Goals</title>
+<meta name="description" content="Roll your DNA from 30 years of Premier League legends. Simulate a career. Can you reach 1000?" />
+<meta property="og:site_name" content="Football DNA Simulator" />
+<meta property="og:title" content="Football DNA Simulator ⚽ | Build Your Player, Chase 1000 Goals" />
+<meta property="og:description" content="Roll your DNA from 30 years of Premier League legends. Simulate a career. Can you reach 1000?" />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://1000goals.co.uk" />
+<meta property="og:image" content="https://1000goals.co.uk/share-card.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Football DNA Simulator ⚽ | Build Your Player, Chase 1000 Goals" />
+<meta name="twitter:description" content="Roll your DNA from 30 years of Premier League legends. Simulate a career. Can you reach 1000?" />
+<meta name="twitter:image" content="https://1000goals.co.uk/share-card.png" />
 <style>
   :root {
     --bg: #04120b;
@@ -389,6 +402,12 @@
   .tag.rare { border-color: var(--rare); color: var(--rare); }
   .legacy-dna { max-width: 620px; margin: 0 auto; text-align: left; }
 
+  /* ---------- Shareable Career Card ---------- */
+  .share-card { max-width: 640px; margin: 28px auto 0; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; text-align: center; }
+  .share-card h3 { color: var(--accent2); font-size: 16px; margin-bottom: 12px; }
+  #share-card-canvas { width: 100%; max-width: 600px; height: auto; border-radius: 12px; border: 1px solid var(--line); box-shadow: 0 10px 24px rgba(0,0,0,.35); }
+  .share-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+
   .footer-note { text-align: center; color: var(--muted); font-size: 12px; margin-top: 40px; }
 
   /* ---------- Alpha 1.1 additions ---------- */
@@ -594,10 +613,18 @@
         <button class="btn primary big" id="btn-continue">▶ CONTINUE CAREER</button>
       </div>
       <div><button class="btn primary big" id="btn-start">START CREATION</button></div>
+      <div id="daily-challenge-box" style="margin-top: 14px; display: none;">
+        <button class="btn big" id="btn-daily-challenge" style="background: linear-gradient(135deg, var(--gold), #ff8a3c); color: #0f111a; border: none; font-weight: 900;">🔥 DAILY CHALLENGE</button>
+      </div>
       <div class="hero-actions" style="margin-top: 16px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
         <button class="btn ghost" id="btn-account">Account</button>
         <a href="https://x.com/JamesTrigaar" target="_blank" rel="noopener" class="btn ghost" id="btn-feedback">Help / Feedback</a>
         <button class="btn ghost" id="btn-leaderboard" disabled>🏆 Leaderboard — Coming Soon</button>
+      </div>
+      <div style="margin-top: 16px;">
+        <a href="https://www.buymeacoffee.com/trigaar" target="_blank" rel="noopener">
+          <img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=trigaar&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" alt="Buy me a coffee" style="height: 40px; border-radius: 6px;" />
+        </a>
       </div>
     </div>
   </section>
@@ -710,6 +737,29 @@
       <div class="legacy-section" id="legacy-history"></div>
       <div class="legacy-section" id="legacy-epilogue"></div>
       <div class="legacy-dna" id="legacy-dna"></div>
+
+      <div class="share-card" id="share-card" style="display:none;">
+        <h3>Share Your Career Card</h3>
+        <canvas id="share-card-canvas" width="600" height="800"></canvas>
+        <div class="share-actions">
+          <button class="btn primary" id="btn-download-card">📥 Download Card</button>
+          <button class="btn" id="btn-share-card">🔗 Share / Copy</button>
+        </div>
+      </div>
+
+      <div class="share-card" id="share-tagline-card" style="display:none;">
+        <h3>Can You Beat Me?</h3>
+        <div class="tagline-box" id="share-tagline" style="font-size: 16px; background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; line-height: 1.5;"></div>
+        <div class="share-actions">
+          <button class="btn primary" id="btn-copy-tagline">📋 Copy Tagline</button>
+          <button class="btn" id="btn-copy-url">🔗 Copy Career Link</button>
+        </div>
+        <div class="career-code" id="career-code-box" style="margin-top: 14px; display:none;">
+          <div class="muted" style="font-size: 12px; margin-bottom: 6px;">Career Code</div>
+          <textarea id="career-code" readonly rows="3" style="width: 100%; background: var(--bg2); color: var(--txt); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 12px; resize: none;"></textarea>
+        </div>
+      </div>
+
       <div style="margin-top:28px"><button class="btn primary big btn-play-again">PLAY AGAIN ↻</button></div>
     </div>
   </section>
