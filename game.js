@@ -2536,11 +2536,16 @@
       }
     }
 
-    // Injuries knock down physical attributes — scaled by injury rating
+    // Injuries knock down physical attributes — scaled by injury rating and games missed.
+    // Compounding: repeated injuries stack on fitness, speed and strength together.
     if (sd.gamesMissed >= 6) {
       const injurySeverity = state.injuryRating >= 70 ? 1 : 0;
-      const key = choice(["fitness", "speed", "strength"]);
-      a[key] = clamp(a[key] - randInt(2 + injurySeverity, 4 + injurySeverity), 40, 99);
+      const missedTier = sd.gamesMissed >= 12 ? 2 : sd.gamesMissed >= 9 ? 1 : 0;
+      const baseDrop = 1 + missedTier + injurySeverity;
+      const physicalKeys = ["fitness", "speed", "strength"];
+      for (const key of physicalKeys) {
+        a[key] = clamp(a[key] - randInt(baseDrop, baseDrop + 2), 40, 99);
+      }
     }
 
     // Mentality-driven development: consistent/workhorse players shore up weak spots
@@ -4408,7 +4413,7 @@
     return hit;
   }
 
-  function presentTransfer(offers, sd, intl, forced, forcedReason) {
+  function presentTransfer(offers, sd, intl, forced, forcedReason, agentLock = false) {
     const box = document.getElementById("season-action");
     const isContractOffer = offers.length > 0 && offers[0].years != null;
     const isForeignForced = forced && offers.length > 0 && offers.every((o) => o.foreign);
@@ -4447,13 +4452,13 @@
         : `<button class="btn ghost" id="btn-stay">Stay at ${esc(state.club)}</button>`;
 
     // Agent can force a better move if the player has an agent and this is a transfer (not already free-agent contract offers).
-    const canAgentForce = state.agent && !isFreeAgent && !isForeignForced;
+    const canAgentForce = state.agent && !isFreeAgent && !isForeignForced && !agentLock;
     const agentBtn = canAgentForce
       ? `<button class="btn choice" id="btn-agent-force">🤝 Ask agent to force a better move</button>`
       : "";
 
     // Agent can negotiate a better situation when the player is forced out or on a free.
-    const canAgentNegotiate = state.agent && (isFreeAgent || isSold);
+    const canAgentNegotiate = state.agent && (isFreeAgent || isSold) && !agentLock;
     const agentNegotiateBtn = canAgentNegotiate
       ? `<button class="btn choice" id="btn-agent-negotiate">🗣️ Send agent to negotiate</button>`
       : "";
@@ -4497,7 +4502,7 @@
           if (forceStays >= 2) {
             // After two forced stays the board refuses to keep the player; they must leave.
             log(`   ↳ ✋ ${state.player.name} tries to refuse the sale again, but the board has made its decision.`, "decision");
-            presentTransfer(offers, sd, intl, true, forcedReason);
+            presentTransfer(offers, sd, intl, true, forcedReason, agentLock);
             return;
           }
           // 75% chance the manager reduces the player's role after forcing a stay.
@@ -4525,13 +4530,15 @@
           const betterOffers = generateAgentForcedOffers(sd, agent);
           if (betterOffers.length) {
             log(`   ↳ 🤝 ${agent.label} agent forces a better offer for ${state.player.name}.`, "decision");
-            presentTransfer(betterOffers, sd, intl, forced, forcedReason);
+            presentTransfer(betterOffers, sd, intl, forced, forcedReason, true);
             return;
           }
         }
         log(`   ↳ 😬 ${agent.label} agent couldn't find a better move.`, "decision");
         state.reputation = Math.max(0, state.reputation - 2);
         renderCareerHeader();
+        // Agent action is consumed for this event; re-render without the agent buttons.
+        presentTransfer(offers, sd, intl, forced, forcedReason, true);
       });
     }
 
@@ -4551,7 +4558,8 @@
           log(`   ↳ 😬 ${agent.label} agent couldn't strike a deal — the club holds firm.`, "decision");
           state.reputation = Math.max(0, state.reputation - 2);
           renderCareerHeader();
-          // On failure, re-render the same transfer window so the player must still choose.
+          // Agent action is consumed for this event; re-render without the agent buttons.
+          presentTransfer(offers, sd, intl, forced, forcedReason, true);
         }
       });
     }
