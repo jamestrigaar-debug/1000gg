@@ -25753,6 +25753,7 @@ const TEAM_DATABASE = {
   "Nottingham Forest": { attack: 70, midfield: 66, defence: 64, manager: 68, tacticalStyle: "Park the Bus", homeAdvantage: 7, league: "Lower" },
   "Bournemouth": { attack: 71, midfield: 67, defence: 65, manager: 69, tacticalStyle: "High Press", homeAdvantage: 7, league: "Lower" },
   "Burnley": { attack: 66, midfield: 62, defence: 60, manager: 64, tacticalStyle: "Route One", homeAdvantage: 7, league: "Lower" },
+  "Leeds United": { attack: 72, midfield: 68, defence: 66, manager: 70, tacticalStyle: "High Press", homeAdvantage: 7, league: "Lower" },
   "Huddersfield Town": { attack: 64, midfield: 60, defence: 58, manager: 62, tacticalStyle: "Park the Bus", homeAdvantage: 7, league: "Lower" },
   "Luton Town": { attack: 63, midfield: 59, defence: 57, manager: 61, tacticalStyle: "Route One", homeAdvantage: 7, league: "Lower" },
   "Real Madrid": { attack: 99, midfield: 95, defence: 93, manager: 97, tacticalStyle: "Possession", homeAdvantage: 8, league: "LaLiga" },

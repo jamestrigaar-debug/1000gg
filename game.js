@@ -1667,7 +1667,8 @@
   function calculateRetirementAge(injuryProneness, fitness, longevity) {
     const long = longevity || 50;
     const pillarLong = getPillar("Longevity");
-    return Math.round(clamp(34 + (100 - injuryProneness) / 22 + fitness / 45 + (long - 50) / 20 + (pillarLong - 50) / 10, 32, 44));
+    // Minimum of 35 prevents players from being forced out at 31 when rng rolls poorly.
+    return Math.round(clamp(34 + (100 - injuryProneness) / 22 + fitness / 45 + (long - 50) / 20 + (pillarLong - 50) / 10, 35, 44));
   }
 
   function applyPhysicalSynergy(a0) {
@@ -4698,8 +4699,8 @@
     const ra = state.retirementAge || 40;
     let retireChance = 0;
     if (state.age >= ra) retireChance = 1;
-    else if (state.age >= ra - 2) retireChance = 0.35 + (state.age - (ra - 2)) * 0.25;
-    else if (state.age >= ra - 4) retireChance = 0.10;
+    else if (state.age >= ra - 2) retireChance = 0.15 + (state.age - (ra - 2)) * 0.20;
+    else if (state.age >= ra - 4) retireChance = 0.03;
     const retireMod = contractRetireModifier();
     if (rand() < retireChance * retireMod) { beginRetirement("age"); return; }
     renderCareerHeader();
@@ -5349,19 +5350,20 @@
 
     // Name & position
     const pos = POSITIONS[state.position] || POSITIONS.ST;
+    const flag = state.player.origin?.flag || "🏴";
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 42px Arial, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(state.player.name.toUpperCase(), w / 2, 160);
+    ctx.fillText(state.player.name.toUpperCase(), w / 2, 150);
 
     ctx.fillStyle = rarity.color;
-    ctx.font = "bold 22px Arial, sans-serif";
-    ctx.fillText(`${pos.label} · ${state.country}`, w / 2, 200);
+    ctx.font = "bold 24px Arial, sans-serif";
+    ctx.fillText(`${flag} ${pos.label} · ${state.country}`, w / 2, 192);
 
     // Overall rating circle
     const rating = state.baseRating;
     ctx.beginPath();
-    ctx.arc(w / 2, 290, 60, 0, Math.PI * 2);
+    ctx.arc(w / 2, 280, 60, 0, Math.PI * 2);
     ctx.fillStyle = "#1a1d2b";
     ctx.fill();
     ctx.lineWidth = 4;
@@ -5369,10 +5371,10 @@
     ctx.stroke();
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 52px Arial, sans-serif";
-    ctx.fillText(String(rating), w / 2, 305);
+    ctx.fillText(String(rating), w / 2, 295);
     ctx.fillStyle = "#b8c0d0";
     ctx.font = "12px Arial, sans-serif";
-    ctx.fillText("OVERALL", w / 2, 330);
+    ctx.fillText("OVERALL", w / 2, 320);
 
     // Career stats
     const h2 = state.honours;
@@ -5382,7 +5384,7 @@
       ["TROPHIES", h2.leagueTitles + h2.domesticCups + h2.europeanCups + h2.intlTrophies],
       ["ASSISTS", state.totalAssists],
     ];
-    const startX = 80, gap = 120, statY = 420;
+    const startX = 70, gap = 120, statY = 395;
     stats.forEach(([label, val], i) => {
       const x = startX + i * gap;
       ctx.fillStyle = "#f6c453";
@@ -5394,59 +5396,91 @@
       ctx.fillText(label, x, statY + 20);
     });
 
-    // DNA
-    const dna = getCardDNA();
+    // Radar chart (rendered on an offscreen canvas and copied over)
+    const radarCanvas = document.createElement("canvas");
+    radarCanvas.width = 260; radarCanvas.height = 220;
+    drawRadarChart(radarCanvas, state.attrs);
+    ctx.drawImage(radarCanvas, w - 260, 420, 240, 200);
+
+    // DNA stats
+    const a = state.attrs;
+    const dnaLines = [
+      ["Heading", a.heading],
+      ["Left Foot", a.leftFoot],
+      ["Right Foot", a.rightFoot],
+      ["Speed", a.speed],
+      ["Strength", a.strength],
+      ["Fitness", a.fitness],
+      ["Height", a.height + "cm"],
+      ["Weight", a.weight + "kg"],
+    ];
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 16px Arial, sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText("DNA", 55, 500);
-    dna.forEach((name, i) => {
-      ctx.fillStyle = "#1a1d2b";
-      ctx.strokeStyle = "#3a4055";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.roundRect(55, 520 + i * 34, 260, 28, 6);
-      ctx.fill();
-      ctx.stroke();
+    ctx.fillText("DNA", 55, 435);
+    ctx.font = "13px Arial, sans-serif";
+    dnaLines.forEach(([label, val], i) => {
+      const y = 460 + i * 26;
       ctx.fillStyle = "#b8c0d0";
-      ctx.font = "14px Arial, sans-serif";
-      ctx.fillText(name, 65, 540 + i * 34);
+      ctx.fillText(label, 55, y);
+      ctx.fillStyle = rarity.color;
+      ctx.font = "bold 13px Arial, sans-serif";
+      ctx.fillText(String(val), 140, y);
+      ctx.font = "13px Arial, sans-serif";
     });
 
-    // Honours
+    // Honours as symbols
+    const hon = [
+      ["🏆", h2.leagueTitles],
+      ["🥇", h2.domesticCups],
+      ["🌍", h2.europeanCups],
+      ["🦁", h2.intlTrophies],
+      ["👟", h2.goldenBoots],
+      ["🏅", h2.ballonDors],
+    ].filter(([, v]) => v > 0);
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 16px Arial, sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText("HONOURS", 325, 500);
-    const hon = [
-      ["League Titles", h2.leagueTitles],
-      ["Domestic Cups", h2.domesticCups],
-      ["European Cups", h2.europeanCups],
-      ["Ballon d'Ors", h2.ballonDors],
-    ].filter(([, v]) => v > 0);
-    if (!hon.length) hon.push(["No major honours", 0]);
-    hon.forEach(([label, val], i) => {
-      const text = val > 0 ? `${val}× ${label}` : label;
+    ctx.fillText("HONOURS", 55, 680);
+    if (hon.length) {
+      let x = 55;
+      const y = 710;
+      hon.forEach(([icon, val]) => {
+        const text = `${icon} ${val}×`;
+        const width = ctx.measureText(text).width + 16;
+        ctx.fillStyle = "#1a1d2b";
+        ctx.strokeStyle = "#3a4055";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(x, y - 18, width, 28, 12);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#f6c453";
+        ctx.font = "bold 16px Arial, sans-serif";
+        ctx.fillText(text, x + 8, y + 1);
+        x += width + 8;
+      });
+    } else {
       ctx.fillStyle = "#b8c0d0";
       ctx.font = "14px Arial, sans-serif";
-      ctx.fillText(text, 325, 525 + i * 26);
-    });
+      ctx.fillText("No major honours", 55, 710);
+    }
 
     // Branding + QR
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial, sans-serif";
+    ctx.font = "bold 22px Arial, sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText("1000GOALS.CO.UK", 55, h - 80);
+    ctx.fillText("1000GOALS.CO.UK", 55, h - 45);
     ctx.fillStyle = "#b8c0d0";
-    ctx.font = "14px Arial, sans-serif";
-    ctx.fillText("Football DNA Simulator", 55, h - 55);
+    ctx.font = "12px Arial, sans-serif";
+    ctx.fillText("Football DNA Simulator", 55, h - 22);
 
     // QR code image
     const qr = new Image();
     qr.crossOrigin = "anonymous";
     qr.src = "https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://1000goals.co.uk";
     qr.onload = () => {
-      ctx.drawImage(qr, w - 140, h - 150, 100, 100);
+      ctx.drawImage(qr, w - 120, h - 130, 80, 80);
     };
 
     // Buttons
