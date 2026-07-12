@@ -26,6 +26,19 @@
     FOREIGN_LEAGUES,
   } = D;
 
+  // TEAM_DATABASE is mutated over the course of a career (strength drift via
+  // updateTeamStrengths, and league changes via promotion/relegation). Keep a
+  // pristine deep-clone snapshot so a brand-new career always starts from the
+  // same baseline instead of carrying over drift/promotions from a previous
+  // playthrough in the same browser session.
+  const PRISTINE_TEAM_DATABASE = JSON.parse(JSON.stringify(TEAM_DATABASE));
+  function resetTeamDatabase() {
+    for (const club of Object.keys(TEAM_DATABASE)) {
+      if (!PRISTINE_TEAM_DATABASE[club]) { delete TEAM_DATABASE[club]; continue; }
+      Object.assign(TEAM_DATABASE[club], PRISTINE_TEAM_DATABASE[club]);
+    }
+  }
+
   // Manager profiles per team: visible during club-offer selection to help the
   // player choose a destination aligned with their striker's strengths.
   const MANAGER_DATABASE = {
@@ -47,7 +60,7 @@
     "Nottingham Forest": { name: "N. Williams", focus: "Counter Attacks", tag: "High-profile targets", youth: "Low", project: "Squad overhaul" },
     "Bournemouth": { name: "A. Iraola", focus: "High Press", tag: "Trusts youth", youth: "High", project: "High-energy press" },
     "Burnley": { name: "S. Parker", focus: "Disciplined Press", tag: "Squad players", youth: "Medium", project: "Relegation scrap" },
-    "Sheffield United": { name: "C. Wilder", focus: "Organised Battle", tag: "Squad players", youth: "Medium", project: "Defensive underdogs" },
+    "Huddersfield Town": { name: "C. Wilder", focus: "Organised Battle", tag: "Squad players", youth: "Medium", project: "Defensive underdogs" },
     "Luton Town": { name: "R. Edwards", focus: "Underdog Spirit", tag: "Development project", youth: "High", project: "Minnow mentality" },
   };
 
@@ -176,16 +189,21 @@
 
   // League prestige & structural modifiers (★ = higher value)
   const LEAGUE_WEIGHTS = {
-    Elite: { goals: 1.0, minutes: 1.0, reputation: 1.0, wages: 1.0, compFactor: 0.28, europeWeight: 0.55 },
-    Europe: { goals: 1.0, minutes: 0.95, reputation: 0.85, wages: 0.85, compFactor: 0.20, europeWeight: 0.45 },
-    Mid: { goals: 1.02, minutes: 1.0, reputation: 0.70, wages: 0.70, compFactor: 0.09, europeWeight: 0.25 },
-    Lower: { goals: 1.05, minutes: 1.0, reputation: 0.55, wages: 0.55, compFactor: 0.04, europeWeight: 0.10 },
-    LaLiga: { goals: 1.0, minutes: 0.95, reputation: 0.95, wages: 0.85, compFactor: 0.26, europeWeight: 0.50 },
-    SerieA: { goals: 0.95, minutes: 0.95, reputation: 0.85, wages: 0.75, compFactor: 0.24, europeWeight: 0.50 },
-    Bundesliga: { goals: 1.05, minutes: 1.0, reputation: 0.88, wages: 0.75, compFactor: 0.24, europeWeight: 0.50 },
-    MLS: { goals: 0.85, minutes: 1.05, reputation: 0.40, wages: 0.80, compFactor: 0.10, europeWeight: 0.05 },
-    Saudi: { goals: 0.90, minutes: 1.05, reputation: 0.35, wages: 1.0, compFactor: 0.10, europeWeight: 0.05 },
-    Championship: { goals: 0.80, minutes: 1.05, reputation: 0.35, wages: 0.40, compFactor: 0.08, europeWeight: 0.05 },
+    // shareCap: max fraction of team goals a player can claim per match
+    // matchCap:  max Poisson lambda per match (prevents multi-goal haul every game)
+    Elite:         { goals: 1.0,  minutes: 1.0,  reputation: 1.0,  wages: 1.0,  compFactor: 0.18, europeWeight: 0.55, shareCap: 0.38, matchCap: 0.95 },
+    Europe:        { goals: 1.0,  minutes: 0.95, reputation: 0.85, wages: 0.85, compFactor: 0.15, europeWeight: 0.45, shareCap: 0.38, matchCap: 0.95 },
+    Mid:           { goals: 1.02, minutes: 1.0,  reputation: 0.70, wages: 0.70, compFactor: 0.08, europeWeight: 0.25, shareCap: 0.40, matchCap: 1.00 },
+    Lower:         { goals: 1.05, minutes: 1.0,  reputation: 0.55, wages: 0.55, compFactor: 0.04, europeWeight: 0.10, shareCap: 0.42, matchCap: 1.05 },
+    LaLiga:        { goals: 1.0,  minutes: 0.95, reputation: 0.95, wages: 0.85, compFactor: 0.17, europeWeight: 0.50, shareCap: 0.50, matchCap: 1.20 },
+    SerieA:        { goals: 0.95, minutes: 0.95, reputation: 0.85, wages: 0.75, compFactor: 0.16, europeWeight: 0.50, shareCap: 0.46, matchCap: 1.10 },
+    Bundesliga:    { goals: 1.05, minutes: 1.0,  reputation: 0.88, wages: 0.75, compFactor: 0.16, europeWeight: 0.50, shareCap: 0.50, matchCap: 1.20 },
+    MLS:           { goals: 0.85, minutes: 1.05, reputation: 0.40, wages: 0.80, compFactor: 0.08, europeWeight: 0.05, shareCap: 0.44, matchCap: 1.05 },
+    Saudi:         { goals: 0.90, minutes: 1.05, reputation: 0.35, wages: 1.0,  compFactor: 0.08, europeWeight: 0.05, shareCap: 0.44, matchCap: 1.05 },
+    Championship:  { goals: 0.80, minutes: 1.05, reputation: 0.35, wages: 0.40, compFactor: 0.07, europeWeight: 0.05, shareCap: 0.38, matchCap: 0.95 },
+    League1:       { goals: 0.75, minutes: 1.05, reputation: 0.22, wages: 0.20, compFactor: 0.05, europeWeight: 0.00, shareCap: 0.38, matchCap: 0.95 },
+    League2:       { goals: 0.70, minutes: 1.05, reputation: 0.15, wages: 0.12, compFactor: 0.04, europeWeight: 0.00, shareCap: 0.38, matchCap: 0.95 },
+    NationalLeague:{ goals: 0.65, minutes: 1.05, reputation: 0.10, wages: 0.07, compFactor: 0.03, europeWeight: 0.00, shareCap: 0.38, matchCap: 0.95 },
   };
 
   /* ---- SYNERGY SCORING: deep mathematical model ----
@@ -679,17 +697,47 @@
   function setRatingMode(mode) {
     activePlayerDatabase = getPlayerDatabase(mode);
   }
-  const LEAGUE_CLUBS = Object.keys(TEAM_DATABASE).filter((c) => ["Elite", "Europe", "Mid", "Lower"].includes(TEAM_DATABASE[c].league));
-  const FOREIGN_LEAGUE_KEYS = ["LaLiga", "SerieA", "Bundesliga", "Saudi", "MLS", "Championship"];
+  // Premier League tiers are stored as 4 prestige bands on TEAM_DATABASE
+  // (Elite/Europe/Mid/Lower) but together they form ONE 20-club division.
+  // Championship is a second, dynamic 24-club division. Both memberships can
+  // change at runtime via promotion/relegation (see LEAGUE PYRAMID section),
+  // so these must be computed fresh from TEAM_DATABASE rather than cached
+  // once at module load — otherwise promoted/relegated clubs would never
+  // actually move fixture pools.
+  const PL_TIERS = ["Elite", "Europe", "Mid", "Lower"];
+  const FOREIGN_LEAGUE_KEYS = ["LaLiga", "SerieA", "Bundesliga", "Saudi", "MLS"];
+  // English pyramid tier order (top → bottom) used for promotion/relegation logic.
+  const ENGLISH_PYRAMID = ["PL", "Championship", "League1", "League2", "NationalLeague"];
   const ALL_CLUBS = Object.keys(TEAM_DATABASE);
-  const FOREIGN_LEAGUE_CLUBS = ALL_CLUBS.filter((c) => FOREIGN_LEAGUE_KEYS.includes(TEAM_DATABASE[c].league));
+  function getPLLeagueClubs() {
+    return ALL_CLUBS.filter((c) => PL_TIERS.includes(TEAM_DATABASE[c].league));
+  }
+  function getChampionshipClubs() {
+    return ALL_CLUBS.filter((c) => TEAM_DATABASE[c].league === "Championship");
+  }
+  function getLeague1Clubs() {
+    return ALL_CLUBS.filter((c) => TEAM_DATABASE[c].league === "League1");
+  }
+  function getLeague2Clubs() {
+    return ALL_CLUBS.filter((c) => TEAM_DATABASE[c].league === "League2");
+  }
+  function getNationalLeagueClubs() {
+    return ALL_CLUBS.filter((c) => TEAM_DATABASE[c].league === "NationalLeague");
+  }
+  function getForeignLeagueClubs() {
+    return ALL_CLUBS.filter((c) => FOREIGN_LEAGUE_KEYS.includes(TEAM_DATABASE[c].league));
+  }
   function getClubLeague(club) {
     return (TEAM_DATABASE[club] || {}).league;
   }
   function getLeagueClubs(club) {
     const league = getClubLeague(club);
+    if (league === "Championship") return getChampionshipClubs();
+    if (league === "League1") return getLeague1Clubs();
+    if (league === "League2") return getLeague2Clubs();
+    if (league === "NationalLeague") return getNationalLeagueClubs();
     if (FOREIGN_LEAGUE_KEYS.includes(league)) return FOREIGN_LEAGUES[league] || [club];
-    return LEAGUE_CLUBS;
+    return getPLLeagueClubs();
   }
 
   /* ------------------------------ STATE --------------------------------- */
@@ -739,10 +787,15 @@
       },
       competitionHistory: [],
       leagueTable: null,
+      leagueStandings: null,
       pendingTransfer: false,
       endCareerReason: null,
+      endOfCareerTriggered: false,
       finalSeasonForced: false,
       finalSeason: null,
+      // Loan system: null when not out on loan, otherwise
+      // { parentClub, parentRole, parentYearsAtClub, dueBackSeason }.
+      loan: null,
     };
   }
 
@@ -825,6 +878,7 @@
     s.seasonHistory = Array.isArray(s.seasonHistory) ? s.seasonHistory : [];
     s.competitionHistory = Array.isArray(s.competitionHistory) ? s.competitionHistory : [];
     s.careerLog = Array.isArray(s.careerLog) ? s.careerLog : [];
+    if (!s.leagueStandings || typeof s.leagueStandings !== "object") s.leagueStandings = null;
     if (s.intlRetired == null) s.intlRetired = false;
     s.clubsPlayed = s.clubsPlayed instanceof Set ? s.clubsPlayed : new Set(Array.isArray(s.clubsPlayed) ? s.clubsPlayed : []);
     if (!s.seed) s.seed = `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
@@ -919,6 +973,7 @@
   /* ============================ SETUP ================================= */
   function startCreation(difficulty) {
     clearSave();
+    resetTeamDatabase();
     state = freshState();
     setSeed();
     state.difficulty = difficulty || "easy";
@@ -1814,7 +1869,7 @@
     if (academyTier === "World Class") numOffers = Math.min(3, numOffers + 1);
 
     // Build candidate pool from target tiers, sorted by team strength (descending)
-    const candidates = LEAGUE_CLUBS
+    const candidates = getPLLeagueClubs()
       .filter((c) => targetTiers.includes(TEAM_DATABASE[c].league))
       .sort((a, b) => {
         const ta = TEAM_DATABASE[a], tb = TEAM_DATABASE[b];
@@ -2075,34 +2130,44 @@
       b.Pts - a.Pts || (b.GF - b.GA) - (a.GF - a.GA) || b.GF - a.GF || a.team.localeCompare(b.team));
   }
 
+  // Minimum stat floor per league tier so lower-division clubs aren't pushed up
+  // to the PL floor by updateTeamStrengths / nudge / transfer clamping.
+  const TIER_FLOOR = {
+    Elite: 75, Europe: 70, Mid: 62, Lower: 58,
+    Championship: 55, League1: 42, League2: 35, NationalLeague: 30,
+    LaLiga: 62, SerieA: 60, Bundesliga: 62, Saudi: 55, MLS: 55,
+  };
+  function tierFloor(league) { return TIER_FLOOR[league] || 35; }
+
   function updateTeamStrengths() {
     // Team strengths evolve between seasons to reflect transfers, managerial
     // changes, and broader market movements. Clubs are capped to stay realistic.
     const clubs = Object.keys(TEAM_DATABASE);
     for (const c of clubs) {
       const t = TEAM_DATABASE[c];
+      const floor = tierFloor(t.league);
       const base = t.attack + t.midfield + t.defence + t.manager;
       const volatility = 1.5 + (t.league === "Elite" ? 0.5 : 0); // elite clubs move more
       const drift = Math.round((rand() - 0.5) * volatility * 2);
       const managerChange = rand() < 0.12 ? Math.round((rand() - 0.5) * 4) : 0;
-      t.attack = clamp(t.attack + drift, 55, 99);
-      t.midfield = clamp(t.midfield + drift, 55, 99);
-      t.defence = clamp(t.defence + drift, 55, 99);
-      t.manager = clamp(t.manager + managerChange, 55, 99);
+      t.attack = clamp(t.attack + drift, floor, 99);
+      t.midfield = clamp(t.midfield + drift, floor, 99);
+      t.defence = clamp(t.defence + drift, floor, 99);
+      t.manager = clamp(t.manager + managerChange, floor, 99);
       // Slight regression toward original mean to stop runaway inflation
       const change = t.attack + t.midfield + t.defence + t.manager - base;
       if (change > 5) {
         const pull = Math.round((change - 5) / 4);
-        t.attack = clamp(t.attack - pull, 55, 99);
-        t.midfield = clamp(t.midfield - pull, 55, 99);
-        t.defence = clamp(t.defence - pull, 55, 99);
-        t.manager = clamp(t.manager - pull, 55, 99);
+        t.attack = clamp(t.attack - pull, floor, 99);
+        t.midfield = clamp(t.midfield - pull, floor, 99);
+        t.defence = clamp(t.defence - pull, floor, 99);
+        t.manager = clamp(t.manager - pull, floor, 99);
       } else if (change < -5) {
         const pull = Math.round((Math.abs(change) - 5) / 4);
-        t.attack = clamp(t.attack + pull, 55, 99);
-        t.midfield = clamp(t.midfield + pull, 55, 99);
-        t.defence = clamp(t.defence + pull, 55, 99);
-        t.manager = clamp(t.manager + pull, 55, 99);
+        t.attack = clamp(t.attack + pull, floor, 99);
+        t.midfield = clamp(t.midfield + pull, floor, 99);
+        t.defence = clamp(t.defence + pull, floor, 99);
+        t.manager = clamp(t.manager + pull, floor, 99);
       }
     }
   }
@@ -2111,10 +2176,11 @@
     // A star arrival boosts attack; a departure weakens it.
     const impact = Math.round(clamp(state.reputation / 25, 1, 4));
     if (!TEAM_DATABASE[club]) return;
+    const floor = tierFloor(TEAM_DATABASE[club].league);
     if (leaving) {
-      TEAM_DATABASE[club].attack = clamp(TEAM_DATABASE[club].attack - impact, 55, 99);
+      TEAM_DATABASE[club].attack = clamp(TEAM_DATABASE[club].attack - impact, floor, 99);
     } else {
-      TEAM_DATABASE[club].attack = clamp(TEAM_DATABASE[club].attack + impact, 55, 99);
+      TEAM_DATABASE[club].attack = clamp(TEAM_DATABASE[club].attack + impact, floor, 99);
     }
   }
 
@@ -2199,8 +2265,11 @@
         // Big games: top opponents and derbies bring the best out of stars
         if (isTopOpponent || derby) share *= 1.08;
         if (isTitleRace && (state.role === "Star" || state.role === "Starter")) share *= 1.05;
-        share = clamp(share, 0.03, 0.78);
-        const mine = poissonRandom(myGoals * share * posMod.goal * LEVERS.conversionMultiplier);
+        share = clamp(share, 0.03, leagueWeights.shareCap || 0.38);
+        // Per-match goal expectation is capped per-league — foreign static leagues
+        // allow higher individual dominance (Messi/Ronaldo La Liga, Lewandowski Bundesliga).
+        const matchGoalLambda = Math.min(myGoals * share * posMod.goal * LEVERS.conversionMultiplier, leagueWeights.matchCap || 0.95);
+        const mine = poissonRandom(matchGoalLambda);
         leagueGoals += mine;
         if (myGoals - mine > 0 && rand() < 0.35) assists += poissonRandom((myGoals - mine) * 0.25 * posMod.assist);
 
@@ -2242,6 +2311,17 @@
     const trajectory = trajectoryFromPos(pos);
     state.lastTrajectory = trajectory;
     state.leagueTable = sorted;
+    // Snapshot all division standings for the Leagues tab
+    captureLeagueStandings(sorted);
+    // Apply PL finance boosts every season regardless of which division the player is in.
+    // When the player is in the PL we use the real simulated table; otherwise we generate
+    // a lightweight strength-ranked estimate so all 20 PL clubs still get their finance update.
+    if (PL_TIERS.includes(clubData.league)) {
+      applyPLFinances(sorted);
+    } else {
+      const plRanked = rankClubsByStrength(getPLLeagueClubs());
+      applyPLFinances(plRanked.map((team) => ({ team })));
+    }
 
     // season rating (influenced by hidden mentality consistency and Consistency pillar)
     const consistency = getPillar("Consistency");
@@ -2320,11 +2400,37 @@
     repDelta = Math.round(repDelta * leagueWeights.reputation);
     adjustReputation(repDelta);
 
+    // English pyramid promotion/relegation: whichever division the player's
+    // club is in already has the fully-simulated table, so pass it through.
+    const pyramidLeagues = { PL: true, Championship: true, League1: true, League2: true, NationalLeague: true };
+    const playerPoolKey = PL_TIERS.includes(clubData.league) ? "PL" : pyramidLeagues[clubData.league] ? clubData.league : null;
+    const promotionRelegation = runPromotionRelegation(sorted, playerPoolKey);
+    if (promotionRelegation) {
+      const { relegated, promoted, champL1, l1L2, l2NL } = promotionRelegation;
+      if (relegated.includes(club)) {
+        log(`   ↳ 📉 ${club} are relegated to the Championship.`, "milestone");
+      } else if (promoted.includes(club)) {
+        log(`   ↳ 📈 ${club} are promoted to the Premier League!`, "milestone");
+      } else if (champL1.relegated && champL1.relegated.includes(club)) {
+        log(`   ↳ 📉 ${club} are relegated to League One.`, "milestone");
+      } else if (champL1.promoted && champL1.promoted.includes(club)) {
+        log(`   ↳ 📈 ${club} are promoted to the Championship!`, "milestone");
+      } else if (l1L2.relegated && l1L2.relegated.includes(club)) {
+        log(`   ↳ 📉 ${club} are relegated to League Two.`, "milestone");
+      } else if (l1L2.promoted && l1L2.promoted.includes(club)) {
+        log(`   ↳ 📈 ${club} are promoted to League One!`, "milestone");
+      } else if (l2NL.relegated && l2NL.relegated.includes(club)) {
+        log(`   ↳ 📉 ${club} are relegated to the National League.`, "milestone");
+      } else if (l2NL.promoted && l2NL.promoted.includes(club)) {
+        log(`   ↳ 📈 ${club} are promoted to League Two!`, "milestone");
+      }
+    }
+
     const seasonData = {
       season: state.season, age: state.age, club, role: state.role,
       goals: seasonGoals, leagueGoals, cupGoals, europeGoals, assists, apps, rating: seasonRating,
       yellow, red, cleanSheets, pos, trajectory, perfTier, gamesMissed,
-      champion, honours: honoursThisSeason, awards, isTopScorer,
+      champion, honours: honoursThisSeason, awards, isTopScorer, promotionRelegation,
     };
     state.seasonHistory.push(seasonData);
     return seasonData;
@@ -2471,6 +2577,199 @@
     if (pos <= 17) return "Battled Relegation";
     return "Relegated";
   }
+
+  /* -------------------- LEAGUE PYRAMID: PROMOTION / RELEGATION --------------
+   * The Premier League (20 clubs, split across the Elite/Europe/Mid/Lower
+   * prestige bands used for match-weighting) and the Championship (24 clubs)
+   * swap exactly 3 clubs at the end of every season, so both divisions stay
+   * a constant size forever:
+   *   - Bottom 3 of the PL table are relegated to the Championship.
+   *   - Top 2 of the Championship table are promoted automatically; a 3rd
+   *     spot is decided by a weighted "play-off" among 3rd-6th place.
+   * Foreign leagues (LaLiga, SerieA, Bundesliga, Saudi, MLS) are treated as a
+   * single tier in this sim and are not affected.
+   *
+   * Whichever of PL/Championship the player's club belongs to already has a
+   * fully-simulated match-by-match table for this season (computed in
+   * simulateSeason); the other division is ranked with a lightweight
+   * strength+noise estimate so we don't have to double-simulate an entire
+   * division the player never sets foot in.
+   */
+  function rankClubsByStrength(clubs) {
+    return clubs
+      .map((c) => {
+        const t = TEAM_DATABASE[c];
+        return { team: c, score: t.attack + t.midfield + t.defence + t.manager + randomBetween(-6, 6) };
+      })
+      .sort((a, b) => b.score - a.score)
+      .map((r) => r.team);
+  }
+
+  function nudgeClubStrength(club, delta) {
+    const t = TEAM_DATABASE[club];
+    if (!t) return;
+    const floor = tierFloor(t.league);
+    t.attack   = clamp(t.attack   + delta, floor, 96);
+    t.midfield = clamp(t.midfield + delta, floor, 92);
+    t.defence  = clamp(t.defence  + delta, floor, 92);
+    t.manager  = clamp(t.manager  + delta, floor, 96);
+  }
+
+  // ── League Standings snapshot ──────────────────────────────────────────────
+  // Captures a sorted table per division after each season so the Leagues tab
+  // can display final standings for every tier.
+  function captureLeagueStandings(playerSorted) {
+    const snap = {};
+    // The player's own division uses the already-simulated (accurate) table.
+    const playerLeague = TEAM_DATABASE[state.club] && TEAM_DATABASE[state.club].league;
+    const addDivision = (label, clubs, existingTable) => {
+      if (!clubs.length) return;
+      if (existingTable) { snap[label] = existingTable; return; }
+      const ranked = rankClubsByStrength(clubs);
+      snap[label] = ranked.map((c, i) => ({ team: c, pos: i + 1 }));
+    };
+    const plClubs = getPLLeagueClubs();
+    addDivision("Premier League", plClubs,
+      PL_TIERS.includes(playerLeague) ? playerSorted.map((r, i) => ({ ...r, pos: i + 1 })) : null);
+    addDivision("Championship", getChampionshipClubs(),
+      playerLeague === "Championship" ? playerSorted.map((r, i) => ({ ...r, pos: i + 1 })) : null);
+    addDivision("League 1", getLeague1Clubs(),
+      playerLeague === "League1" ? playerSorted.map((r, i) => ({ ...r, pos: i + 1 })) : null);
+    addDivision("League 2", getLeague2Clubs(),
+      playerLeague === "League2" ? playerSorted.map((r, i) => ({ ...r, pos: i + 1 })) : null);
+    addDivision("National League", getNationalLeagueClubs(),
+      playerLeague === "NationalLeague" ? playerSorted.map((r, i) => ({ ...r, pos: i + 1 })) : null);
+    state.leagueStandings = snap;
+  }
+
+  // ── PL Finance System ──────────────────────────────────────────────────────
+  // Premier League clubs earn revenue based on their final league position each
+  // season. Revenue converts to stat boosts (attack / midfield / defence).
+  // Non-PL English clubs and foreign clubs are static — no finance modifier.
+  //
+  // Revenue model (broadcast + prize money approximation):
+  //   Base equal-share:  +1 for all PL clubs
+  //   Merit payment:     position 1 = +6, position 2 = +5 … position 20 = -4
+  //   Longevity bonus:   +1 per season of continuous PL membership (capped at +4)
+  //   Relegated penalty: -6 applied when a club drops to Championship
+  //
+  // Net revenue is then converted to a stat delta using:
+  //   delta = round(revenue * 0.08)   — keeps individual season swings small
+  //   applied to attack, midfield, defence (manager gets 50% of delta)
+  const PL_CLUB_TENURE = {};  // track consecutive seasons in PL per club
+  function applyPLFinances(sortedPLTable) {
+    if (!sortedPLTable || !sortedPLTable.length) return;
+    const n = sortedPLTable.length;
+    sortedPLTable.forEach((row, i) => {
+      const club = row.team;
+      const t = TEAM_DATABASE[club];
+      if (!t || !PL_TIERS.includes(t.league)) return;
+      // Track tenure
+      PL_CLUB_TENURE[club] = (PL_CLUB_TENURE[club] || 0) + 1;
+      const tenure = Math.min(PL_CLUB_TENURE[club], 5);
+      // Merit: position 1 gets +6 merit, last position gets -(n-14) or so
+      // Smoothly: merit = 7 - round((i / (n-1)) * 10)  → ranges +7 to -3
+      const merit = Math.round(7 - (i / Math.max(n - 1, 1)) * 10);
+      const revenue = 1 + merit + Math.floor(tenure / 2);
+      const delta = Math.round(revenue * 0.08);
+      if (delta === 0) return;
+      const floor = tierFloor(t.league);
+      t.attack   = clamp(t.attack   + delta, floor, 99);
+      t.midfield = clamp(t.midfield + delta, floor, 99);
+      t.defence  = clamp(t.defence  + delta, floor, 99);
+      t.manager  = clamp(t.manager  + Math.round(delta * 0.5), floor, 99);
+    });
+    // Reset tenure for relegated clubs (handled in runPromotionRelegation swap)
+    // — clearing happens when a club's league changes to Championship.
+    getPLLeagueClubs(); // no-op, tenure reset triggered by league change below
+  }
+  function onClubRelegate(club) {
+    // Called by swapTiers when a PL club is relegated — resets their PL tenure.
+    delete PL_CLUB_TENURE[club];
+  }
+
+  // playerPoolSortedTable: the `sorted` table array from simulateSeason if the
+  // player's club is in the PL or Championship this season, else null.
+  // playerPoolKey: "PL" | "Championship" | null (null when the player's club
+  // is in a foreign league this season, so both English divisions are
+  // estimated with the lightweight ranking).
+  // Resolve a single tier boundary: bottom `numRel` clubs in `higherOrder`
+  // are swapped with the top clubs in `lowerOrder` (top 2 auto-up + 1 playoff
+  // winner for the standard 3-up/3-down English rules). Returns { relegated, promoted }.
+  function swapTiers(higherOrder, lowerOrder, higherLeague, lowerLeague, higherLeagueName, lowerLeagueName, numRel, numAuto) {
+    if (higherOrder.length < numRel || lowerOrder.length < numAuto + 1) return { relegated: [], promoted: [] };
+    const relegated = higherOrder.slice(-numRel);
+    const autoPromoted = lowerOrder.slice(0, numAuto);
+    const playoffField = lowerOrder.slice(numAuto, numAuto + 4);
+    const playoffWinner = playoffField.length
+      ? weightedRandomPick(playoffField.map((c, i) => ({ item: c, weight: playoffField.length - i })))
+      : null;
+    const promoted = [...autoPromoted, playoffWinner].filter(Boolean);
+    for (const club of relegated) {
+      if (!TEAM_DATABASE[club]) continue;
+      if (TEAM_DATABASE[club].league !== lowerLeague && PL_TIERS.includes(TEAM_DATABASE[club].league)) onClubRelegate(club);
+      TEAM_DATABASE[club].league = lowerLeague;
+      nudgeClubStrength(club, -4);
+    }
+    for (const club of promoted) {
+      if (!TEAM_DATABASE[club]) continue;
+      TEAM_DATABASE[club].league = higherLeague;
+      nudgeClubStrength(club, 4);
+    }
+    return { relegated, promoted };
+  }
+
+  function runPromotionRelegation(playerPoolSortedTable, playerPoolKey) {
+    const plClubs    = getPLLeagueClubs();
+    const champClubs = getChampionshipClubs();
+    const l1Clubs    = getLeague1Clubs();
+    const l2Clubs    = getLeague2Clubs();
+    const nlClubs    = getNationalLeagueClubs();
+
+    // Safety guards: need enough clubs in each division to run meaningful swaps
+    if (plClubs.length < 3 || champClubs.length < 6) return null;
+
+    // Ranked orders — use the actual simulated table when the player is in that division
+    const plOrder    = playerPoolKey === "PL"            && playerPoolSortedTable ? playerPoolSortedTable.map((r) => r.team) : rankClubsByStrength(plClubs);
+    const champOrder = playerPoolKey === "Championship"  && playerPoolSortedTable ? playerPoolSortedTable.map((r) => r.team) : rankClubsByStrength(champClubs);
+    const l1Order    = playerPoolKey === "League1"       && playerPoolSortedTable ? playerPoolSortedTable.map((r) => r.team) : rankClubsByStrength(l1Clubs);
+    const l2Order    = playerPoolKey === "League2"       && playerPoolSortedTable ? playerPoolSortedTable.map((r) => r.team) : rankClubsByStrength(l2Clubs);
+    const nlOrder    = playerPoolKey === "NationalLeague" && playerPoolSortedTable ? playerPoolSortedTable.map((r) => r.team) : rankClubsByStrength(nlClubs);
+
+    // PL <-> Championship: 3 relegated, 3 promoted (2 auto + 1 playoff)
+    const plChamp = swapTiers(plOrder, champOrder, "Lower", "Championship", "Premier League", "Championship", 3, 2);
+
+    // Championship <-> League 1: 3 relegated, 3 promoted (2 auto + 1 playoff)
+    // Re-fetch after PL swap mutated leagues
+    const champOrderFresh = rankClubsByStrength(getChampionshipClubs());
+    const l1OrderFresh    = l1Order;
+    const champL1 = l1Clubs.length >= 6
+      ? swapTiers(champOrderFresh, l1OrderFresh, "Championship", "League1", "Championship", "League 1", 3, 2)
+      : { relegated: [], promoted: [] };
+
+    // League 1 <-> League 2: 3 relegated, 3 promoted (2 auto + 1 playoff)
+    const l1OrderFresh2 = rankClubsByStrength(getLeague1Clubs());
+    const l2OrderFresh  = l2Order;
+    const l1L2 = l2Clubs.length >= 6
+      ? swapTiers(l1OrderFresh2, l2OrderFresh, "League1", "League2", "League 1", "League 2", 3, 2)
+      : { relegated: [], promoted: [] };
+
+    // League 2 <-> National League: 2 relegated (no automatic promotion for NL clubs,
+    // just 1 auto + 1 playoff from NL side to stay realistic)
+    const l2OrderFresh2 = rankClubsByStrength(getLeague2Clubs());
+    const nlOrderFresh  = nlOrder;
+    const l2NL = nlClubs.length >= 4
+      ? swapTiers(l2OrderFresh2, nlOrderFresh, "League2", "NationalLeague", "League 2", "National League", 2, 1)
+      : { relegated: [], promoted: [] };
+
+    return {
+      relegated:  plChamp.relegated,
+      promoted:   plChamp.promoted,
+      champL1,
+      l1L2,
+      l2NL,
+    };
+  }
   function performanceTier(goals, apps, role) {
     const per = goals / Math.max(apps, 1);
     if (goals >= 30 || per >= 0.95) return "Sensational";
@@ -2564,7 +2863,9 @@
   }
 
   /* ------------------------- DECISION ENGINE ---------------------------- */
+  /*
   const EVENTS = [
+
     { id: "breakout", category: "PERFORMANCE", base: 6, req: { perf: ["Overperformed", "Sensational"], ageMax: 24 },
       text: (n) => `${n} explodes onto the scene with a breakout season. The hype is real.`,
       choices: [{ label: "Stay humble, keep working", fx: { rep: 4, flag: "fanFavorite" } }, { label: "Embrace the spotlight", fx: { rep: 8, flag: "mediaTarget" } }] },
@@ -3039,162 +3340,16 @@
         { label: "Let it blow over", fx: { rep: -2, fame: 4 } },
       ] },
   ];
+  */
 
   const FLAG_DEFAULT_DURATION = 2;
   const EVENT_REWARD_MULTIPLIER = 1.7; // events are rarer now, so each one should pack a bigger punch
 
-  /* -------------------- MANDATORY END-OF-SEASON DECISIONS --------------------
-   * These fire every season and shape the next 12 months through Career Pillars.
+  /* -------------------- CAREER EVENT DATA --------------------
+   * Loaded from career_event_data.js; see that file for the raw definitions.
    */
-  const SEASON_DECISIONS = [
-    {
-      id: "manager_meeting", category: "STRATEGY", weight: 10,
-      text: (n) => `End-of-season review with the manager. ${n} can shape the next campaign now.`,
-      choices: (ctx) => [
-        { label: "Demand more playing time", fx: { role: "up", rep: -2, pillars: { Ambition: 8, Ego: 4 } } },
-        { label: "Ask to stay in the current role", fx: { rep: 2, pillars: { Loyalty: 6, Professionalism: 4 } } },
-        { label: "Push for a tactical change", fx: { rep: -1, pillars: { Ambition: 4, Adaptability: 8 } } },
-      ],
-    },
-    {
-      id: "training_focus", category: "TRAINING", weight: 10,
-      text: (n) => `${n} has one summer focus to sharpen before pre-season.`,
-      choices: (ctx) => [
-        { label: "Finishing school", fx: { attrChange: { key: "leftFoot", delta: 2 }, carryOver: true, carryOverLog: "Finishing work sharpens the boot next season.", pillars: { KillerInstinct: 8, Professionalism: 4 } } },
-        { label: "Pace and movement", fx: { attrChange: { key: "speed", delta: 2 }, carryOver: true, carryOverLog: "Pace work adds half a yard next season.", pillars: { Adaptability: 4, Professionalism: 4 } } },
-        { label: "Strength and conditioning", fx: { attrChange: { key: "strength", delta: 2 }, carryOver: true, carryOverLog: "Strength programme adds power next season.", pillars: { Durability: 6, Professionalism: 6 } } },
-        { label: "Fitness and recovery", fx: { attrChange: { key: "fitness", delta: 2 }, carryOver: true, carryOverLog: "Pre-season fitness block pays off next season.", pillars: { Durability: 8, Longevity: 6 } } },
-      ],
-    },
-    {
-      id: "squad_role", category: "PLAYING TIME", weight: 8, req: { roleIn: ["Rotation", "Bench"] },
-      text: (n) => `${n} is not a guaranteed starter. How do they handle it?`,
-      choices: (ctx) => [
-        { label: "Knock on the manager's door", fx: { rep: -2, pillars: { Ambition: 8, Ego: 4 } } },
-        { label: "Wait for the chance and deliver", fx: { rep: 3, pillars: { Consistency: 6, Professionalism: 4 } } },
-        { label: "Ask the agent to find a loan", fx: { rep: -1, forceTransfer: true, pillars: { Ambition: 6, Loyalty: -4 } } },
-      ],
-    },
-    {
-      id: "fitness_plan", category: "FITNESS", weight: 8, req: { ageMin: 28 },
-      text: (n) => `At ${ctx.age}, ${n}'s body needs a different plan.`,
-      choices: (ctx) => [
-        { label: "Heavy load — squeeze every drop", fx: { attrChange: { key: "fitness", delta: 1 }, carryOver: true, pillars: { Professionalism: 4, Durability: -6 } } },
-        { label: "Balanced programme", fx: { pillars: { Durability: 8, Consistency: 4 } } },
-        { label: "Recovery-first schedule", fx: { attrChange: { key: "fitness", delta: -1 }, pillars: { Durability: 12, Longevity: 10 } } },
-      ],
-    },
-    {
-      id: "media_profile", category: "MEDIA", weight: 6, req: { repMin: 55 },
-      text: (n) => `The media profile is growing. ${n} chooses the next narrative.`,
-      choices: (ctx) => [
-        { label: "Market the brand", fx: { fame: 6, rep: 2, wealth: 3, pillars: { Ego: 8, Ambition: 4 } } },
-        { label: "Stay humble", fx: { rep: 4, pillars: { Loyalty: 6, Professionalism: 4 } } },
-        { label: "Call out doubters", fx: { fame: 4, rep: -3, pillars: { Ego: 6, KillerInstinct: 4 } } },
-      ],
-    },
-    {
-      id: "personal_life", category: "PERSONAL", weight: 6,
-      text: (n) => `Off-season demands pull at ${n} from different directions.`,
-      choices: (ctx) => [
-        { label: "Family first", fx: { pillars: { Loyalty: 4, Consistency: 4 } } },
-        { label: "Football first", fx: { pillars: { Professionalism: 6, Ego: -2 } } },
-        { label: "Let the hair down", fx: { rep: -2, fame: 4, pillars: { Ego: 6, Consistency: -4 } } },
-      ],
-    },
-    {
-      id: "leadership_role", category: "LEADERSHIP", weight: 5, req: { ageMin: 28, yearsMin: 2 },
-      text: (n) => `Younger players look to ${n} as a senior figure.`,
-      choices: (ctx) => [
-        { label: "Mentor the next generation", fx: { rep: 3, pillars: { Leadership: 10, Loyalty: 6 } } },
-        { label: "Focus on personal targets", fx: { pillars: { Ambition: 6, Leadership: -4 } } },
-      ],
-    },
-    {
-      id: "tactical_shift", category: "TACTICS", weight: 5, req: { yearsMin: 1 },
-      text: (n) => `The manager wants to evolve the system. ${n} must adapt.`,
-      choices: (ctx) => [
-        { label: "Learn the new role inside-out", fx: { attrChange: { key: "fitness", delta: 1 }, carryOver: true, pillars: { Adaptability: 10, Professionalism: 4 } } },
-        { label: "Stick to what you know", fx: { pillars: { Adaptability: -4, Consistency: 4 } } },
-      ],
-    },
-    {
-      id: "national_team", category: "INTERNATIONAL", weight: 4, req: { intlCaps: 1, intlRetired: false },
-      text: (n) => `International duty calls again. ${n} decides the commitment level.`,
-      choices: (ctx) => [
-        { label: "Give everything for the country", fx: { intlCaps: 1, rep: 3, attrChange: { key: "fitness", delta: -1 }, pillars: { Loyalty: 6, Durability: -4 } } },
-        { label: "Protect club form", fx: { rep: -2, pillars: { Professionalism: 4, Longevity: 4 } } },
-      ],
-    },
-    {
-      id: "rival_arrives", category: "RIVALS", weight: 4, req: { roleIn: ["Starter", "Rotation", "Star"] },
-      text: (n) => `The club signs a £${Math.floor(50 + rand() * 90)}m rival striker.`,
-      choices: (ctx) => [
-        { label: "Fight for the shirt", fx: { rep: 3, pillars: { KillerInstinct: 6, Ego: 4 } } },
-        { label: "Accept squad rotation", fx: { pillars: { Adaptability: 6, Ambition: -4 } } },
-        { label: "Demand a transfer", fx: { rep: -4, forceTransfer: true, pillars: { Ambition: 8, Loyalty: -6 } } },
-      ],
-    },
-    {
-      id: "golden_generation", category: "CLUB", weight: 3, req: { yearsMin: 2 },
-      text: (n) => `The academy produces three wonderkids who look up to ${n}.`,
-      choices: (ctx) => [
-        { label: "Become their mentor", fx: { rep: 4, pillars: { Leadership: 8, Loyalty: 6 } } },
-        { label: "Feel threatened by the competition", fx: { pillars: { Ego: 6, Consistency: -4 } } },
-        { label: "Ask to leave before they take minutes", fx: { rep: -3, forceTransfer: true, pillars: { Ambition: 6, Leadership: -4 } } },
-      ],
-    },
-    {
-      id: "fan_relationship", category: "FANS", weight: 4, req: { yearsMin: 2 },
-      text: (n) => `The fans are ${state.reputation >= 65 ? "singing your name" : "starting to turn"}.`,
-      choices: (ctx) => [
-        { label: "Embrace the supporters", fx: { rep: 4, pillars: { Loyalty: 8, Ego: 2 } } },
-        { label: "Keep distance and focus on goals", fx: { pillars: { Consistency: 4, Loyalty: -2 } } },
-      ],
-    },
-    {
-      id: "ballon_campaign", category: "LEGACY", weight: 2, req: { repMin: 70, perf: ["Sensational", "Overperformed"] },
-      text: (n) => `${n} is in Ballon d'Or conversation. How do you campaign?`,
-      choices: (ctx) => [
-        { label: "Market the campaign", fx: { fame: 8, rep: 3, pillars: { Ego: 8, KillerInstinct: 4 } } },
-        { label: "Let the football speak", fx: { rep: 5, pillars: { Professionalism: 6, Consistency: 4 } } },
-      ],
-    },
-    {
-      id: "takeover", category: "CLUB STRATEGY", weight: 2, req: { yearsMin: 3 },
-      text: (n) => `New owners take over ${state.club}. They promise to either spend big or strip the squad.`,
-      choices: (ctx) => [
-        { label: "Back the new project", fx: { flag: "takeover", pillars: { Loyalty: 6, Adaptability: 4 } } },
-        { label: "Demand assurances", fx: { rep: -2, flag: "takeover", pillars: { Ambition: 6, Ego: 4 } } },
-        { label: "Ask to leave", fx: { rep: -3, flag: "takeover", forceTransfer: true, pillars: { Ambition: 8, Loyalty: -6 } } },
-      ],
-    },
-    {
-      id: "data_analytics", category: "TACTICS", weight: 2, req: { repMin: 45 },
-      text: (n) => `The club hires a data team that wants ${n} to play differently — more pressing, less poaching.`,
-      choices: (ctx) => [
-        { label: "Buy into the analytics", fx: { attrChange: { key: "fitness", delta: 1 }, carryOver: true, pillars: { Adaptability: 8, Professionalism: 4 } } },
-        { label: "Trust instinct over numbers", fx: { pillars: { KillerInstinct: 6, Adaptability: -4 } } },
-      ],
-    },
-    {
-      id: "financial_crisis", category: "CLUB STRATEGY", weight: 1, req: { yearsMin: 2 },
-      text: (n) => `${state.club} faces a financial crisis. Wages may be cut.`,
-      choices: (ctx) => [
-        { label: "Take a wage cut", fx: { wealth: -6, rep: 5, flag: "financialCrisis", pillars: { Loyalty: 10, Ego: -4 } } },
-        { label: "Demand full payment", fx: { rep: -4, flag: "financialCrisis", pillars: { Ego: 6, Loyalty: -6 } } },
-        { label: "Leave for a stable club", fx: { rep: -2, flag: "financialCrisis", forceTransfer: true, pillars: { Ambition: 6, Loyalty: -4 } } },
-      ],
-    },
-    {
-      id: "var_era", category: "GAME EVOLUTION", weight: 1, req: { seasonMin: 20 },
-      text: (n) => `VAR and stricter officiating change the game. Penalties are rarer and more scrutinised.`,
-      choices: (ctx) => [
-        { label: "Adapt your movement to draw fouls", fx: { pillars: { Adaptability: 8, KillerInstinct: 4 } } },
-        { label: "Complain to the media", fx: { rep: -2, pillars: { Ego: 6, Consistency: -4 } } },
-      ],
-    },
-  ];
+  const { SEASON_DECISIONS, EARLY_DEVELOPMENT_DECISIONS, CAREER_MILESTONES, SEASON_EVENTS, SEASON_TAG_WEIGHTS, CAREER_SECTIONS, CAREER_ENDINGS } = window.createCareerEventData({ getState: () => state, rand, randInt, choice });
+
 
   function meetsSeasonDecisionReq(ev, ctx) {
     const r = ev.req || {};
@@ -3208,35 +3363,7 @@
     if (r.seasonMin != null && state.season < r.seasonMin) return false;
     return true;
   }
-  const EARLY_DEVELOPMENT_DECISIONS = [
-    {
-      id: "early_attribute_training", category: "TRAINING", weight: 1,
-      text: (n) => `${n}'s coaches ask what the next development block should focus on.`,
-      choices: () => [
-        { label: "Finishing reps — sharpen both feet", fx: { attrChange: { key: "leftFoot", delta: 1 }, attrChange2: { key: "rightFoot", delta: 1 }, pillars: { Professionalism: 5, KillerInstinct: 4 } } },
-        { label: "Aerial work — become more dangerous in the box", fx: { attrChange: { key: "heading", delta: 2 }, pillars: { Professionalism: 4, Durability: 2 } } },
-        { label: "Engine work — build pace and repeat sprints", fx: { attrChange: { key: "speed", delta: 1 }, attrChange2: { key: "fitness", delta: 1 }, pillars: { Durability: 4, Consistency: 3 } } },
-      ],
-    },
-    {
-      id: "early_position_plan", category: "MANAGER", weight: 1,
-      text: (n) => `The manager wants to shape ${n}'s role before the career hardens.`,
-      choices: () => [
-        { label: "Stay central as a striker", fx: { positionChange: "ST", attrChange: { key: "heading", delta: 1 }, pillars: { KillerInstinct: 5, Consistency: 2 } } },
-        { label: "Move to center forward and link play", fx: { positionChange: "CF", attrChange: { key: "strength", delta: 1 }, pillars: { Adaptability: 5, Leadership: 2 } } },
-        { label: "Shift wide and attack space", fx: { positionChange: rand() < 0.5 ? "AML" : "AMR", attrChange: { key: "speed", delta: 1 }, pillars: { Adaptability: 6, Ambition: 2 } } },
-      ],
-    },
-    {
-      id: "early_agent_move", category: "AGENT", weight: 1,
-      text: (n) => `${n}'s agent believes the first career move could define everything.`,
-      choices: () => [
-        { label: "Force a move for minutes", fx: { forceTransfer: true, rep: -1, pillars: { Ambition: 6, Loyalty: -4, Adaptability: 4 } } },
-        { label: "Stay and fight for the shirt", fx: { rep: 2, pillars: { Loyalty: 6, Professionalism: 4 } } },
-        { label: "Ask for a loan-style pathway", fx: { forceTransfer: true, pillars: { Adaptability: 6, Professionalism: 3 } } },
-      ],
-    },
-  ];
+
   function pickEarlyDevelopmentDecision() {
     if (state.season > 4) return null;
     state.earlyDevEvents = state.earlyDevEvents || {};
@@ -3279,64 +3406,13 @@
         renderCareerHeader();
         saveState();
         if (state.retireNow) { state.retireNow = false; beginRetirement("injury"); return; }
-        const eventCount = determineEventCount();
+        const eventCount = determineEventCount(ctx);
         const events = pickSeasonEvents(ctx, eventCount);
-        if (events.length > 0) presentEventQueue(events, 0, sd, intl); else proceedToTransfer(sd, intl);
+        if (events.length > 0) presentEventQueue(events, 0, sd, intl, ctx); else proceedToTransfer(sd, intl);
       });
     });
   }
 
-  /* -------------------- END-OF-CAREER MILESTONE DECISIONS --------------------
-   * These fire at major career ages and reshape the entire future.
-   */
-  const CAREER_MILESTONES = [
-    {
-      id: "young_path", ageRange: [18, 22], once: true, weight: 10,
-      text: (n) => `At ${state.age}, ${n} must choose the path to the top.`,
-      choices: (ctx) => [
-        { label: "Chase minutes — loan spells and lower-league graft", fx: { attrChange: { key: "fitness", delta: 2 }, pillars: { Professionalism: 8, Ambition: 6, Adaptability: 6 } } },
-        { label: "Chase trophies — fight for a place at a big club", fx: { rep: 3, pillars: { Ambition: 10, KillerInstinct: 6 } } },
-        { label: "Chase money — take the first big pay day", fx: { wealth: 12, pillars: { Ego: 8, Loyalty: -6 } } },
-      ],
-    },
-    {
-      id: "prime_offer", ageRange: [24, 27], once: true, weight: 10,
-      text: (n) => `A defining offer arrives in ${n}'s prime years.`,
-      choices: (ctx) => [
-        { label: "Elite club — chase the biggest stage", fx: { rep: 4, forceTransfer: true, pillars: { Ambition: 12, Ego: 4 } } },
-        { label: "Mid-table club — become the main man", fx: { role: "up", rep: 2, pillars: { Loyalty: 4, KillerInstinct: 6 } } },
-        { label: "Overseas league — new culture, new pressure", fx: { fame: 6, rep: 2, pillars: { Adaptability: 10, Ambition: 4 } } },
-      ],
-    },
-    {
-      id: "reinvent", ageRange: [29, 32], once: true, weight: 8,
-      text: (n) => `At ${state.age}, the physical edge is fading. ${n} must reinvent the game.`,
-      choices: (ctx) => [
-        { label: "Become a poacher — live in the box", fx: { positionChange: "ST", attrChange: { key: "heading", delta: 2 }, pillars: { KillerInstinct: 10, Adaptability: 4 } } },
-        { label: "Stay explosive — train harder than ever", fx: { attrChange: { key: "speed", delta: 1 }, attrChange2: { key: "fitness", delta: -2 }, pillars: { Durability: -6, Longevity: -4, Professionalism: 8 } } },
-        { label: "Become a target man — use the brain", fx: { positionChange: "CF", attrChange: { key: "strength", delta: 2 }, pillars: { Leadership: 6, Adaptability: 6 } } },
-      ],
-    },
-    {
-      id: "international_retirement", ageRange: [32, 35], once: true, req: { intlCaps: 10, intlRetired: false }, weight: 6,
-      text: (n) => `International retirement is on the table. ${n} can protect the club legs.`,
-      choices: (ctx) => [
-        { label: "Retire from internationals", fx: { attrChange: { key: "fitness", delta: 3 }, rep: -2, setIntlRetired: true, pillars: { Longevity: 10, Professionalism: 4 } } },
-        { label: "Keep playing for the country", fx: { rep: 4, attrChange: { key: "fitness", delta: -2 }, pillars: { Loyalty: 8, Durability: -6 } } },
-      ],
-    },
-    {
-      id: "final_contract", ageRange: [34, 40], once: true, weight: 8,
-      text: (n) => `At ${state.age}, ${n} faces the final contract decision.`,
-      choices: (ctx) => [
-        { label: "Saudi Arabia — one last jackpot", fx: { wealth: 20, fame: 6, rep: -3, pillars: { Ego: 6, Loyalty: -6 } } },
-        { label: "MLS — lifestyle and legacy", fx: { wealth: 10, fame: 8, rep: 2, pillars: { Longevity: 4, Ego: 2 } } },
-        { label: "Championship — keep playing in England", fx: { rep: 3, pillars: { Loyalty: 6, Professionalism: 4 } } },
-        { label: "Stay loyal at the current club", fx: { rep: 5, pillars: { Loyalty: 10, Leadership: 4 } } },
-        { label: "Retire now", fx: { retireNow: true } },
-      ],
-    },
-  ];
 
   function checkCareerMilestone() {
     for (const m of CAREER_MILESTONES) {
@@ -3408,45 +3484,70 @@
     if (r.intlRetired != null && !!state.intlRetired !== r.intlRetired) return false;
     return true;
   }
+  // Career-stage risk profile: as a career matures, negative/harsher events
+  // (bad tone) become proportionally more likely and positive/safe events
+  // become proportionally less likely. This is layered on top of the
+  // per-tag SEASON_TAG_WEIGHTS (which already skews Injury/Transfer up and
+  // Development down in later stages) to make Early feel gentler and
+  // Late/Overtime feel notably riskier and more eventful.
+  const STAGE_NEGATIVE_RISK = { Early: 0.55, Mid: 1.0, Late: 1.4, Overtime: 1.85 };
+  const STAGE_POSITIVE_SAFETY = { Early: 1.5, Mid: 1.1, Late: 0.85, Overtime: 0.6 };
+
   function getEventWeight(ev, ctx) {
     if (!meetsHardRequirements(ev, ctx)) return 0;
     if (state.cooldowns[ev.id] > 0) return 0;
-    let w = ev.base * 0.65; // events are intentionally rarer now
-    if (ctx.flags.mediaTarget && ev.category === "MEDIA") w += 4;
-    if (ctx.flags.managerConflict && ev.id === "manager_sacked") w += 6;
-    if (ctx.flags.injuryProne && ev.category === "INJURY") w += 6;
-    // Age dramatically increases injury risk
-    if (ev.category === "INJURY") {
-      if (ctx.age >= 32) w += 3;
-      if (ctx.age >= 35) w += 5;
-      if (ctx.age >= 38) w += 8;
+    const section = getCareerSection(state.age);
+    const tagWeights = SEASON_TAG_WEIGHTS[section] || SEASON_TAG_WEIGHTS.Mid;
+    let w = ev.base * 0.65 * (tagWeights[ev.tag] || 1);
+
+    // Stage risk: later career stages skew toward negative-tone events.
+    if (ev.tone === "negative") w *= STAGE_NEGATIVE_RISK[section] || 1;
+    else if (ev.tone === "positive") w *= STAGE_POSITIVE_SAFETY[section] || 1;
+    else if (ev.tone === "mixed") w *= (STAGE_NEGATIVE_RISK[section] + STAGE_POSITIVE_SAFETY[section]) / 2 || 1;
+
+    // Performance drives positivity: good seasons = more positive events, poor seasons = more randomness and worse events
+    const perf = ctx.perf;
+    if (["Sensational", "Overperformed"].includes(perf)) {
+      if (ev.tone === "positive") w *= 1.6;
+      if (ev.tone === "negative") w *= 0.5;
+      if (ev.tone === "mixed") w *= 1.2;
+    } else if (["Flop", "Underperformed"].includes(perf)) {
+      if (ev.tone === "negative") w *= 1.8;
+      if (ev.tone === "mixed") w *= 1.4;
+      if (ev.tone === "positive") w *= 0.6;
     }
+
+    // Personality nudges
+    if (ev.tag === "Injury") {
+      const durability = getPillar("Durability");
+      w += (state.injuryRating || 50) / 30 - durability / 30;
+      if (ctx.age >= 32) w += 2;
+      if (ctx.age >= 35) w += 3;
+      if (ctx.age >= 38) w += 5;
+    }
+    if (ev.tag === "Development") {
+      const prof = getPillar("Professionalism");
+      w += (prof - 50) / 20;
+      const academyTrainingMod = { "World Class": 4, "Strong": 2, "Average": 0, "Weak": -1 }[state.academy.tier] || 0;
+      w += academyTrainingMod;
+    }
+    if (ev.tag === "Transfer or Loan") {
+      const ambition = getPillar("Ambition");
+      const loyalty = getPillar("Loyalty");
+      w += (ambition - 50) / 20 - (loyalty - 50) / 30;
+      if (state.agent) w += state.agent.influence * 10;
+    }
+    if (ev.tag === "Roleplay") {
+      const ego = getPillar("Ego");
+      w += (ego - 50) / 25;
+      if (ctx.flags.mediaTarget && ev.id === "pundit_criticism") w += 3;
+      if (ctx.flags.managerConflict && ev.id === "relegated") w += 2;
+    }
+
     // Wealth and fame unlock rare, high-profile events
     if (ev.rare) {
       const fame = (state.fame || 0) + (state.wealth || 0) / 4;
       w += fame / 15;
-    }
-    // Agent-related events are more frequent with a powerful agent
-    if (ev.category === "AGENT" && state.agent) {
-      w += state.agent.influence * 10;
-    }
-    // Determination drives career-shaping choices (agent, training, mentality)
-    if (["AGENT", "TRAINING", "MENTALITY"].includes(ev.category) && state.determination != null) {
-      w += (state.determination - 50) / 18;
-    }
-    // Injury risk and longevity push injury / late-career events
-    if (ev.category === "INJURY") {
-      w += (state.injuryRating || 50) / 28;
-      w += (state.longevity || 50) / 45;
-    }
-    // Academy quality influences training and development opportunities
-    if (ev.category === "TRAINING") {
-      const academyTrainingMod = { "World Class": 4, "Strong": 2, "Average": 0, "Weak": -1 }[state.academy.tier] || 0;
-      w += academyTrainingMod;
-    }
-    // Playstyle nudges flavour events (e.g., target man / pace merchant stories)
-    if (ev.playstyle && state.playstyle && ev.playstyle.includes(state.playstyle)) {
-      w += 3;
     }
     return Math.max(0, w);
   }
@@ -3468,41 +3569,36 @@
     return null;
   }
   function pickSeasonEvent(ctx) {
-    const eligible = EVENTS.map((e) => ({ item: e, weight: getEventWeight(e, ctx) })).filter((e) => e.weight > 0);
+    const eligible = SEASON_EVENTS.map((e) => ({ item: e, weight: getEventWeight(e, ctx) })).filter((e) => e.weight > 0);
     if (!eligible.length) return null;
     return weightedRandomPick(eligible);
   }
 
-  function isMidCareer() {
-    return state.season >= 3 && state.age >= 21 && state.age <= 33;
-  }
-  function determineEventCount() {
-    // Fewer events overall, but each one should carry more weight.
-    // Prime years: mostly 0-2, very rare 3. Late career: more events (1-3).
-    if (state.age >= 34) {
-      const roll = rand();
-      if (roll < 0.12) return 3;
-      if (roll < 0.55) return 2;
-      return 1;
-    }
-    if (isMidCareer()) {
-      const roll = rand();
-      if (roll < 0.08) return 3;
-      if (roll < 0.38) return 2;
-      if (roll < 0.78) return 1;
-      return 0;
-    }
-    // Early / twilight edges outside prime: small chance of a single event
-    const roll = rand();
-    if (roll < 0.25) return 1;
-    return 0;
+  // Minimum guaranteed events per stage — later stages always have at least
+  // one more event brewing than earlier ones, on top of the random/cap range.
+  const STAGE_EVENT_FLOOR = { Early: 0, Mid: 1, Late: 2, Overtime: 2 };
+  const STAGE_EVENT_BASE = { Early: 0.6, Mid: 1.6, Late: 2.5, Overtime: 3.2 };
+  function determineEventCount(ctx) {
+    const stage = getCareerSection(state.age);
+    const section = CAREER_SECTIONS[stage];
+    const cap = section.eventCap;
+    const base = STAGE_EVENT_BASE[stage] != null ? STAGE_EVENT_BASE[stage] : cap;
+    // Consistency smooths the count, ego adds noise
+    const consistency = getPillar("Consistency");
+    const ego = getPillar("Ego");
+    const randomSwing = (rand() * 2 - 1) * (1 - (consistency - 50) / 100);
+    const egoMod = (ego - 50) / 100;
+    let perfMod = 0;
+    if (["Sensational", "Overperformed"].includes(ctx.perf)) perfMod = 0.25;
+    if (["Flop", "Underperformed"].includes(ctx.perf)) perfMod = -0.25;
+    const count = Math.round(base + randomSwing + perfMod + egoMod);
+    return clamp(count, STAGE_EVENT_FLOOR[stage] || 0, cap);
   }
   function eventContradictsExisting(ev, events) {
     if (!ev) return true;
-    if (events.some((e) => e.id === ev.id || e.category === ev.category)) return true;
-    if (state.pendingTransfer && ["LOYALTY", "CLUB STRATEGY"].includes(ev.category)) return true;
-    if (events.some((e) => e.category === "INJURY") && ["TRAINING", "TACTICS"].includes(ev.category)) return true;
-    if (events.some((e) => e.category === "CLUB STRATEGY") && ev.category === "AGENT") return true;
+    if (events.some((e) => e.id === ev.id || e.tag === ev.tag)) return true;
+    if (state.pendingTransfer && ev.tag === "Transfer or Loan") return true;
+    if (events.some((e) => e.tag === "Injury") && ev.tag === "Development") return true;
     return false;
   }
   function pickSeasonEvents(ctx, count) {
@@ -3540,6 +3636,7 @@
     if (fx.wealth) state.wealth = clamp((state.wealth || 0) + Math.round((typeof fx.wealth === "function" ? fx.wealth() : fx.wealth) * multiplier), 0, 100);
     if (fx.fame) state.fame = clamp((state.fame || 0) + Math.round((typeof fx.fame === "function" ? fx.fame() : fx.fame) * multiplier), 0, 100);
     if (fx.finalSeason) state.finalSeason = fx.finalSeason;
+    if (fx.endCareerReason) state.endCareerReason = fx.endCareerReason;
     if (fx.flag) setFlag(fx.flag, FLAG_DEFAULT_DURATION);
     if (fx.injuryProne) state.injuryProneSeasons = Math.max(state.injuryProneSeasons, fx.injuryProne);
     if (fx.ratingBoost) state.baseRating = clamp(state.baseRating + Math.round(fx.ratingBoost * multiplier), 40, 99);
@@ -3608,14 +3705,27 @@
   function generateOffers(sd) {
     let tierByRep = state.reputation >= 80 ? ["Elite", "Europe"] :
       state.reputation >= 60 ? ["Elite", "Europe", "Mid"] :
-      state.reputation >= 40 ? ["Europe", "Mid"] : ["Mid", "Lower"];
+      state.reputation >= 40 ? ["Europe", "Mid", "Lower"] : ["Mid", "Lower", "Championship"];
     const ambition = getPillar("Ambition");
     if (ambition >= 70 && !tierByRep.includes("Elite")) tierByRep.push("Elite");
     if (ambition >= 85 && !tierByRep.includes("Europe")) tierByRep.push("Europe");
-    const pool = LEAGUE_CLUBS.filter((t) => t !== state.club && tierByRep.includes(TEAM_DATABASE[t].league));
-    // Chance to include foreign elite clubs for ambitious players
-    if (ambition >= 60 && state.reputation >= 50) {
-      const foreignElite = FOREIGN_LEAGUE_CLUBS.filter((t) => t !== state.club && ["LaLiga", "SerieA", "Bundesliga"].includes(TEAM_DATABASE[t].league));
+    // Fame unlocks top-club interest: a famous player (high wages = high fame) attracts
+    // elite clubs even if reputation hasn't fully caught up yet.
+    const fame = state.fame || 0;
+    if (fame >= 60 && !tierByRep.includes("Elite")) tierByRep.push("Elite");
+    if (fame >= 40 && !tierByRep.includes("Europe")) tierByRep.push("Europe");
+    // Championship players can also receive offers from within the Championship
+    const currentLeague = TEAM_DATABASE[state.club]?.league;
+    if (currentLeague === "Championship" && !tierByRep.includes("Championship")) tierByRep.push("Championship");
+    if (["League1","League2"].includes(currentLeague)) { tierByRep = ["Championship","League1","League2"]; }
+    const englishPool = [...getPLLeagueClubs(), ...getChampionshipClubs(), ...getLeague1Clubs(), ...getLeague2Clubs()];
+    const pool = englishPool.filter((t) => t !== state.club && tierByRep.includes(TEAM_DATABASE[t].league));
+    // Abroad moves require a World Class agent (or a very high-profile player).
+    // Without a world class agent abroad offers are almost never generated.
+    const agentKey = state.agent ? state.agent.key : "poor";
+    const abroadChance = agentKey === "worldclass" ? 0.85 : agentKey === "average" ? 0.08 : 0.02;
+    if (rand() < abroadChance && state.reputation >= 50) {
+      const foreignElite = getForeignLeagueClubs().filter((t) => t !== state.club && ["LaLiga", "SerieA", "Bundesliga"].includes(TEAM_DATABASE[t].league));
       pool.push(...foreignElite);
     }
     const n = clamp(randInt(1, 3), 1, pool.length);
@@ -3643,17 +3753,19 @@
     if (isEliteStar && age < 33) return offers;
     // MLS/Saudi for older players with some reputation
     if (age >= 33 && rep >= 35) {
-      const pool = FOREIGN_LEAGUE_CLUBS.filter((t) => ["MLS", "Saudi"].includes(TEAM_DATABASE[t].league));
+      const pool = getForeignLeagueClubs().filter((t) => ["MLS", "Saudi"].includes(TEAM_DATABASE[t].league));
       const c = choice(pool);
       const offer = computeClubContractOffer(sd, c);
       if (!offer.refused) offers.push({ club: c, years: offer.years, playtime: offer.playtime, injuryRisk: offer.injuryRisk, wage: offer.wage, forced: true, foreign: true });
     }
     // Championship for players who drop off the elite ladder
     if (age >= 33 && rep >= 25 && !offers.length) {
-      const pool = FOREIGN_LEAGUE_CLUBS.filter((t) => TEAM_DATABASE[t].league === "Championship");
-      const c = choice(pool);
-      const offer = computeClubContractOffer(sd, c);
-      if (!offer.refused) offers.push({ club: c, years: offer.years, playtime: offer.playtime, injuryRisk: offer.injuryRisk, wage: offer.wage, forced: true, foreign: true });
+      const pool = getChampionshipClubs().filter((t) => t !== state.club);
+      if (pool.length) {
+        const c = choice(pool);
+        const offer = computeClubContractOffer(sd, c);
+        if (!offer.refused) offers.push({ club: c, years: offer.years, playtime: offer.playtime, injuryRisk: offer.injuryRisk, wage: offer.wage, forced: true });
+      }
     }
     return offers;
   }
@@ -3663,6 +3775,8 @@
     const el = document.getElementById("career-stats-content");
     if (!el) return;
     const h = state.honours;
+
+    // ── Trophies & Awards ──
     const trophies = [];
     if (h.leagueTitles) trophies.push({ label: `League Titles ${h.leagueTitles}`, cls: "" });
     if (h.domesticCups) trophies.push({ label: `Domestic Cups ${h.domesticCups}`, cls: "" });
@@ -3684,6 +3798,7 @@
       ? `<div class="cs-honours"><span class="cs-hon intl">${state.intlCaps} caps / ${state.intlGoals} goals</span></div>`
       : `<div class="cs-empty">No international caps yet</div>`;
 
+    // ── Career numbers ──
     const g = state.totalGoals;
     const a = state.totalAssists;
     const apps = state.totalApps;
@@ -3697,6 +3812,120 @@
     const gpg = apps > 0 ? (g / apps).toFixed(2) : "0.00";
     const apg = apps > 0 ? (a / apps).toFixed(2) : "0.00";
     const gRate = Math.round((g / LEVERS.goalTarget) * 100);
+
+    // ── Profile section ──
+    const agent = state.agent || { key: "poor", label: "—" };
+    const origin = state.player.origin || COUNTRY_ORIGINS["England"];
+    const atrs = state.attrs || {};
+    const agentBadgeClass = agent.key || "poor";
+    const radarId = "career-radar";
+
+    // ── Club history table ──
+    const clubOrder = [...(state.clubsPlayed || [])];
+    const clubHistoryRows = clubOrder.map((club) => {
+      const cs = state.clubStats[club] || { apps: 0, goals: 0, assists: 0, seasons: 0, titles: 0 };
+      const titleStr = cs.titles > 0 ? `🏆${cs.titles}` : "—";
+      const leagueLabel = (TEAM_DATABASE[club] || {}).league || "—";
+      return `<tr>
+        <td class="ch-club">${esc(club)}</td>
+        <td class="ch-muted">${esc(leagueLabel)}</td>
+        <td class="ch-muted">${cs.seasons}</td>
+        <td class="ch-num">${cs.goals}</td>
+        <td class="ch-muted">${cs.assists}</td>
+        <td class="ch-muted">${cs.apps}</td>
+        <td class="ch-muted">${titleStr}</td>
+      </tr>`;
+    }).join("");
+    const clubHistoryHtml = clubOrder.length
+      ? `<table class="club-history-table">
+          <thead><tr><th>Club</th><th>League</th><th>Seasons</th><th>Goals</th><th>Assists</th><th>Apps</th><th>Titles</th></tr></thead>
+          <tbody>${clubHistoryRows}</tbody>
+        </table>`
+      : `<div class="cs-empty">No clubs yet</div>`;
+
+    el.innerHTML = `
+      <div class="career-stats-grid">
+        <div class="cs-box"><div class="cs-num">${g}</div><div class="cs-lab">Career Goals</div></div>
+        <div class="cs-box"><div class="cs-num">${apps}</div><div class="cs-lab">Apps</div></div>
+        <div class="cs-box"><div class="cs-num">${a}</div><div class="cs-lab">Assists</div></div>
+        <div class="cs-box"><div class="cs-num">${leagueG}</div><div class="cs-lab">League</div></div>
+        <div class="cs-box"><div class="cs-num">${cupG}</div><div class="cs-lab">Cups</div></div>
+        <div class="cs-box"><div class="cs-num">${euroG}</div><div class="cs-lab">Europe</div></div>
+      </div>
+      <div class="cs-section-title">Averages</div>
+      <div class="career-stats-grid">
+        <div class="cs-box"><div class="cs-num">${avgGoals}</div><div class="cs-lab">Goals / Season</div></div>
+        <div class="cs-box"><div class="cs-num">${avgApps}</div><div class="cs-lab">Apps / Season</div></div>
+        <div class="cs-box"><div class="cs-num">${gpg}</div><div class="cs-lab">Goals / Game</div></div>
+        <div class="cs-box"><div class="cs-num">${apg}</div><div class="cs-lab">Assists / Game</div></div>
+        <div class="cs-box"><div class="cs-num">${gRate}%</div><div class="cs-lab">To 1000</div></div>
+        <div class="cs-box"><div class="cs-num">${state.bestRating}</div><div class="cs-lab">Best Rating</div></div>
+      </div>
+      <div class="cs-section-title">Trophies</div>${trophyHtml}
+      <div class="cs-section-title">Awards</div>${awardsHtml}
+      <div class="cs-section-title">International</div>${intlHtml}
+      <div class="cs-section-title">Club Career History</div>${clubHistoryHtml}
+      <div class="cs-section-title">Player Profile</div>
+      <div class="profile-grid">
+        <div class="profile-card">
+          <div class="pc-label">Playstyle</div>
+          <div class="pc-val">${esc(state.playstyle)}</div>
+          <div class="pc-meta">${esc(PLAYSTYLE_PROFILES[state.playstyle]?.desc || "")}</div>
+        </div>
+        <div class="profile-card">
+          <div class="pc-label">Position</div>
+          <div class="pc-val">${esc((POSITIONS[state.position] || POSITIONS.ST).label)}</div>
+          <div class="pc-meta">${esc(state.position)}</div>
+        </div>
+        <div class="profile-card">
+          <div class="pc-label">Origin</div>
+          <div class="pc-val">${origin.flag} ${esc(state.country)}</div>
+          <div class="pc-meta">${esc(origin.story)}</div>
+        </div>
+        <div class="profile-card">
+          <div class="pc-label">Mentality</div>
+          <div class="pc-val ${mentIsSpecial(state.mentality) ? "rare" : ""}">${esc(state.mentality)}</div>
+          <div class="pc-meta">Personality on the pitch</div>
+        </div>
+        <div class="profile-card">
+          <div class="pc-label">Agent</div>
+          <div class="pc-val">${esc(agent.label)}<span class="agent-tier-badge ${agentBadgeClass}">${esc(agent.label)}</span></div>
+          <div class="pc-meta">Contract negotiator${agent.key === "worldclass" ? " · unlocks abroad moves" : ""}</div>
+        </div>
+        <div class="profile-card">
+          <div class="pc-label">Peak Rating</div>
+          <div class="pc-val">${state.baseRating}</div>
+          <div class="pc-meta">Current ability</div>
+        </div>
+      </div>
+      <div class="profile-section">
+        <h4>Attributes</h4>
+        <div class="profile-attrs">
+          <div><span>Heading</span><b>${atrs.heading || "—"}</b></div>
+          <div><span>Left Foot</span><b>${atrs.leftFoot || "—"}</b></div>
+          <div><span>Right Foot</span><b>${atrs.rightFoot || "—"}</b></div>
+          <div><span>Speed</span><b>${atrs.speed || "—"}</b></div>
+          <div><span>Strength</span><b>${atrs.strength || "—"}</b></div>
+          <div><span>Fitness</span><b>${atrs.fitness || "—"}</b></div>
+          <div><span>Height</span><b>${atrs.height || "—"}cm</b></div>
+          <div><span>Weight</span><b>${atrs.weight || "—"}kg</b></div>
+        </div>
+      </div>
+      <div class="profile-radar"><canvas id="${radarId}" width="260" height="200"></canvas></div>`;
+    requestAnimationFrame(() => {
+      const canvas = document.getElementById(radarId);
+      if (canvas && state.attrs) drawRadarChart(canvas, state.attrs);
+    });
+  }
+
+  function renderAllTimeGreats() {
+    const el = document.getElementById("alltime-content");
+    if (!el) return;
+    const g = state.totalGoals;
+    const a = state.totalAssists;
+    const apps = state.totalApps;
+    const leagueG = state.leagueGoals;
+    const intlG = state.intlGoals;
     const rec = ALL_TIME_RECORDS;
     const recordsHtml = `
       <div class="records-table">
@@ -3709,69 +3938,30 @@
         <div class="rec-row"><span>Intl Caps</span><span>${esc(rec.intlCaps.recordHolder)}</span><span>${rec.intlCaps.total}</span><span>${state.intlCaps}</span></div>
         <div class="rec-row"><span>Intl Goals</span><span>${esc(rec.intlGoals.recordHolder)}</span><span>${rec.intlGoals.total}</span><span>${intlG}</span></div>
         <div class="rec-row"><span>Ballon d'Or</span><span>${esc(rec.ballonDors.recordHolder)}</span><span>${rec.ballonDors.total}</span><span>${state.honours.ballonDors}</span></div>
-        <div class="rec-row"><span>UCL Goals</span><span>${esc(rec.championsLeagueGoals.recordHolder)}</span><span>${rec.championsLeagueGoals.total}</span><span>${euroG}</span></div>
+        <div class="rec-row"><span>UCL Goals</span><span>${esc(rec.championsLeagueGoals.recordHolder)}</span><span>${rec.championsLeagueGoals.total}</span><span>${state.europeGoals}</span></div>
         <div class="rec-row"><span>World Cup Goals</span><span>${esc(rec.worldCupGoals.recordHolder)}</span><span>${rec.worldCupGoals.total}</span><span>—</span></div>
       </div>`;
-
-    const plGoalRows = insertPlayerIntoTop10(TOP_10_PL_GOALS, leagueG, state.player.name || "You")
+    const mkTop10 = (list, val) => insertPlayerIntoTop10(list, val, state.player.name || "You")
       .map((r, i) => `<div class="top10-row${r.mine ? " mine" : ""}"><span>${i + 1}</span><span>${esc(r.name)}</span><span>${r.total}</span></div>`)
       .join("");
-    const plAssistRows = insertPlayerIntoTop10(TOP_10_PL_ASSISTS, a, state.player.name || "You")
-      .map((r, i) => `<div class="top10-row${r.mine ? " mine" : ""}"><span>${i + 1}</span><span>${esc(r.name)}</span><span>${r.total}</span></div>`)
-      .join("");
-    const plAppRows = insertPlayerIntoTop10(TOP_10_PL_APPEARANCES, apps, state.player.name || "You")
-      .map((r, i) => `<div class="top10-row${r.mine ? " mine" : ""}"><span>${i + 1}</span><span>${esc(r.name)}</span><span>${r.total}</span></div>`)
-      .join("");
-    const allTimeGoalRows = insertPlayerIntoTop10(TOP_10_ALL_TIME_GOALS, g, state.player.name || "You")
-      .map((r, i) => `<div class="top10-row${r.mine ? " mine" : ""}"><span>${i + 1}</span><span>${esc(r.name)}</span><span>${r.total}</span></div>`)
-      .join("");
-    const intlCapRows = insertPlayerIntoTop10(TOP_10_INTL_CAPS, state.intlCaps, state.player.name || "You")
-      .map((r, i) => `<div class="top10-row${r.mine ? " mine" : ""}"><span>${i + 1}</span><span>${esc(r.name)}</span><span>${r.total}</span></div>`)
-      .join("");
-    const intlGoalRows = insertPlayerIntoTop10(TOP_10_INTL_GOALS, intlG, state.player.name || "You")
-      .map((r, i) => `<div class="top10-row${r.mine ? " mine" : ""}"><span>${i + 1}</span><span>${esc(r.name)}</span><span>${r.total}</span></div>`)
-      .join("");
-
-    const radarId = "career-radar";
     el.innerHTML = `
-      <div class="career-stats-grid">
-        <div class="cs-box"><div class="cs-num">${g}</div><div class="cs-lab">Career Goals</div></div>
-        <div class="cs-box"><div class="cs-num">${apps}</div><div class="cs-lab">Apps</div></div>
-        <div class="cs-box"><div class="cs-num">${a}</div><div class="cs-lab">Assists</div></div>
-        <div class="cs-box"><div class="cs-num">${leagueG}</div><div class="cs-lab">League</div></div>
-        <div class="cs-box"><div class="cs-num">${cupG}</div><div class="cs-lab">Cups</div></div>
-        <div class="cs-box"><div class="cs-num">${euroG}</div><div class="cs-lab">Europe</div></div>
-      </div>
-      <div class="cs-radar"><canvas id="${radarId}" width="240" height="180"></canvas></div>
-      <div class="cs-section-title">Averages</div>
-      <div class="career-stats-grid">
-        <div class="cs-box"><div class="cs-num">${avgGoals}</div><div class="cs-lab">Goals / Season</div></div>
-        <div class="cs-box"><div class="cs-num">${avgApps}</div><div class="cs-lab">Apps / Season</div></div>
-        <div class="cs-box"><div class="cs-num">${gpg}</div><div class="cs-lab">Goals / Game</div></div>
-        <div class="cs-box"><div class="cs-num">${apg}</div><div class="cs-lab">Assists / Game</div></div>
-        <div class="cs-box"><div class="cs-num">${gRate}%</div><div class="cs-lab">To 1000</div></div>
-        <div class="cs-box"><div class="cs-num">${state.bestRating}</div><div class="cs-lab">Best Rating</div></div>
+      <div class="wip-banner">
+        <div class="wip-banner-title">🏆 All Time Greats</div>
+        <div class="wip-banner-sub">Work in progress — more legends, head-to-head comparisons and era rankings coming soon.</div>
       </div>
       <div class="cs-section-title">All-Time Records</div>${recordsHtml}
       <div class="cs-section-title">All-Time Top Scorers</div>
-      <div class="top10-table">${allTimeGoalRows}</div>
+      <div class="top10-table">${mkTop10(TOP_10_ALL_TIME_GOALS, g)}</div>
       <div class="cs-section-title">Top PL Scorers</div>
-      <div class="top10-table">${plGoalRows}</div>
+      <div class="top10-table">${mkTop10(TOP_10_PL_GOALS, leagueG)}</div>
       <div class="cs-section-title">Top PL Assists</div>
-      <div class="top10-table">${plAssistRows}</div>
+      <div class="top10-table">${mkTop10(TOP_10_PL_ASSISTS, a)}</div>
       <div class="cs-section-title">Top PL Appearances</div>
-      <div class="top10-table">${plAppRows}</div>
+      <div class="top10-table">${mkTop10(TOP_10_PL_APPEARANCES, apps)}</div>
       <div class="cs-section-title">Top International Caps</div>
-      <div class="top10-table">${intlCapRows}</div>
+      <div class="top10-table">${mkTop10(TOP_10_INTL_CAPS, state.intlCaps)}</div>
       <div class="cs-section-title">Top International Goals</div>
-      <div class="top10-table">${intlGoalRows}</div>
-      <div class="cs-section-title">Trophies</div>${trophyHtml}
-      <div class="cs-section-title">Awards</div>${awardsHtml}
-      <div class="cs-section-title">International</div>${intlHtml}`;
-    requestAnimationFrame(() => {
-      const canvas = document.getElementById(radarId);
-      if (canvas && state.attrs) drawRadarChart(canvas, state.attrs);
-    });
+      <div class="top10-table">${mkTop10(TOP_10_INTL_GOALS, intlG)}</div>`;
   }
 
   function insertPlayerIntoTop10(list, total, name) {
@@ -3858,9 +4048,92 @@
   function switchCareerTab(tab) {
     document.querySelectorAll(".career-tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === tab));
     document.querySelectorAll(".career-panel").forEach((p) => p.classList.toggle("active", p.dataset.tab === tab));
-    if (tab === "profile") renderProfile();
     if (tab === "stats") renderCareerStats();
     if (tab === "history") renderCareerLog();
+    if (tab === "leagues") renderLeaguesView();
+    if (tab === "alltime") renderAllTimeGreats();
+  }
+
+  // ── Log Preview (Season tab) ───────────────────────────────────────────────
+  function renderLogPreview() {
+    const wrap = document.getElementById("log-preview-entries");
+    if (!wrap || typeof wrap.appendChild !== "function" || !state || !state.careerLog) return;
+    const entries = state.careerLog.slice(0, 5);
+    wrap.innerHTML = "";
+    if (!entries.length) { wrap.innerHTML = `<div class="log-entry info">No activity yet.</div>`; return; }
+    entries.forEach((entry) => {
+      const div = document.createElement("div");
+      div.className = "log-entry " + (entry.cls || "");
+      div.textContent = entry.text;
+      wrap.appendChild(div);
+    });
+  }
+
+  // ── Leagues View ───────────────────────────────────────────────────────────
+  const LEAGUE_DISPLAY_ORDER = [
+    "Premier League", "Championship", "League 1", "League 2", "National League",
+  ];
+  const LEAGUE_RELEGATION_ZONES = {
+    "Premier League": 3, "Championship": 3, "League 1": 3, "League 2": 2, "National League": 2,
+  };
+  const LEAGUE_UCL_SPOTS = { "Premier League": 4 };
+  const LEAGUE_UEL_SPOTS = { "Premier League": 2 };
+
+  function renderLeaguesView() {
+    const el = document.getElementById("leagues-view-content");
+    if (!el) return;
+    const snap = state && state.leagueStandings;
+    if (!snap || !Object.keys(snap).length) {
+      el.innerHTML = `<div class="leagues-no-data">Play a season to see league standings.</div>`;
+      return;
+    }
+    const blocks = LEAGUE_DISPLAY_ORDER
+      .filter((name) => snap[name] && snap[name].length)
+      .map((name) => {
+        const rows = snap[name];
+        const winner = rows[0] ? rows[0].team : "—";
+        const n = rows.length;
+        const relZone = LEAGUE_RELEGATION_ZONES[name] || 3;
+        const relStart = n - relZone;
+        const uclSpots = LEAGUE_UCL_SPOTS[name] || 0;
+        const uelSpots = LEAGUE_UEL_SPOTS[name] || 0;
+        const isPlayerLeague = state.club && rows.some((r) => r.team === state.club);
+
+        const tableRows = rows.map((r, i) => {
+          const mine = r.team === state.club ? "mine" : "";
+          const zone = i === 0 ? "champ"
+            : (uclSpots && i < uclSpots) ? "ucl"
+            : (uelSpots && i < uclSpots + uelSpots) ? "uel"
+            : i >= relStart ? "releg" : "";
+          const gd = r.GD != null ? r.GD : (r.GF != null && r.GA != null ? r.GF - r.GA : "—");
+          const gdStr = typeof gd === "number" ? (gd > 0 ? "+" + gd : String(gd)) : gd;
+          if (r.P != null) {
+            return `<tr class="${zone} ${mine}"><td>${i + 1}</td><td class="lt-team">${esc(r.team)}</td><td>${r.P}</td><td>${r.W}</td><td>${r.D}</td><td>${r.L}</td><td>${r.GF}</td><td>${r.GA}</td><td>${gdStr}</td><td class="lt-pts">${r.Pts}</td></tr>`;
+          } else {
+            return `<tr class="${zone} ${mine}"><td>${i + 1}</td><td class="lt-team" colspan="9">${esc(r.team)}</td></tr>`;
+          }
+        }).join("");
+
+        const hasFullStats = rows[0] && rows[0].P != null;
+        const thead = hasFullStats
+          ? `<tr><th>#</th><th>Club</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th></tr>`
+          : `<tr><th>#</th><th>Club</th></tr>`;
+
+        return `<div class="league-block${isPlayerLeague ? " open" : ""}" data-league="${esc(name)}">
+          <div class="league-block-header" onclick="this.parentElement.classList.toggle('open')">
+            <span class="league-block-name">${esc(name)}</span>
+            <span class="league-block-winner">🏆 ${esc(winner)}</span>
+          </div>
+          <div class="league-block-table">
+            <table class="league-table">
+              <thead>${thead}</thead>
+              <tbody>${tableRows}</tbody>
+            </table>
+          </div>
+        </div>`;
+      });
+
+    el.innerHTML = `<div class="leagues-view">${blocks.join("")}</div>`;
   }
 
   function renderCareerHeader() {
@@ -3874,6 +4147,7 @@
     document.getElementById("goal-progress-fill").style.width = pct + "%";
     document.getElementById("goal-progress-label").textContent = `${state.totalGoals} / ${LEVERS.goalTarget} career goals`;
     renderCareerStats();
+    renderLogPreview();
   }
 
   function renderSeasonReady() {
@@ -3951,9 +4225,14 @@
 
   function renderLeagueTable(sd) {
     if (!state.leagueTable) return "";
+    const tableSize = state.leagueTable.length;
+    // Relegation zone: bottom 3 for PL (20 clubs), bottom 3 for Championship/L1/L2 (24 clubs),
+    // bottom 2 for National League. UCL/UEL zones only apply in the PL.
+    const isPL = PL_TIERS.includes(TEAM_DATABASE[state.club] && TEAM_DATABASE[state.club].league);
+    const relegStart = tableSize - (tableSize <= 20 ? 3 : tableSize <= 24 ? 3 : 2);
     const rows = state.leagueTable.map((r, i) => {
       const gd = r.GF - r.GA;
-      const zone = i === 0 ? "champ" : i <= 3 ? "ucl" : i <= 5 ? "uel" : i >= 17 ? "releg" : "";
+      const zone = i === 0 ? "champ" : isPL && i <= 3 ? "ucl" : isPL && i <= 5 ? "uel" : i >= relegStart ? "releg" : "";
       const mine = r.team === state.club ? "mine" : "";
       return `<tr class="${zone} ${mine}"><td>${i + 1}</td><td class="lt-team">${esc(r.team)}</td><td>${r.P}</td><td>${r.W}</td><td>${r.D}</td><td>${r.L}</td><td>${r.GF}</td><td>${r.GA}</td><td>${gd > 0 ? "+" : ""}${gd}</td><td class="lt-pts">${r.Pts}</td></tr>`;
     }).join("");
@@ -3963,7 +4242,7 @@
       <tbody>${rows}</tbody></table></details>`;
   }
 
-  function presentEventQueue(events, idx, sd, intl) {
+  function presentEventQueue(events, idx, sd, intl, ctx) {
     if (!events || !events[idx]) {
       proceedToTransfer(sd, intl);
       return;
@@ -3971,24 +4250,26 @@
     const ev = events[idx];
     const box = document.getElementById("season-action");
     const name = state.player.name;
-    const text = typeof ev.text === "function" ? ev.text(name) : ev.text;
+    const ctx2 = ctx || buildContext(sd);
+    const text = typeof ev.text === "function" ? ev.text(name, ctx2) : ev.text;
+    const choices = typeof ev.choices === "function" ? ev.choices(ctx2) : ev.choices;
     const eventNum = events.length > 1 ? ` (${idx + 1}/${events.length})` : "";
-    const choicesHtml = ev.choices.map((c, i) => `<button class="btn choice" data-i="${i}">${c.label}</button>`).join("");
+    const choicesHtml = choices.map((c, i) => `<button class="btn choice" data-i="${i}">${c.label}</button>`).join("");
     box.innerHTML = `
       <div class="decision ${ev.milestone ? "milestone-event" : ""}">
-        <div class="decision-tag">${ev.milestone ? "MILESTONE" : ev.category} EVENT${eventNum}</div>
+        <div class="decision-tag">${ev.milestone ? "MILESTONE" : ev.tag} EVENT${eventNum}</div>
         <div class="decision-text">${esc(text)}</div>
         <div class="decision-choices">${choicesHtml}</div>
       </div>`;
     box.querySelectorAll(".choice").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const c = ev.choices[parseInt(btn.dataset.i, 10)];
+        const c = choices[parseInt(btn.dataset.i, 10)];
         applyEffects(c.fx, ev.milestone ? 1 : EVENT_REWARD_MULTIPLIER);
         log(`   ↳ ${ev.milestone ? "🏅" : "🗲"} ${text.replace(/\.$/, "")} → "${c.label}"`, "decision");
         renderCareerHeader();
         saveState();
         if (state.retireNow) { state.retireNow = false; beginRetirement("injury"); return; }
-        if (idx + 1 < events.length) presentEventQueue(events, idx + 1, sd, intl);
+        if (idx + 1 < events.length) presentEventQueue(events, idx + 1, sd, intl, ctx2);
         else proceedToTransfer(sd, intl);
       });
     });
@@ -3996,8 +4277,21 @@
 
   function proceedToTransfer(sd, intl) {
     if (state.totalGoals >= LEVERS.goalTarget) { beginRetirement("goal"); return; }
+    returnFromLoanIfDue();
     applySeasonalAttributeChanges(sd);
     state.yearsAtClub++;
+    // Fire-agent event: eligible once every 3 seasons, only if not already world class,
+    // and only for players with some established career (season 3+).
+    const agentKey = state.agent ? state.agent.key : "poor";
+    const fireAgentCooldown = state.cooldowns["fireAgent"] || 0;
+    if (agentKey !== "worldclass" && fireAgentCooldown <= 0 && state.season >= 3 && rand() < 0.28) {
+      presentFireAgentEvent(sd, intl, () => _proceedToTransferInner(sd, intl));
+      return;
+    }
+    _proceedToTransferInner(sd, intl);
+  }
+
+  function _proceedToTransferInner(sd, intl) {
     // Players now see out their contract unless an end-of-season event forces a move
     // or the club decides to sell them. Automatic restlessness is suppressed while contracted.
     const hasContract = state.contractYears > 0;
@@ -4010,8 +4304,18 @@
     const wantsMove = eventForcedMove || restless;
     const loyalStay = hasContract && (mentTag(state.mentality) === "leader" || mentTag(state.mentality) === "consistency") && rand() < 0.6;
     const clubSells = shouldClubTransferOut(sd);
+    // Loan candidates: young or out-of-favor players not already forced to
+    // move/sold elsewhere get an occasional chance at a development loan for
+    // regular first-team minutes.
+    const loanEligible = !state.loan && !clubSells && !(wantsMove && !loyalStay) && hasContract &&
+      ["Bench", "Rotation"].includes(state.role) && state.age <= 29 && rand() < 0.3;
     if (clubSells) presentTransfer(generateOffers(sd), sd, intl, true, clubSells.reason);
     else if (wantsMove && !loyalStay) presentTransfer(generateOffers(sd), sd, intl, false);
+    else if (loanEligible) {
+      const loanOffers = generateLoanOffers(sd);
+      if (loanOffers.length) presentLoanOffers(loanOffers, sd, intl);
+      else handleContractPhase(sd, intl);
+    }
     else if (state.age >= 33 && !["LaLiga", "SerieA", "Bundesliga", "Saudi", "MLS", "Championship"].includes(TEAM_DATABASE[state.club].league) && rand() < 0.25) {
       const forced = generateForcedDestinationOffers(sd);
       if (forced.length) presentTransfer(forced, sd, intl, true);
@@ -4121,9 +4425,164 @@
     state.yearsAtClub = 0; state.pendingTransfer = false;
   }
 
+  /* ------------------------------ LOAN SYSTEM ----------------------------
+   * A loan is a temporary, single-season move: the player leaves for a
+   * lower-tier club to guarantee first-team minutes, then automatically
+   * returns to the parent club the following season with their original
+   * role/tenure restored. The parent club's contract clock is frozen for
+   * the duration (advanceToNextSeason is called directly, bypassing the
+   * normal contract countdown in handleContractPhase).
+   */
+  function generateLoanOffers(sd) {
+    const currentLeague = TEAM_DATABASE[state.club].league;
+    // Map the player's current league position in the English pyramid,
+    // then offer clubs from the tiers immediately below as loan destinations.
+    // PL tiers (Elite/Europe/Mid/Lower) all map to index 0.
+    const pyramidTierMap = {
+      Elite: 0, Europe: 0, Mid: 0, Lower: 0,
+      Championship: 1, League1: 2, League2: 3, NationalLeague: 4,
+    };
+    const loanTiersByPyramidIdx = [
+      // PL clubs → Championship + League 1
+      ["Championship", "League1"],
+      // Championship clubs → League 1 + League 2
+      ["League1", "League2"],
+      // League 1 clubs → League 2 + National League
+      ["League2", "NationalLeague"],
+      // League 2 clubs → National League
+      ["NationalLeague"],
+      // National League clubs → no lower tier available
+      [],
+    ];
+    const pyramidIdx = pyramidTierMap[currentLeague] ?? -1;
+    const targetTiers = pyramidIdx >= 0 ? loanTiersByPyramidIdx[pyramidIdx] : ["Championship", "League1"];
+    const pool = [
+      ...getPLLeagueClubs(), ...getChampionshipClubs(),
+      ...getLeague1Clubs(), ...getLeague2Clubs(), ...getNationalLeagueClubs(),
+    ].filter((c) => c !== state.club && targetTiers.includes(TEAM_DATABASE[c].league));
+    if (!pool.length) return [];
+    const n = clamp(randInt(1, 3), 1, pool.length);
+    const offers = [];
+    const used = new Set();
+    while (offers.length < n && offers.length < pool.length) {
+      const c = choice(pool);
+      if (used.has(c)) continue;
+      used.add(c);
+      offers.push({ club: c, type: "loan", years: 1, playtime: "Starter", injuryRisk: 25 });
+    }
+    return offers;
+  }
+
+  function presentLoanOffers(offers, sd, intl) {
+    if (!offers.length) { handleContractPhase(sd, intl); return; }
+    const box = document.getElementById("season-action");
+    const cards = offers.map((o, i) => {
+      const t = TEAM_DATABASE[o.club];
+      return `<button class="btn offer" data-i="${i}">
+        <div class="offer-club">${esc(o.club)} <span class="offer-loan-tag">(Loan)</span></div>
+        <div class="offer-meta">${t.league} · ATK ${t.attack} MID ${t.midfield} DEF ${t.defence} · ${t.tacticalStyle}</div>
+        <div class="offer-contract">1-season loan · ▶️ Starter minutes guaranteed</div>
+      </button>`;
+    }).join("");
+    box.innerHTML = `
+      <div class="transfer">
+        <div class="decision-tag">LOAN OPTION</div>
+        <div class="decision-text">${esc(state.player.name)} isn't getting enough game time at ${esc(state.club)}. A temporary loan elsewhere could help development.</div>
+        <div class="offers">${cards}</div>
+        <button class="btn ghost" id="btn-stay">Stay and fight for your place</button>
+      </div>`;
+    box.querySelectorAll(".offer").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const o = offers[parseInt(btn.dataset.i, 10)];
+        goOnLoan(o.club);
+        renderCareerHeader();
+        saveState();
+        advanceToNextSeason();
+      });
+    });
+    document.getElementById("btn-stay").addEventListener("click", () => {
+      log(`   ↳ ✋ ${state.player.name} rejects the loan and stays to fight for a place at ${state.club}.`, "decision");
+      handleContractPhase(sd, intl);
+    });
+  }
+
+  function goOnLoan(club) {
+    log(`   ↳ 🔁 Loan: ${state.player.name} joins ${club} on a season-long loan from ${state.club}.`, "transfer");
+    state.loan = {
+      parentClub: state.club,
+      parentRole: state.role,
+      parentYearsAtClub: state.yearsAtClub,
+      dueBackSeason: state.season + 1,
+    };
+    applyPlayerTransferImpact(state.club, true);
+    applyPlayerTransferImpact(club, false);
+    state.club = club;
+    state.clubsPlayed.add(club);
+    ensureClubStat(club);
+    state.role = "Starter"; // the point of a loan is regular first-team minutes
+    state.yearsAtClub = 0;
+  }
+
+  function returnFromLoanIfDue() {
+    if (!state.loan || state.season < state.loan.dueBackSeason) return;
+    const parent = state.loan.parentClub;
+    log(`   ↳ 🔁 Loan spell over. ${state.player.name} returns to ${parent}.`, "transfer");
+    applyPlayerTransferImpact(state.club, true);
+    applyPlayerTransferImpact(parent, false);
+    state.club = parent;
+    state.role = state.loan.parentRole || determineRole();
+    state.yearsAtClub = state.loan.parentYearsAtClub || 0;
+    state.loan = null;
+    ensureClubStat(state.club);
+  }
+
+  // ── Fire Agent event ───────────────────────────────────────────────────────
+  // Presented at end of season once per 3 seasons at earliest. 50/50 outcome:
+  // better agent (one tier up) or same / worse (stays or drops one tier).
+  function presentFireAgentEvent(sd, intl, onDone) {
+    const currentKey = state.agent ? state.agent.key : "poor";
+    const tierIdx = AGENT_TIERS.findIndex((t) => t.key === currentKey);
+    const box = document.getElementById("season-action");
+    if (!box) { onDone(); return; }
+    box.innerHTML = `
+      <div class="decision">
+        <div class="decision-tag">AGENT EVENT</div>
+        <div class="decision-text">${esc(state.player.name)} is unhappy with their current ${esc(state.agent ? state.agent.label : "Poor")} agent. Fire them and roll the dice for a better deal?</div>
+        <div class="decision-choices">
+          <button class="btn choice" id="btn-fire-agent">🔥 Fire agent — take the gamble (50/50)</button>
+          <button class="btn choice ghost" id="btn-keep-agent">Keep current agent</button>
+        </div>
+      </div>`;
+    document.getElementById("btn-fire-agent").addEventListener("click", () => {
+      if (rand() < 0.5) {
+        // Better agent
+        const newTier = AGENT_TIERS[Math.min(tierIdx + 1, AGENT_TIERS.length - 1)];
+        state.agent = { key: newTier.key, label: newTier.label, influence: newTier.influence, contractBonus: newTier.contractBonus };
+        state.fame = Math.max(state.fame || 0, Math.floor(newTier.wealth / 2));
+        log(`   ↳ 🤝 Upgraded to a ${newTier.label} agent. Better contracts and opportunities ahead.`, "milestone");
+      } else {
+        // Same or worse
+        const newTier = AGENT_TIERS[Math.max(tierIdx - 1, 0)];
+        state.agent = { key: newTier.key, label: newTier.label, influence: newTier.influence, contractBonus: newTier.contractBonus };
+        log(`   ↳ 😬 New agent turned out to be ${newTier.label}. Not the upgrade expected.`, "decision");
+      }
+      state.cooldowns["fireAgent"] = 3;
+      renderCareerHeader();
+      saveState();
+      onDone();
+    });
+    document.getElementById("btn-keep-agent").addEventListener("click", () => {
+      log(`   ↳ ${state.player.name} sticks with their current agent.`, "decision");
+      state.cooldowns["fireAgent"] = 2;
+      saveState();
+      onDone();
+    });
+  }
+
   function advanceToNextSeason() {
     decayFlags();
     if (state.injuryProneSeasons > 0) state.injuryProneSeasons--;
+    if (state.endOfCareerTriggered && !state.finalSeasonForced) { endCareer(false); return; }
     state.age++; state.season++;
     const ra = state.retirementAge || 40;
     let retireChance = 0;
@@ -4238,8 +4697,10 @@
     if (refused && rand() < agentInfluence) refused = false;
     if (refused && rand() < (loyalty - 50) / 200) refused = false;
 
-    // Wage estimate (k/week) influenced by league wealth, reputation, performance, and age
-    let wage = Math.round((rep * 5 + { Sensational: 25, Overperformed: 15, "Met Expectation": 5, Underperformed: 0, Flop: -5 }[perf] || 0) * leagueWeights.wages);
+    // Wage estimate (k/week) influenced by league wealth, reputation, performance, fame, and age.
+    // Fame (driven by agent negotiation) amplifies wage offers — higher fame = higher market value.
+    const fameMult = 1 + clamp((state.fame || 0) / 200, 0, 0.5);
+    let wage = Math.round((rep * 5 + ({ Sensational: 25, Overperformed: 15, "Met Expectation": 5, Underperformed: 0, Flop: -5 }[perf] || 0)) * leagueWeights.wages * fameMult);
     if (age >= 34) wage = Math.round(wage * 0.6);
     else if (age >= 30) wage = Math.round(wage * 0.85);
     wage = Math.max(5, wage);
@@ -4379,7 +4840,9 @@
   }
 
   /* --------------------- END-OF-CAREER EVENTS --------------------------- */
+  /*
   const END_EVENTS = [
+
     { id: "immediate_retire", base: 6, text: (n) => `${n} calls time on a storied career, hanging up the boots for good.`,
       choices: [{ label: "Retire a legend", fx: {} }] },
     { id: "one_more_year", base: 4, req: (s) => s.age < 38, text: (n) => `${n} isn't ready to stop — there's one more season in those legs.`,
@@ -4449,13 +4912,17 @@
         { label: "Retire a club legend", fx: {} },
       ] },
   ];
+  */
 
   function beginRetirement(reason) {
-    state.endCareerReason = reason;
+    state.endCareerReason = state.endCareerReason || reason;
     // reached the 1000-goal target -> celebrate straight to legacy
     if (reason === "goal" || state.totalGoals >= LEVERS.goalTarget) { endCareer(true); return; }
-    const eligible = END_EVENTS.filter((e) => !e.req || e.req(state)).map((e) => ({ item: e, weight: e.base }));
-    const ev = weightedRandomPick(eligible) || END_EVENTS[0];
+    // one-shot end-of-career event: if already triggered, finish the career without re-picking
+    if (state.endOfCareerTriggered) { endCareer(false); return; }
+    state.endOfCareerTriggered = true;
+    const eligible = CAREER_ENDINGS.filter((e) => !e.req || e.req(state)).map((e) => ({ item: e, weight: getCareerOutcomeScore(state, e) }));
+    const ev = weightedRandomPick(eligible) || CAREER_ENDINGS[CAREER_ENDINGS.length - 1];
     presentEndEvent(ev);
     saveState();
   }
@@ -4463,7 +4930,7 @@
   function presentEndEvent(ev) {
     const box = document.getElementById("season-action");
     document.getElementById("season-result").innerHTML = "";
-    const text = typeof ev.text === "function" ? ev.text(state.player.name) : ev.text;
+    const text = typeof ev.text === "function" ? ev.text(state.player.name, state) : ev.text;
     const choicesHtml = ev.choices.map((c, i) => `<button class="btn choice" data-i="${i}">${c.label}</button>`).join("");
     box.innerHTML = `
       <div class="decision endcareer">
@@ -4474,12 +4941,32 @@
     box.querySelectorAll(".choice").forEach((btn) => {
       btn.addEventListener("click", () => {
         const c = ev.choices[parseInt(btn.dataset.i, 10)];
-        handleEndChoice(c.fx, text, c.label);
+        handleEndChoice(c.fx, text, c.label, ev);
       });
     });
   }
 
-  function handleEndChoice(fx, text, label) {
+  function findFinalSeasonDestination(destination) {
+    if (destination === "lower leagues") {
+      const pool = [
+        ...getPLLeagueClubs(), ...getChampionshipClubs(), ...getLeague1Clubs(),
+      ].filter((c) => ["Lower", "Championship", "League1"].includes(TEAM_DATABASE[c].league));
+      return pool.length ? choice(pool) : null;
+    }
+    if (destination === "abroad") {
+      const sd = { perfTier: state.lastPerformanceTier || "Met Expectation" };
+      const offers = generateForcedDestinationOffers(sd);
+      if (offers.length) {
+        const foreign = offers.find((o) => FOREIGN_LEAGUE_KEYS.includes(TEAM_DATABASE[o.club].league));
+        if (foreign) return foreign.club;
+      }
+      const pool = getForeignLeagueClubs().filter((c) => FOREIGN_LEAGUE_KEYS.includes(TEAM_DATABASE[c].league));
+      return pool.length ? choice(pool) : null;
+    }
+    return null;
+  }
+
+  function handleEndChoice(fx, text, label, ending) {
     fx = fx || {};
     log(`   ↳ 🎬 ${text.replace(/\.$/, "")} → "${label}"`, "milestone");
     // Apply standard numeric effects (goals, assists, rep, fame, wealth) directly — end-of-career events are not subject to the seasonal reward multiplier
@@ -4488,10 +4975,15 @@
       state.honours.domesticCups++;
       state.competitionHistory.push({ season: state.season, club: state.club, text: `🏆 Lifted a final trophy in a farewell season` });
     }
-    if (fx.extend || fx.returnHome) {
+    // Final-season outcomes: play one last campaign then retire for good
+    if (fx.finalSeason || fx.extend || fx.returnHome) {
       if (fx.returnHome) {
         const formers = [...state.clubsPlayed].filter((c) => c !== state.club && TEAM_DATABASE[c]);
         if (formers.length) moveToClub(choice(formers));
+      }
+      if (fx.finalSeason && fx.finalSeason.destination) {
+        const dest = findFinalSeasonDestination(fx.finalSeason.destination);
+        if (dest && dest !== state.club) moveToClub(dest);
       }
       state.finalSeasonForced = true;
       state.age++; state.season++;
@@ -4501,7 +4993,7 @@
       saveState();
       return;
     }
-    if (fx.epilogue) state.epilogue = fx.epilogue;
+    if (fx.epilogue || (ending && ending.epilogue)) state.epilogue = fx.epilogue || ending.epilogue;
     endCareer(false);
   }
 
@@ -4624,11 +5116,13 @@
     const map = {
       manager: "🧑‍💼 After hanging up the boots, they moved into management, chasing silverware from the dugout.",
       pundit: "🎙️ They became a beloved TV pundit, dissecting the game for millions every weekend.",
+      coach: "⚽ They became a respected coach, shaping the next generation from the training ground.",
     };
     const reasonMap = {
       age: "Retired gracefully with age catching up.",
       planned: "Bowed out after a planned farewell season.",
       goal: "Retired the moment the 1000-goal dream was realised.",
+      unwanted: "No club was willing to offer a new contract.",
     };
     const parts = [];
     if (state.endCareerReason && reasonMap[state.endCareerReason]) parts.push(reasonMap[state.endCareerReason]);
@@ -4886,6 +5380,8 @@
     const btnCloseProfile = document.getElementById("btn-close-profile");
     if (btnProfile) btnProfile.addEventListener("click", () => switchCareerTab("profile"));
     if (btnCloseProfile) btnCloseProfile.addEventListener("click", () => switchCareerTab("season"));
+    const btnViewFullLog = document.getElementById("btn-view-full-log");
+    if (btnViewFullLog) btnViewFullLog.addEventListener("click", () => switchCareerTab("history"));
     document.querySelectorAll(".career-tab").forEach((t) =>
       t.addEventListener("click", () => switchCareerTab(t.dataset.tab)));
     document.querySelectorAll(".btn-play-again").forEach((b) => b.addEventListener("click", () => {
@@ -4901,14 +5397,32 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
 
+
+
+
+  function getCareerSection(age) {
+    for (const [key, sec] of Object.entries(CAREER_SECTIONS)) {
+      if (age >= sec.min && age <= sec.max) return key;
+    }
+    return "Overtime";
+  }
+
+
+  function getCareerOutcomeScore(s, ending) {
+    let score = ending.base;
+    if (ending.score) score += ending.score(s);
+    return Math.max(0, score);
+  }
+
   function resolveEndOfCareerEvent() {
     if (state.totalGoals >= LEVERS.goalTarget) return { extended: false, event: "goal_target" };
-    const eligible = END_EVENTS.filter((e) => !e.req || e.req(state)).map((e) => ({ item: e, weight: e.base }));
+    if (state.endOfCareerTriggered) return { extended: false, event: "already_triggered" };
+    const eligible = CAREER_ENDINGS.filter((e) => !e.req || e.req(state)).map((e) => ({ item: e, weight: getCareerOutcomeScore(state, e) }));
     if (!eligible.length) return { extended: false, event: "none" };
     const ev = weightedRandomPick(eligible);
-    const c = weightedRandomPick(ev.choices.map((ch) => ({ item: ch, weight: 1 })));
-    handleEndChoice(c.fx, ev.text(state.player.name), c.label);
-    if (c.fx && (c.fx.extend || c.fx.returnHome)) return { extended: true, event: ev.id };
+    const c = weightedRandomPick(ev.choices.map((ch) => ({ item: ch, weight: ch.weight || 1 })));
+    handleEndChoice(c.fx, ev.text(state.player.name, state), c.label, ev);
+    if (c.fx && (c.fx.finalSeason || c.fx.extend || c.fx.returnHome)) return { extended: true, event: ev.id };
     return { extended: false, event: ev.id };
   }
 
@@ -4917,7 +5431,12 @@
     startCreation, compilePlayer, simulateSeason, applySeasonalAttributeChanges,
     recomputePlayerStats, simulateInternational, computeClubContractOffer, generateOffers, generateForcedDestinationOffers, determineNaturalRole,
     adjustPillar, getPillar, checkCareerMilestone, pickSeasonDecision, applyEffects, applyEffectsRaw,
+    getEventWeight, pickSeasonEvent, pickSeasonEvents, determineEventCount, getCareerSection, getCareerOutcomeScore, resolveEndOfCareerEvent,
     getState: () => state, setState: (s) => { state = migrateState(s); }, setSeed, serializeState, deserializeState, normalizeContractState,
-    LEAGUE_CLUBS, FOREIGN_LEAGUES, TEAM_DATABASE, resolveEndOfCareerEvent
+    get LEAGUE_CLUBS() { return getPLLeagueClubs(); },
+    getPLLeagueClubs, getChampionshipClubs, getLeague1Clubs, getLeague2Clubs, getNationalLeagueClubs,
+    getForeignLeagueClubs, runPromotionRelegation,
+    generateLoanOffers, goOnLoan, returnFromLoanIfDue,
+    FOREIGN_LEAGUES, TEAM_DATABASE, SEASON_EVENTS, CAREER_ENDINGS, CAREER_SECTIONS
   };
 })();

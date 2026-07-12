@@ -184,6 +184,7 @@
   .donor-pos.keeper { color: #f5c542; background: rgba(245,197,66,.18); }
   .donor-attrs { display: grid; grid-template-columns: repeat(7, minmax(48px, 1fr)); gap: 5px; margin-top: 10px; font-size: 11px; }
   .donor-attr { display: flex; flex-direction: column; gap: 2px; justify-content: center; background: rgba(255,255,255,0.045); padding: 5px 6px; border-radius: 6px; color: #8794aa; min-width: 0; }
+  @media (max-width: 600px) { .donor-attrs { display: flex; flex-wrap: wrap; } .donor-attr { flex: 1 1 52px; min-width: 52px; } }
   .donor-attr.highlight { color: var(--gold); background: rgba(245,224,80,0.14); }
   .donor-attr b { font-weight: 900; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .donor-attr.highlight b { color: var(--gold); }
@@ -269,6 +270,27 @@
   .cs-section-title { font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
   .cs-empty { font-size: 12px; color: var(--muted); font-style: italic; }
 
+  /* Club history table */
+  .club-history-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+  .club-history-table th { background: var(--card2); color: var(--muted); font-size: 10px; text-transform: uppercase; padding: 5px 8px; text-align: left; }
+  .club-history-table td { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); background: var(--bg2); }
+  .club-history-table td.ch-club { font-weight: 700; color: var(--accent2); }
+  .club-history-table td.ch-num { text-align: center; font-weight: 700; color: var(--accent); }
+  .club-history-table td.ch-muted { text-align: center; color: var(--muted); }
+  .club-history-table tr:last-child td { border-bottom: none; }
+
+  /* WIP banner */
+  .wip-banner { background: linear-gradient(135deg, #1a1200, #2a1c00); border: 1px solid var(--gold); border-radius: 10px; padding: 18px 16px; text-align: center; margin-bottom: 16px; }
+  .wip-banner-title { font-size: 18px; font-weight: 900; color: var(--gold); margin-bottom: 6px; }
+  .wip-banner-sub { font-size: 13px; color: var(--muted); }
+
+  /* Agent tier display */
+  .agent-tier-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 12px; margin-left: 4px; }
+  .agent-tier-badge.poor { background: rgba(220,60,60,.12); color: var(--bad); border: 1px solid var(--bad); }
+  .agent-tier-badge.med { background: rgba(255,255,255,.06); color: var(--muted); border: 1px solid var(--line); }
+  .agent-tier-badge.average { background: rgba(0,208,108,.1); color: var(--accent); border: 1px solid var(--accent); }
+  .agent-tier-badge.worldclass { background: rgba(246,196,83,.15); color: var(--gold); border: 1px solid var(--gold); }
+
   .records-table, .top10-table { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 14px; font-size: 13px; }
   .rec-row, .top10-row { display: grid; grid-template-columns: 1fr 1.5fr 60px 60px; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); align-items: center; }
   .top10-row { grid-template-columns: 28px 1fr 60px; }
@@ -316,6 +338,31 @@
 
   .log-panel h3 { color: var(--accent2); font-size: 15px; }
   #career-log { max-height: 560px; overflow-y: auto; padding-right: 6px; }
+
+  /* Log preview on season tab */
+  .log-preview { margin-top: 14px; }
+  .log-preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .log-preview-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+  .log-preview-link { font-size: 11px; color: var(--accent2); cursor: pointer; text-decoration: underline; background: none; border: none; padding: 0; }
+  .log-preview-link:hover { color: var(--accent); }
+  #log-preview-entries .log-entry { margin-bottom: 4px; font-size: 12px; padding: 6px 9px; }
+
+  /* Leagues view */
+  .leagues-view { display: flex; flex-direction: column; gap: 12px; }
+  .league-block { background: var(--bg2); border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+  .league-block-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--card2); cursor: pointer; }
+  .league-block-name { font-size: 13px; font-weight: 800; color: var(--accent2); }
+  .league-block-winner { font-size: 12px; color: var(--gold); font-weight: 700; }
+  .league-block-table { display: none; }
+  .league-block.open .league-block-table { display: block; }
+  .league-block-table .league-table th { background: var(--card2); color: var(--muted); font-size: 10px; }
+  .leagues-no-data { color: var(--muted); font-size: 13px; font-style: italic; padding: 20px 0; text-align: center; }
+
+  /* Finance badge on header */
+  .finance-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
+  .finance-badge.rich { background: rgba(246,196,83,.15); color: var(--gold); border: 1px solid var(--gold); }
+  .finance-badge.stable { background: rgba(0,208,108,.1); color: var(--accent); border: 1px solid var(--accent); }
+  .finance-badge.poor { background: rgba(220,60,60,.1); color: var(--bad); border: 1px solid var(--bad); }
   .log-entry { font-size: 13px; padding: 8px 10px; border-radius: 8px; margin-bottom: 6px; background: var(--bg2); border-left: 3px solid var(--line); }
   .log-entry.milestone { border-left-color: var(--gold); }
   .log-entry.decision { border-left-color: var(--accent2); background: #10243a; }
@@ -552,24 +599,6 @@
         <a href="https://x.com/JamesTrigaar" target="_blank" rel="noopener" class="btn ghost" id="btn-feedback">Help / Feedback</a>
         <button class="btn ghost" id="btn-leaderboard" disabled>🏆 Leaderboard — Coming Soon</button>
       </div>
-      <div class="sub" style="font-size:13px">Beta — era &amp; mode select · rolled country origins · multi-draft DNA · potential · longevity · dynamic events · international caps</div>
-      <div class="leaderboard-teaser">
-        <div class="lt-title">GLOBAL LEADERBOARD</div>
-        <div class="lt-body">Compare your 1000-goal legends against the world. <span class="lt-soon">Coming Soon</span></div>
-      </div>
-      <div class="features">
-        <div class="feature"><b>Era &amp; Mode</b><br/>Choose a classic/modern/recent era and Peak or At-the-Time ratings.</div>
-        <div class="feature"><b>Multi-Draft DNA</b><br/>Roll a country, academy, build &amp; position, then draft each attribute from a different squad.</div>
-        <div class="feature"><b>Country Origins</b><br/>Birthplace is rolled and shapes development speed, hidden traits, and career narrative.</div>
-        <div class="feature"><b>Full Career Sim</b><br/>Real league tables, honours, Ballon d'Ors, Golden Boots &amp; end-of-career events.</div>
-      </div>
-      <div class="welcome-footer">
-        <a href="https://x.com/JamesTrigaar" target="_blank" rel="noopener" class="footer-link">X / Twitter</a>
-        <a href="https://1000goals.co.uk" target="_blank" rel="noopener" class="footer-link">1000goals.co.uk</a>
-        <div class="bmc-wrap">
-          <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="trigaar" data-color="#FFDD00" data-emoji="" data-font="Cookie" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
-        </div>
-      </div>
     </div>
   </section>
 
@@ -625,28 +654,44 @@
 
     <div class="career-tabs">
       <button class="career-tab active" data-tab="season">Season</button>
-      <button class="career-tab" data-tab="stats">Career Stats</button>
-      <button class="career-tab" data-tab="profile">Profile</button>
+      <button class="career-tab" data-tab="stats">Career Profile</button>
       <button class="career-tab" data-tab="history">History</button>
+      <button class="career-tab" data-tab="leagues">Leagues</button>
+      <button class="career-tab" data-tab="alltime">All Time</button>
     </div>
 
     <div class="career-panels">
       <div class="career-panel active" data-tab="season">
         <div class="panel" id="season-result"></div>
         <div class="panel" id="season-action"></div>
+        <div class="panel log-preview" id="log-preview-panel">
+          <div class="log-preview-header">
+            <span class="log-preview-title">Recent Activity</span>
+            <button class="log-preview-link" id="btn-view-full-log">View full log →</button>
+          </div>
+          <div id="log-preview-entries"></div>
+        </div>
       </div>
       <div class="career-panel" data-tab="stats">
         <div class="panel" id="career-stats-panel">
           <div id="career-stats-content"></div>
         </div>
       </div>
-      <div class="career-panel" data-tab="profile">
-        <div class="panel" id="profile-content"></div>
-      </div>
       <div class="career-panel" data-tab="history">
         <div class="panel log-panel">
           <h3>Career Log</h3>
           <div id="career-log"></div>
+        </div>
+      </div>
+      <div class="career-panel" data-tab="alltime">
+        <div class="panel">
+          <div id="alltime-content"></div>
+        </div>
+      </div>
+      <div class="career-panel" data-tab="leagues">
+        <div class="panel">
+          <h3 style="color:var(--accent2);font-size:15px;margin-bottom:10px">League Standings</h3>
+          <div id="leagues-view-content"></div>
         </div>
       </div>
     </div>
@@ -706,6 +751,7 @@
 </div>
 
 <script src="data.js"></script>
+<script src="career_event_data.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

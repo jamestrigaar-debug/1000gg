@@ -1,0 +1,74 @@
+Usage guide for managing data.js through data_manager.js tool: 
+
+Added mass data.js management tool
+Created data_manager.js.
+
+You can use it for:
+
+
+
+bash
+node data_manager.js ./data.js summary
+node data_manager.js ./data.js verify [limit]
+node data_manager.js ./data.js audit-feet defenders 50
+node data_manager.js ./data.js audit-feet all 50
+node data_manager.js ./data.js audit-tier 20
+node data_manager.js ./data.js audit-consistency 20
+node data_manager.js ./data.js fix-consistency
+node data_manager.js ./data.js export-csv data_export.csv
+node data_manager.js ./data.js patch-csv edits.csv
+node data_manager.js ./data.js cap-feet defenders
+node data_manager.js ./data.js cap-feet all
+node data_manager.js ./data.js scale CB rightFoot 0.85
+node data_manager.js ./data.js set "Simon Francis" rightFoot 76 --all
+node data_manager.js ./data.js set-tier "Player Name" L --all
+node data_manager.js ./data.js backup
+
+
+
+Added overall recalculation script
+Created recalculate_overall.js.
+
+Usage:
+
+
+
+
+bash
+node recalculate_overall.js ./data.js write
+Check-only mode:
+
+
+
+
+bash
+node recalculate_overall.js ./data.js check 25
+It recalculates overall based on current attributes and position-specific formulas.
+
+Applied recalculation
+After applying the script:
+
+
+
+text
+Rows needing overall recalculation: 4996/23763
+Recalculated overall in 4996/4996 rows
+Rows needing overall recalculation: 0/23763
+Tests passed
+Ran:
+
+
+
+bash
+node --check game.js
+node --check data.js
+node --check data_manager.js
+node --check recalculate_overall.js
+node --check stress_balance.js
+node --check test_stress.js
+node --check test_core_regressions.js
+node data_manager.js ./data.js verify
+node data_manager.js ./data.js audit-consistency
+node test_core_regressions.js
+node stress_balance.js
+node test_stress.js
