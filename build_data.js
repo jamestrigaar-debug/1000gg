@@ -733,35 +733,34 @@ const FOOTER = `/* ============================ TEAM DATABASE ==================
  * Clubs the career simulation places the player at & builds league tables from.
  * ====================================================================== */
 const TEAM_DATABASE = {
-  "Manchester City": { attack: 92, midfield: 90, defence: 86, manager: 95, tacticalStyle: "Possession", homeAdvantage: 8, league: "Elite" },
+  "Manchester City": { attack: 92, midfield: 88, defence: 86, manager: 90, tacticalStyle: "Possession", homeAdvantage: 8, league: "Elite" },
   "Liverpool": { attack: 90, midfield: 86, defence: 85, manager: 92, tacticalStyle: "High Press", homeAdvantage: 9, league: "Elite" },
   "Arsenal": { attack: 86, midfield: 85, defence: 84, manager: 86, tacticalStyle: "Possession", homeAdvantage: 8, league: "Elite" },
-  "Manchester United": { attack: 84, midfield: 80, defence: 80, manager: 82, tacticalStyle: "Direct", homeAdvantage: 8, league: "Elite" },
   "Chelsea": { attack: 84, midfield: 82, defence: 82, manager: 84, tacticalStyle: "Counter", homeAdvantage: 7, league: "Elite" },
-  "Tottenham": { attack: 83, midfield: 79, defence: 78, manager: 80, tacticalStyle: "High Press", homeAdvantage: 7, league: "Europe" },
-  "Newcastle United": { attack: 80, midfield: 78, defence: 80, manager: 80, tacticalStyle: "Counter", homeAdvantage: 8, league: "Europe" },
+  "Manchester United": { attack: 82, midfield: 78, defence: 78, manager: 80, tacticalStyle: "Direct", homeAdvantage: 8, league: "Elite" },
+  "Newcastle United": { attack: 80, midfield: 78, defence: 80, manager: 80, tacticalStyle: "Counter", homeAdvantage: 8, league: "Elite" },
+  "Tottenham": { attack: 80, midfield: 78, defence: 76, manager: 78, tacticalStyle: "High Press", homeAdvantage: 7, league: "Europe" },
   "Aston Villa": { attack: 80, midfield: 77, defence: 76, manager: 82, tacticalStyle: "Direct", homeAdvantage: 7, league: "Europe" },
   "Brighton": { attack: 78, midfield: 80, defence: 74, manager: 84, tacticalStyle: "Possession", homeAdvantage: 6, league: "Europe" },
+  "Nottingham Forest": { attack: 74, midfield: 72, defence: 74, manager: 76, tacticalStyle: "Park the Bus", homeAdvantage: 8, league: "Mid" },
+  "Bournemouth": { attack: 74, midfield: 72, defence: 72, manager: 76, tacticalStyle: "High Press", homeAdvantage: 6, league: "Mid" },
   "West Ham": { attack: 76, midfield: 74, defence: 75, manager: 76, tacticalStyle: "Counter", homeAdvantage: 7, league: "Mid" },
   "Crystal Palace": { attack: 74, midfield: 73, defence: 74, manager: 76, tacticalStyle: "Counter", homeAdvantage: 7, league: "Mid" },
   "Brentford": { attack: 75, midfield: 73, defence: 73, manager: 78, tacticalStyle: "Route One", homeAdvantage: 7, league: "Mid" },
   "Fulham": { attack: 73, midfield: 72, defence: 72, manager: 76, tacticalStyle: "Possession", homeAdvantage: 6, league: "Mid" },
   "Everton": { attack: 70, midfield: 70, defence: 72, manager: 72, tacticalStyle: "Park the Bus", homeAdvantage: 8, league: "Mid" },
   "Wolves": { attack: 72, midfield: 71, defence: 72, manager: 74, tacticalStyle: "Counter", homeAdvantage: 6, league: "Mid" },
-  "Nottingham Forest": { attack: 70, midfield: 68, defence: 69, manager: 72, tacticalStyle: "Park the Bus", homeAdvantage: 8, league: "Lower" },
-  "Bournemouth": { attack: 71, midfield: 69, defence: 67, manager: 74, tacticalStyle: "High Press", homeAdvantage: 6, league: "Lower" },
-  "Burnley": { attack: 66, midfield: 66, defence: 68, manager: 70, tacticalStyle: "Route One", homeAdvantage: 7, league: "Lower" },
-  "Leeds United": { attack: 72, midfield: 68, defence: 66, manager: 70, tacticalStyle: "High Press", homeAdvantage: 7, league: "Lower" },
-  "Sheffield United": { attack: 64, midfield: 65, defence: 66, manager: 68, tacticalStyle: "Park the Bus", homeAdvantage: 7, league: "Lower" },
-  "Luton Town": { attack: 63, midfield: 64, defence: 64, manager: 70, tacticalStyle: "Route One", homeAdvantage: 8, league: "Lower" },
+  "Ipswich Town": { attack: 68, midfield: 68, defence: 66, manager: 70, tacticalStyle: "Park the Bus", homeAdvantage: 8, league: "Lower" },
+  "Leicester City": { attack: 70, midfield: 68, defence: 68, manager: 72, tacticalStyle: "Counter", homeAdvantage: 7, league: "Lower" },
+  "Southampton": { attack: 68, midfield: 68, defence: 66, manager: 70, tacticalStyle: "Possession", homeAdvantage: 6, league: "Lower" },
 };
 
 /* Academy tier -> pool of realistic starting clubs (by league band). */
 const ACADEMY_STARTING_POOL = {
-  "World Class": ["Manchester City", "Liverpool", "Arsenal", "Manchester United", "Chelsea"],
-  "Strong": ["Tottenham", "Newcastle United", "Aston Villa", "Brighton", "Leeds United"],
-  "Average": ["West Ham", "Crystal Palace", "Brentford", "Fulham", "Wolves"],
-  "Weak": ["Everton", "Nottingham Forest", "Bournemouth", "Burnley", "Sheffield United", "Luton Town"],
+  "World Class": ["Manchester City", "Liverpool", "Arsenal", "Chelsea", "Manchester United"],
+  "Strong": ["Newcastle United", "Tottenham", "Aston Villa", "Brighton"],
+  "Average": ["Nottingham Forest", "Bournemouth", "West Ham", "Crystal Palace", "Brentford", "Fulham", "Everton", "Wolves"],
+  "Weak": ["Ipswich Town", "Leicester City", "Southampton"],
 };
 
 /* National team for the international track. */

@@ -4452,6 +4452,12 @@
       ? `<button class="btn choice" id="btn-agent-force">🤝 Ask agent to force a better move</button>`
       : "";
 
+    // Agent can negotiate a better situation when the player is forced out or on a free.
+    const canAgentNegotiate = state.agent && (isFreeAgent || isSold);
+    const agentNegotiateBtn = canAgentNegotiate
+      ? `<button class="btn choice" id="btn-agent-negotiate">🗣️ Send agent to negotiate</button>`
+      : "";
+
     box.innerHTML = `
       <div class="transfer">
         <div class="decision-tag">${forced ? "CLUB FORCES TRANSFER" : isFreeAgent ? "FREE AGENT" : "TRANSFER WINDOW"}</div>
@@ -4459,6 +4465,7 @@
         <div class="offers">${cards}</div>
         <div class="decision-choices" style="margin-top:12px; flex-wrap:wrap; gap:8px;">
           ${agentBtn}
+          ${agentNegotiateBtn}
           ${stayBtn}
         </div>
       </div>`;
@@ -4525,6 +4532,27 @@
         log(`   ↳ 😬 ${agent.label} agent couldn't find a better move.`, "decision");
         state.reputation = Math.max(0, state.reputation - 2);
         renderCareerHeader();
+      });
+    }
+
+    const agentNegotiateEl = document.getElementById("btn-agent-negotiate");
+    if (agentNegotiateEl) {
+      agentNegotiateEl.addEventListener("click", () => {
+        const agent = state.agent || { key: "poor", influence: 0 };
+        // Success rate scales from 10% for a poor agent to 75% for a world-class agent.
+        const successRate = 0.10 + (agent.influence / 0.35) * 0.65;
+        if (rand() < successRate) {
+          log(`   ↳ 🗣️ ${agent.label} agent negotiates hard and keeps ${state.player.name} at ${state.club} on a new deal.`, "decision");
+          state.pendingTransfer = false;
+          // Renew contract for 2 years at the current club with a small rep/fame boost.
+          signAndAdvance(2, sd, intl, `Agent negotiated a new 2-year deal at ${state.club}.`, state.role, 25);
+          return;
+        } else {
+          log(`   ↳ 😬 ${agent.label} agent couldn't strike a deal — the club holds firm.`, "decision");
+          state.reputation = Math.max(0, state.reputation - 2);
+          renderCareerHeader();
+          // On failure, re-render the same transfer window so the player must still choose.
+        }
       });
     }
   }
