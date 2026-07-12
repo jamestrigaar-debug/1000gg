@@ -13,20 +13,91 @@
 
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Football DNA Simulator ⚽ | Build Your Player, Chase 1000 Goals</title>
-<meta name="description" content="Roll your DNA from 30 years of Premier League legends. Simulate a career. Can you reach 1000?" />
+<title>Football DNA Simulator — Football Career Simulator & Premier League Legends Draft Game</title>
+<meta name="description" content="Play a free football simulator where you draft DNA from 30 years of Premier League legends, build a striker and simulate a career to 1000 goals. No download, play in your browser." />
+<link rel="canonical" href="https://1000goals.co.uk/" />
 <meta property="og:site_name" content="Football DNA Simulator" />
-<meta property="og:title" content="Football DNA Simulator ⚽ | Build Your Player, Chase 1000 Goals" />
-<meta property="og:description" content="Roll your DNA from 30 years of Premier League legends. Simulate a career. Can you reach 1000?" />
+<meta property="og:title" content="Football DNA Simulator — Football Career Simulator & Premier League Legends Draft" />
+<meta property="og:description" content="Draft DNA from Premier League legends, build your player and simulate a career to 1000 goals. A free football simulator you can play in your browser." />
 <meta property="og:type" content="website" />
-<meta property="og:url" content="https://1000goals.co.uk" />
+<meta property="og:url" content="https://1000goals.co.uk/" />
 <meta property="og:image" content="https://1000goals.co.uk/share-card.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Football DNA Simulator ⚽ | Build Your Player, Chase 1000 Goals" />
-<meta name="twitter:description" content="Roll your DNA from 30 years of Premier League legends. Simulate a career. Can you reach 1000?" />
+<meta name="twitter:title" content="Football DNA Simulator — Football Career Simulator & Premier League Legends Draft" />
+<meta name="twitter:description" content="Draft DNA from Premier League legends, build your player and simulate a career to 1000 goals. A free football simulator you can play in your browser." />
 <meta name="twitter:image" content="https://1000goals.co.uk/share-card.png" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "VideoGame",
+      "name": "Football DNA Simulator",
+      "description": "A free football career simulator where you draft DNA from Premier League legends and chase 1000 goals.",
+      "url": "https://1000goals.co.uk/",
+      "image": "https://1000goals.co.uk/share-card.png",
+      "applicationCategory": "Game, WebApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript. Requires HTML5.",
+      "inLanguage": "en",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "GBP"
+      },
+      "genre": ["Football", "Simulation", "Sports", "Career"],
+      "keywords": "football simulator, Premier League legends, football career simulator, free browser game, draft game, 1000 goals"
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is Football DNA Simulator?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Football DNA Simulator is a free football career simulator that lets you draft DNA from Premier League legends and play through a striker's career from their academy days to retirement."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do you play the game?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Spin for DNA donors to build your striker's heading, finishing, speed, strength and fitness, then simulate each season and make career decisions on transfers, contracts and training."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I play without downloading anything?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes — Football DNA Simulator is a free browser game. It runs on any device with a modern web browser and requires no download or install."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What eras and players are available?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The game uses real Premier League squad data from 1992 to 2024, so you can draft from 30 years of Premier League legends and build a player with peak or at-the-time ratings."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is the goal of the game?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The ultimate aim is to score 1000 career goals. You can also chase league titles, domestic cups, European trophies, Ballon d'Ors and golden boots."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
 <style>
   :root {
     --bg: #04120b;
@@ -529,10 +600,48 @@
   .roll-placeholder { color: var(--muted); text-align: center; padding: 30px 0; font-style: italic; }
   .career-pos { display: inline-block; background: var(--gold); color: #2a1c00; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 11px; margin-left: 4px; }
   .career-contract { display: inline-block; background: var(--card2); border: 1px solid var(--line); padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px; color: var(--accent2); margin-left: 4px; }
+
+  /* ---------- About footer ---------- */
+  .about-footer {
+    margin: 28px auto 0;
+    max-width: 780px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 4px;
+    color: var(--txt);
+  }
+  .about-footer summary {
+    cursor: pointer;
+    padding: 14px 18px;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--accent);
+    list-style: none;
+  }
+  .about-footer summary::-webkit-details-marker { display: none; }
+  .about-footer summary::after {
+    content: "+";
+    float: right;
+    font-weight: 400;
+    color: var(--muted);
+  }
+  .about-footer[open] summary::after { content: "−"; }
+  .about-footer > div {
+    padding: 8px 18px 18px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+  .about-footer > div p { margin: 0 0 12px; }
+  .about-footer > div a { color: var(--accent2); text-decoration: none; }
+  .about-footer > div a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
 <div class="wrap">
+
+<main>
 
   <!-- ================= SCREEN 1b: DIFFICULTY ================= -->
   <section id="screen-difficulty" class="screen">
@@ -796,8 +905,19 @@
       <div style="margin-top:14px"><button class="btn" id="btn-close-account">Close</button></div>
     </div>
   </div>
+</main>
 
-  <div class="footer-note">Football DNA Simulator · Beta · Inspired by 38-0.app · Premier League donor data (1992–2024 real squads, peak &amp; at-the-time ratings) is editable in <code>data.js</code>.</div>
+<details class="about-footer">
+  <summary>About Football DNA Simulator</summary>
+  <div>
+    <p><strong>Football DNA Simulator</strong> is a free browser football career simulator. You draft DNA from 30 years of Premier League legends, build a striker and simulate every season — transfers, contracts, injuries, trophies and the chase for 1000 career goals.</p>
+    <p>Choose a difficulty mode (Easy, Medium, Hard or Impossible), pick an era from Classic (1992–2004) to the current season, and decide whether to use Peak Rating or Rating at the Time. Each playthrough is different because you are spinning from real Premier League squads across three decades of English football.</p>
+    <p>This is not a football manager game; it is a football draft game and player career simulator. The simulation engine creates match results, league tables, cup runs, European campaigns and international caps for England. Make the right decisions on training, transfers and final contracts to become a Premier League legend in your own right.</p>
+    <p>Play now at <a href="https://1000goals.co.uk/">1000goals.co.uk</a> — no download, no install, free browser game.</p>
+  </div>
+</details>
+
+<div class="footer-note">Football DNA Simulator · Beta · Inspired by 38-0.app · Premier League donor data (1992–2024 real squads, peak &amp; at-the-time ratings) is editable in <code>data.js</code>.</div>
 </div>
 
 <script src="data.js"></script>

@@ -751,6 +751,7 @@ const TEAM_DATABASE = {
   "Nottingham Forest": { attack: 70, midfield: 68, defence: 69, manager: 72, tacticalStyle: "Park the Bus", homeAdvantage: 8, league: "Lower" },
   "Bournemouth": { attack: 71, midfield: 69, defence: 67, manager: 74, tacticalStyle: "High Press", homeAdvantage: 6, league: "Lower" },
   "Burnley": { attack: 66, midfield: 66, defence: 68, manager: 70, tacticalStyle: "Route One", homeAdvantage: 7, league: "Lower" },
+  "Leeds United": { attack: 72, midfield: 68, defence: 66, manager: 70, tacticalStyle: "High Press", homeAdvantage: 7, league: "Lower" },
   "Sheffield United": { attack: 64, midfield: 65, defence: 66, manager: 68, tacticalStyle: "Park the Bus", homeAdvantage: 7, league: "Lower" },
   "Luton Town": { attack: 63, midfield: 64, defence: 64, manager: 70, tacticalStyle: "Route One", homeAdvantage: 8, league: "Lower" },
 };
@@ -758,7 +759,7 @@ const TEAM_DATABASE = {
 /* Academy tier -> pool of realistic starting clubs (by league band). */
 const ACADEMY_STARTING_POOL = {
   "World Class": ["Manchester City", "Liverpool", "Arsenal", "Manchester United", "Chelsea"],
-  "Strong": ["Tottenham", "Newcastle United", "Aston Villa", "Brighton"],
+  "Strong": ["Tottenham", "Newcastle United", "Aston Villa", "Brighton", "Leeds United"],
   "Average": ["West Ham", "Crystal Palace", "Brentford", "Fulham", "Wolves"],
   "Weak": ["Everton", "Nottingham Forest", "Bournemouth", "Burnley", "Sheffield United", "Luton Town"],
 };
