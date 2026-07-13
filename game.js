@@ -4212,6 +4212,9 @@
 
   function playSeason() {
     document.getElementById("season-action").innerHTML = `<div class="simming">Simulating season ${state.season}…</div>`;
+    // Snapshot before simulating so a mid-simulation crash can be rolled back cleanly
+    // instead of leaving partially-applied mutations behind on retry.
+    const preSeasonSnapshot = serializeState(state);
     setTimeout(() => {
       try {
         applyPendingCarryOver(); // delayed effects from previous season decisions
@@ -4237,9 +4240,18 @@
         if (milestone) presentCareerMilestone(milestone, sd, intl);
         else presentSeasonDecision(sd, intl);
       } catch (err) {
-        // Failsafe: if the season simulation crashes, end the career as a career-ending injury
-        // rather than leaving the player stuck on a frozen screen.
         console.error("Season simulation failed", err);
+        // Failsafe: a simulation crash before age 35 is a bug, not a real career-ending
+        // event — force-retiring a young player here would be incorrect. Instead, roll
+        // back any partial mutations from this attempt and let the user retry the
+        // same season rather than losing the career.
+        if (state.age < 35) {
+          state = deserializeState(preSeasonSnapshot);
+          renderSeasonSimError(err);
+          return;
+        }
+        // 35+ players: treat the crash as a career-ending injury rather than leaving
+        // the player stuck on a frozen screen.
         log(`   ↳ 🚑 ${state.player.name} suffered a career-ending injury in pre-season and is forced to retire.`, "milestone");
         state.retired = true;
         state.endCareerReason = "injury";
@@ -4248,6 +4260,14 @@
         beginRetirement("injury");
       }
     }, 400);
+  }
+
+  function renderSeasonSimError(err) {
+    const box = document.getElementById("season-action");
+    box.innerHTML = `
+      <div class="season-prompt">⚠️ Something went wrong simulating season ${state.season} (age ${state.age}). This is a bug, not a career-ending event — no progress was lost.</div>
+      <button class="btn primary big" id="btn-retry-season">🔄 Retry Season ${state.season}</button>`;
+    document.getElementById("btn-retry-season").addEventListener("click", playSeason);
   }
 
   function renderSeasonResult(sd, intl) {
