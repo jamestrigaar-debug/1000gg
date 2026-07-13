@@ -424,19 +424,43 @@
     state.fame = Math.floor(agent.wealth / 2);
   }
 
+  // Compute the six radar axes from raw attributes + career state.
+  // Aerial blends heading with height; Physical merges strength + fitness;
+  // Mental combines the hidden personality rating with the career pillars;
+  // Balance & Agility uses the existing derived agility/balance values;
+  // Shooting uses the existing derived finishing value.
+  function computeRadarValues(attrs) {
+    const dv = state.derived || {};
+    const pillarValues = state.pillars ? Object.values(state.pillars) : [];
+    const avgPillars = pillarValues.length ? pillarValues.reduce((s, v) => s + v, 0) / pillarValues.length : 50;
+    const heightCm = attrs.height || 180;
+    const heightAerial = clamp((heightCm - 165) / (195 - 165) * 100, 0, 100);
+    const agility = dv.agility || attrs.speed || 50;
+    const balance = dv.balance || attrs.strength || 50;
+    return {
+      aerial: attrs.heading * 0.75 + heightAerial * 0.25,
+      shooting: dv.finishing || ((attrs.leftFoot + attrs.rightFoot) / 2),
+      mental: (state.mentalityRating || 50) * 0.7 + avgPillars * 0.3,
+      speed: attrs.speed,
+      balanceAgility: (agility + balance) / 2,
+      physical: (attrs.strength + attrs.fitness) / 2,
+    };
+  }
+
   function drawRadarChart(canvas, attrs) {
     if (!canvas.getContext) return;
     const ctx = canvas.getContext("2d");
     const w = canvas.width, h = canvas.height, cx = w / 2, cy = h / 2;
     const maxR = Math.min(w, h) / 2 - 28;
-    const labels = ["Heading", "Left Foot", "Right Foot", "Speed", "Strength", "Fitness"];
-    const keys = ["heading", "leftFoot", "rightFoot", "speed", "strength", "fitness"];
+    const values = computeRadarValues(attrs);
+    const labels = ["Aerial", "Shooting", "Mental", "Speed", "Balance & Agility", "Physical"];
+    const keys = ["aerial", "shooting", "mental", "speed", "balanceAgility", "physical"];
     const n = labels.length;
 
-    // Magnify top-end differences so playstyle variations stand out.
-    // The radar chart displays 60-100 as the full 0-100 visual range.
-    const radarFloor = 60;
-    const radarScale = 40;
+    // The composite axes (mental, aerial, balance & agility) are more spread out
+    // than the old raw attributes, so show 50-100 as the full visual range.
+    const radarFloor = 50;
+    const radarScale = 50;
     const radarVal = (v) => Math.max(0, Math.min(100, ((clamp(v, 0, 100) - radarFloor) / radarScale) * 100));
 
     ctx.clearRect(0, 0, w, h);
@@ -466,7 +490,7 @@
     // data polygon
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
-      const val = radarVal(attrs[keys[i]]);
+      const val = radarVal(values[keys[i]]);
       const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
       const r = (val / 100) * maxR;
       const x = cx + Math.cos(angle) * r;
@@ -481,7 +505,7 @@
     ctx.stroke();
     // highlight vertices
     for (let i = 0; i < n; i++) {
-      const val = radarVal(attrs[keys[i]]);
+      const val = radarVal(values[keys[i]]);
       const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
       const r = (val / 100) * maxR;
       const x = cx + Math.cos(angle) * r;
@@ -776,6 +800,7 @@
       totalGoals: 0, totalApps: 0, totalAssists: 0, leagueGoals: 0, cupGoals: 0, europeGoals: 0,
       totalYellow: 0, totalRed: 0, teamCleanSheets: 0,
       careerLog: [], flags: {}, cooldowns: {}, pendingCarryOver: [],
+      bioMoments: [], bioClosing: null,
       yearsAtClub: 0, injuryProneSeasons: 0, milestonesHit: {}, pillarMilestones: {},
       intlCaps: 0, intlGoals: 0, intlDebut: false, intlCaptain: false, intlRetired: false,
       injuryProneness: 50, retirementAge: 40, luck: 0,
@@ -887,6 +912,7 @@
     s.seasonHistory = Array.isArray(s.seasonHistory) ? s.seasonHistory : [];
     s.competitionHistory = Array.isArray(s.competitionHistory) ? s.competitionHistory : [];
     s.careerLog = Array.isArray(s.careerLog) ? s.careerLog : [];
+    s.bioMoments = Array.isArray(s.bioMoments) ? s.bioMoments : [];
     if (!s.leagueStandings || typeof s.leagueStandings !== "object") s.leagueStandings = null;
     if (s.intlRetired == null) s.intlRetired = false;
     s.clubsPlayed = s.clubsPlayed instanceof Set ? s.clubsPlayed : new Set(Array.isArray(s.clubsPlayed) ? s.clubsPlayed : []);
@@ -3416,7 +3442,7 @@
         <div class="decision-choices">${choicesHtml}</div>
       </div>`;
     box.querySelectorAll(".choice").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", withFailsafe(() => {
         const c = choices[parseInt(btn.dataset.i, 10)];
         applyEffects(c.fx, 1);
         log(`   ↳ 🎯 End-of-season: ${text.replace(/\.$/, "")} → "${c.label}"`, "decision");
@@ -3426,7 +3452,7 @@
         const eventCount = determineEventCount(ctx);
         const events = pickSeasonEvents(ctx, eventCount);
         if (events.length > 0) presentEventQueue(events, 0, sd, intl, ctx); else proceedToTransfer(sd, intl);
-      });
+      }));
     });
   }
 
@@ -3458,7 +3484,7 @@
         <div class="decision-choices">${choicesHtml}</div>
       </div>`;
     box.querySelectorAll(".choice").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", withFailsafe(() => {
         const c = choices[parseInt(btn.dataset.i, 10)];
         applyEffects(c.fx, 1);
         log(`   ↳ 🏅 Career milestone: ${text.replace(/\.$/, "")} → "${c.label}"`, "decision");
@@ -3466,7 +3492,7 @@
         saveState();
         if (state.retireNow) { state.retireNow = false; beginRetirement("injury"); return; }
         presentSeasonDecision(sd, intl);
-      });
+      }));
     });
   }
 
@@ -3578,6 +3604,7 @@
     for (const m of MILESTONES) {
       if (state.totalGoals >= m.goals && !state.milestonesHit[m.goals]) {
         state.milestonesHit[m.goals] = true;
+        addBioMoment(`A landmark achievement: ${state.totalGoals} career goals and counting, cementing ${state.player.name} as a "${m.title}".`);
         return { id: "milestone_" + m.goals, milestone: true, category: "MILESTONE",
           text: () => `🏅 MILESTONE: ${state.totalGoals} career goals — "${m.title}"!`,
           choices: [{ label: "Onwards", fx: { rep: m.goals >= 500 ? 6 : 3 } }] };
@@ -3747,7 +3774,9 @@
     }
     const n = clamp(randInt(1, 3), 1, pool.length);
     const offers = [], used = new Set();
-    while (offers.length < n && offers.length < pool.length) {
+    // Bound on used.size (not offers.length) — every candidate is tried at most once,
+    // so this always terminates even if every club in the pool refuses to offer a deal.
+    while (offers.length < n && used.size < pool.length) {
       const c = choice(pool);
       if (used.has(c)) continue;
       used.add(c);
@@ -3781,7 +3810,9 @@
     const top = sorted.slice(0, Math.min(sorted.length, 8));
     const n = Math.min(3, top.length);
     const used = new Set();
-    while (offers.length < n) {
+    // Bound on used.size (not offers.length) — every candidate is tried at most once,
+    // so this always terminates even if every club in the top pool refuses a deal.
+    while (offers.length < n && used.size < top.length) {
       const pick = weightedRandomPick(top.map((x) => ({ item: x, weight: x.str })));
       if (!pick || used.has(pick.c)) continue;
       used.add(pick.c);
@@ -4228,6 +4259,8 @@
         if (sd.awards.length) line += ` 🎖 ${sd.awards.join(", ")}.`;
         if (intl && intl.goals) line += ` 🦁 +${intl.goals} for England.`;
         log(line, perfClass(sd.perfTier));
+        const bioLine = narrateSeasonForBio(sd, intl);
+        if (bioLine) addBioMoment(bioLine);
         if (state.finalSeasonForced) {
           state.finalSeasonForced = false;
           log(`   ↳ 🕯️ Last Dance complete. ${state.player.name} is forced into retirement.`, "milestone");
@@ -4247,7 +4280,7 @@
         // same season rather than losing the career.
         if (state.age < 35) {
           state = deserializeState(preSeasonSnapshot);
-          renderSeasonSimError(err);
+          renderCareerFlowError(playSeason);
           return;
         }
         // 35+ players: treat the crash as a career-ending injury rather than leaving
@@ -4262,12 +4295,41 @@
     }, 400);
   }
 
-  function renderSeasonSimError(err) {
+  // Generic recovery screen shown whenever a career-flow action throws below age 35.
+  // `retry` re-runs the exact action that failed (state has already been rolled back).
+  function renderCareerFlowError(retry) {
     const box = document.getElementById("season-action");
     box.innerHTML = `
-      <div class="season-prompt">⚠️ Something went wrong simulating season ${state.season} (age ${state.age}). This is a bug, not a career-ending event — no progress was lost.</div>
-      <button class="btn primary big" id="btn-retry-season">🔄 Retry Season ${state.season}</button>`;
-    document.getElementById("btn-retry-season").addEventListener("click", playSeason);
+      <div class="season-prompt">⚠️ Something went wrong continuing the career (age ${state.age}). This is a bug, not a career-ending event — no progress was lost.</div>
+      <button class="btn primary big" id="btn-retry-action">🔄 Retry</button>`;
+    document.getElementById("btn-retry-action").addEventListener("click", retry);
+  }
+
+  // Wraps a career-flow action (typically a button click handler) so that a thrown
+  // error below age 35 rolls back to the pre-action state and offers a retry instead
+  // of leaving the game stuck on a frozen screen or forcing an incorrect retirement.
+  // 35+ is treated as a real career-ending injury, matching the playSeason failsafe.
+  function withFailsafe(fn) {
+    const wrapped = function (...args) {
+      const snapshot = serializeState(state);
+      try {
+        return fn.apply(this, args);
+      } catch (err) {
+        console.error("Career action failed", err);
+        if (state.age < 35) {
+          state = deserializeState(snapshot);
+          renderCareerFlowError(() => wrapped.apply(this, args));
+        } else {
+          state = deserializeState(snapshot);
+          log(`   ↳ 🚑 ${state.player.name} suffered a career-ending injury and is forced to retire.`, "milestone");
+          state.retired = true;
+          state.endCareerReason = "injury";
+          saveState();
+          beginRetirement("injury");
+        }
+      }
+    };
+    return wrapped;
   }
 
   function renderSeasonResult(sd, intl) {
@@ -4345,7 +4407,7 @@
         <div class="decision-choices">${choicesHtml}</div>
       </div>`;
     box.querySelectorAll(".choice").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", withFailsafe(() => {
         const c = choices[parseInt(btn.dataset.i, 10)];
         applyEffects(c.fx, ev.milestone ? 1 : EVENT_REWARD_MULTIPLIER);
         log(`   ↳ ${ev.milestone ? "🏅" : "🗲"} ${text.replace(/\.$/, "")} → "${c.label}"`, "decision");
@@ -4354,7 +4416,7 @@
         if (state.retireNow) { state.retireNow = false; beginRetirement("injury"); return; }
         if (idx + 1 < events.length) presentEventQueue(events, idx + 1, sd, intl, ctx2);
         else proceedToTransfer(sd, intl);
-      });
+      }));
     });
   }
 
@@ -4496,7 +4558,7 @@
       </div>`;
 
     box.querySelectorAll(".offer").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", withFailsafe(() => {
         const o = offers[parseInt(btn.dataset.i, 10)];
         moveToClub(o.club);
         if (isContractOffer) {
@@ -4504,12 +4566,12 @@
         } else {
           handleContractPhase(sd, intl);
         }
-      });
+      }));
     });
 
     const stayEl = document.getElementById("btn-stay");
     if (stayEl) {
-      stayEl.addEventListener("click", () => {
+      stayEl.addEventListener("click", withFailsafe(() => {
         if (isForeignForced || isFreeAgent) {
           log(`   ↳ ${state.player.name} turns down the offers and hangs up the boots.`, "decision");
           beginRetirement("planned");
@@ -4521,8 +4583,17 @@
           state.pendingTransfer = false;
           if (forceStays >= 2) {
             // After two forced stays the board refuses to keep the player; they must leave.
-            log(`   ↳ ✋ ${state.player.name} tries to refuse the sale again, but the board has made its decision.`, "decision");
-            presentTransfer(offers, sd, intl, true, forcedReason, agentLock);
+            // Force an actual resolution here instead of re-presenting the same screen —
+            // otherwise a player with zero offers would be stuck refusing forever.
+            log(`   ↳ ✋ ${state.player.name} tries to refuse the sale again, but the board forces the move through.`, "decision");
+            if (offers.length) {
+              const o = offers[0];
+              moveToClub(o.club);
+              if (isContractOffer) signAndAdvance(o.years, sd, intl, `Forced to sign a ${o.years}-year deal with ${state.club}.`, o.playtime, o.wage);
+              else handleContractPhase(sd, intl);
+            } else {
+              goToMarketOrRetire(sd, intl);
+            }
             return;
           }
           // 75% chance the manager reduces the player's role after forcing a stay.
@@ -4537,12 +4608,12 @@
           log(`   ↳ ✋ ${state.player.name} snubs the offers and stays at ${state.club}.`, "decision");
         }
         handleContractPhase(sd, intl);
-      });
+      }));
     }
 
     const agentEl = document.getElementById("btn-agent-force");
     if (agentEl) {
-      agentEl.addEventListener("click", () => {
+      agentEl.addEventListener("click", withFailsafe(() => {
         const agent = state.agent || { key: "poor", influence: 0 };
         // Better agent = higher chance to find a better destination, and the pool is pulled higher.
         const chance = 0.25 + agent.influence;
@@ -4559,12 +4630,12 @@
         renderCareerHeader();
         // Agent action is consumed for this event; re-render without the agent buttons.
         presentTransfer(offers, sd, intl, forced, forcedReason, true);
-      });
+      }));
     }
 
     const agentNegotiateEl = document.getElementById("btn-agent-negotiate");
     if (agentNegotiateEl) {
-      agentNegotiateEl.addEventListener("click", () => {
+      agentNegotiateEl.addEventListener("click", withFailsafe(() => {
         const agent = state.agent || { key: "poor", influence: 0 };
         // Success rate scales from 10% for a poor agent to 75% for a world-class agent.
         const successRate = 0.10 + (agent.influence / 0.35) * 0.65;
@@ -4581,12 +4652,14 @@
           // Agent action is consumed for this event; re-render without the agent buttons.
           presentTransfer(offers, sd, intl, forced, forcedReason, true);
         }
-      });
+      }));
     }
   }
 
   function moveToClub(club) {
+    const fromClub = state.club;
     log(`   ↳ ✈️ Transfer: ${state.player.name} joins ${club} (${TEAM_DATABASE[club].league}).`, "transfer");
+    if (fromClub && state.bioMoments) addBioMoment(narrateTransferForBio(fromClub, club));
     applyPlayerTransferImpact(state.club, true);
     applyPlayerTransferImpact(club, false);
     state.club = club; state.clubsPlayed.add(club); ensureClubStat(club);
@@ -4660,18 +4733,18 @@
         <button class="btn ghost" id="btn-stay">Stay and fight for your place</button>
       </div>`;
     box.querySelectorAll(".offer").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", withFailsafe(() => {
         const o = offers[parseInt(btn.dataset.i, 10)];
         goOnLoan(o.club);
         renderCareerHeader();
         saveState();
         advanceToNextSeason();
-      });
+      }));
     });
-    document.getElementById("btn-stay").addEventListener("click", () => {
+    document.getElementById("btn-stay").addEventListener("click", withFailsafe(() => {
       log(`   ↳ ✋ ${state.player.name} rejects the loan and stays to fight for a place at ${state.club}.`, "decision");
       handleContractPhase(sd, intl);
-    });
+    }));
   }
 
   function goOnLoan(club) {
@@ -4721,7 +4794,7 @@
           <button class="btn choice ghost" id="btn-keep-agent">Keep current agent</button>
         </div>
       </div>`;
-    document.getElementById("btn-fire-agent").addEventListener("click", () => {
+    document.getElementById("btn-fire-agent").addEventListener("click", withFailsafe(() => {
       if (rand() < 0.5) {
         // Better agent
         const newTier = AGENT_TIERS[Math.min(tierIdx + 1, AGENT_TIERS.length - 1)];
@@ -4738,13 +4811,13 @@
       renderCareerHeader();
       saveState();
       onDone();
-    });
-    document.getElementById("btn-keep-agent").addEventListener("click", () => {
+    }));
+    document.getElementById("btn-keep-agent").addEventListener("click", withFailsafe(() => {
       log(`   ↳ ${state.player.name} sticks with their current agent.`, "decision");
       state.cooldowns["fireAgent"] = 2;
       saveState();
       onDone();
-    });
+    }));
   }
 
   function advanceToNextSeason() {
@@ -4949,11 +5022,11 @@
         </div>
       </div>`;
 
-    document.getElementById("btn-accept-offer").addEventListener("click", () => signAndAdvance(offer.years, sd, intl, null, offer.playtime));
-    document.getElementById("btn-ask-plus-one").addEventListener("click", () => handleAskForYears(plusOne, offer, sd, intl));
-    document.getElementById("btn-ask-plus-two").addEventListener("click", () => handleAskForYears(plusTwo, offer, sd, intl));
-    document.getElementById("btn-reject-offer").addEventListener("click", () => rejectContractAndTransfer(sd, intl));
-    document.getElementById("btn-retire-offer").addEventListener("click", () => beginRetirement("planned"));
+    document.getElementById("btn-accept-offer").addEventListener("click", withFailsafe(() => signAndAdvance(offer.years, sd, intl, null, offer.playtime)));
+    document.getElementById("btn-ask-plus-one").addEventListener("click", withFailsafe(() => handleAskForYears(plusOne, offer, sd, intl)));
+    document.getElementById("btn-ask-plus-two").addEventListener("click", withFailsafe(() => handleAskForYears(plusTwo, offer, sd, intl)));
+    document.getElementById("btn-reject-offer").addEventListener("click", withFailsafe(() => rejectContractAndTransfer(sd, intl)));
+    document.getElementById("btn-retire-offer").addEventListener("click", withFailsafe(() => beginRetirement("planned")));
   }
 
   function handleAskForYears(requestedYears, offer, sd, intl) {
@@ -4979,9 +5052,9 @@
           <button class="btn ghost choice" id="btn-retire-counter">Retire</button>
         </div>
       </div>`;
-    document.getElementById("btn-accept-counter").addEventListener("click", () => signAndAdvance(counterYears, sd, intl, null, role));
-    document.getElementById("btn-reject-counter").addEventListener("click", () => rejectContractAndTransfer(sd, intl));
-    document.getElementById("btn-retire-counter").addEventListener("click", () => beginRetirement("planned"));
+    document.getElementById("btn-accept-counter").addEventListener("click", withFailsafe(() => signAndAdvance(counterYears, sd, intl, null, role)));
+    document.getElementById("btn-reject-counter").addEventListener("click", withFailsafe(() => rejectContractAndTransfer(sd, intl)));
+    document.getElementById("btn-retire-counter").addEventListener("click", withFailsafe(() => beginRetirement("planned")));
   }
 
   function signAndAdvance(years, sd, intl, message, role, wage) {
@@ -5112,10 +5185,10 @@
         <div class="decision-choices">${choicesHtml}</div>
       </div>`;
     box.querySelectorAll(".choice").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", withFailsafe(() => {
         const c = ev.choices[parseInt(btn.dataset.i, 10)];
         handleEndChoice(c.fx, text, c.label, ev);
-      });
+      }));
     });
   }
 
@@ -5318,6 +5391,7 @@
       : "";
     const radarId = "legacy-radar";
     const pos = POSITIONS[state.position] || POSITIONS.ST;
+    const rv = computeRadarValues(a);
     document.getElementById("legacy-dna").innerHTML = `
       <h3>Player DNA</h3>
       <div class="dna-summary">
@@ -5330,8 +5404,8 @@
       ${traitsHtml}
       <div class="legacy-radar"><canvas id="${radarId}" width="340" height="260"></canvas></div>
       <div class="dna-key">
-        ${dnaLine("Heading", a.heading)}${dnaLine("Left Foot", a.leftFoot)}${dnaLine("Right Foot", a.rightFoot)}
-        ${dnaLine("Speed", a.speed)}${dnaLine("Strength", a.strength)}${dnaLine("Fitness", a.fitness)}
+        ${dnaLine("Aerial", Math.round(rv.aerial))}${dnaLine("Shooting", Math.round(rv.shooting))}${dnaLine("Mental", Math.round(rv.mental))}
+        ${dnaLine("Speed", Math.round(rv.speed))}${dnaLine("Balance & Agility", Math.round(rv.balanceAgility))}${dnaLine("Physical", Math.round(rv.physical))}
         ${dnaLine("Height", a.height + "cm")}${dnaLine("Weight", a.weight + "kg")}
       </div>`;
     function dnaLine(label, v) { return `<div class="dna-row"><span class="dna-k">${label}</span><span class="dna-v">${v}</span></div>`; }
@@ -5689,6 +5763,158 @@
     div.textContent = text;
     wrap.insertBefore(div, wrap.firstChild);
   }
+
+  /* --------------------------- BIOGRAPHY --------------------------------- */
+  // Unlike the mechanical career log, the biography is a hand-picked, prose
+  // retelling of the standout chapters of a career — written as it happens.
+  function addBioMoment(text) {
+    if (!text) return;
+    if (!state.bioMoments) state.bioMoments = [];
+    state.bioMoments.push({ season: state.season, age: state.age, text });
+  }
+
+  function generateBioIntro() {
+    const n = state.player.name;
+    const origin = state.player.origin || COUNTRY_ORIGINS["England"];
+    const acad = state.academy || {};
+    const posLabel = ((POSITIONS[state.position] || POSITIONS.ST).label || "forward").toLowerCase();
+    const style = state.playstyle ? state.playstyle.toLowerCase() : "developing";
+    const ment = state.mentality ? state.mentality.toLowerCase() : "unproven";
+    const traits = state.hiddenTraits || [];
+    const traitFlavor = traits.length
+      ? ` Even in the academy, there were early signs of a ${choice(traits).toLowerCase()} streak that would come to define their game.`
+      : "";
+    const originStory = origin.story || "humble beginnings";
+    const openings = [
+      `${origin.flag || ""} ${n} grew up on ${originStory}, dreaming of the big stage.`,
+      `${origin.flag || ""} The story begins with ${originStory} — an unlikely starting point for ${n}'s journey.`,
+      `${origin.flag || ""} Long before the headlines, ${n} was just another kid shaped by ${originStory}.`,
+    ];
+    return `${choice(openings)} They came through the ${acad.club || "local"} academy` +
+      (acad.tier ? ` (${acad.tier} tier)` : "") +
+      ` as a ${posLabel}, carrying a ${style} style of play and a ${ment} temperament.${traitFlavor}`;
+  }
+
+  function narrateSeasonForBio(sd, intl) {
+    const n = state.player.name;
+    const club = state.club;
+    const lines = [];
+
+    if (sd.champion === club) {
+      lines.push(choice([
+        `${club} were crowned champions, and ${n} played a starring role, scoring ${sd.goals} goals in a title-winning season.`,
+        `A season to frame forever: ${club} went all the way to the title, with ${n} chipping in ${sd.goals} goals and ${sd.assists} assists.`,
+        `${n} finally got their hands on a winner's medal as ${club} swept to the championship.`,
+      ]));
+    }
+    if (sd.honours.includes("European Cup")) {
+      lines.push(`Continental glory — ${n} became a European champion with ${club}.`);
+    }
+    if (sd.honours.includes("Domestic Cup")) {
+      lines.push(`${n} lifted a domestic cup with ${club}, adding another line to the trophy cabinet.`);
+    }
+    if (sd.awards.includes("Ballon d'Or")) {
+      lines.push(`The ultimate individual honour arrived: ${n} was crowned the world's best player, the Ballon d'Or capping off a ${sd.goals}-goal season.`);
+    }
+    if (sd.awards.includes("Player of the Season")) {
+      lines.push(`${n} was named Player of the Season, the standout performer in a campaign that produced ${sd.goals} goals and ${sd.assists} assists.`);
+    }
+    if (sd.isTopScorer) {
+      lines.push(`${n} topped the scoring charts and claimed the Golden Boot with ${sd.leagueGoals} league goals.`);
+    }
+    if (sd.awards.includes("Young Player of the Year")) {
+      lines.push(`Still only ${state.age}, ${n} was recognised as the league's brightest young talent.`);
+    }
+    if (sd.trajectory === "Relegated") {
+      lines.push(`It ended in heartbreak — ${club} were relegated despite ${n}'s ${sd.goals} goals.`);
+    }
+    if (sd.promotionRelegation && sd.promotionRelegation.promoted && sd.promotionRelegation.promoted.includes(club)) {
+      lines.push(`${club} won promotion, ${n} playing a key part in the climb up the pyramid.`);
+    }
+    if (!lines.length) {
+      if (sd.perfTier === "Sensational") {
+        lines.push(choice([
+          `A career-defining year — ${sd.goals} goals and ${sd.assists} assists in ${sd.apps} appearances, the kind of form that gets an entire league talking.`,
+          `${n} was simply unplayable this season, racking up ${sd.goals} goals in ${sd.apps} games for ${club}.`,
+        ]));
+      } else if (sd.perfTier === "Flop" && sd.apps > 0) {
+        lines.push(choice([
+          `A season to forget — form and fitness deserted ${n}, who managed just ${sd.goals} goals in ${sd.apps} appearances.`,
+          `Not every year is a highlight reel: ${club} and ${n} both struggled for rhythm this season.`,
+        ]));
+      }
+    }
+    if (sd.gamesMissed >= 12) {
+      lines.push(`Persistent injury trouble kept ${n} sidelined for a big chunk of the year — ${sd.gamesMissed} games missed.`);
+    }
+    if (intl && intl.goals >= 3) {
+      lines.push(`On the international stage, ${n} was electric for ${state.country}, scoring ${intl.goals} in ${intl.caps} caps.`);
+    }
+    if (intl && intl.wonTrophy) {
+      lines.push(`${n} lifted international silverware with ${state.country} this summer.`);
+    }
+
+    if (!lines.length) return null;
+    return lines.join(" ");
+  }
+
+  function narrateTransferForBio(fromClub, toClub) {
+    const n = state.player.name;
+    const td = TEAM_DATABASE[toClub] || {};
+    const bigMove = td.attack >= 84;
+    const templates = bigMove ? [
+      `A blockbuster move — ${n} said goodbye to ${fromClub} and signed for ${toClub}, one of the biggest clubs in ${td.league || "the league"}.`,
+      `${n} sealed a dream transfer to ${toClub}, stepping up to the top level of ${td.league || "the game"}.`,
+      `The move everyone was talking about: ${n} left ${fromClub} to join ${toClub}.`,
+    ] : [
+      `${n} left ${fromClub} behind for a fresh start at ${toClub}.`,
+      `A new chapter began as ${n} signed for ${toClub} after their time at ${fromClub}.`,
+    ];
+    return choice(templates);
+  }
+
+  function generateBioClosing() {
+    const n = state.player.name;
+    const clubs = state.clubsPlayed ? state.clubsPlayed.size : 0;
+    const h = state.honours || {};
+    const trophyBits = [];
+    if (h.leagueTitles) trophyBits.push(`${h.leagueTitles} league title${h.leagueTitles > 1 ? "s" : ""}`);
+    if (h.domesticCups) trophyBits.push(`${h.domesticCups} domestic cup${h.domesticCups > 1 ? "s" : ""}`);
+    if (h.europeanCups) trophyBits.push(`${h.europeanCups} European Cup${h.europeanCups > 1 ? "s" : ""}`);
+    if (h.ballonDors) trophyBits.push(`${h.ballonDors} Ballon d'Or${h.ballonDors > 1 ? "s" : ""}`);
+    if (h.goldenBoots) trophyBits.push(`${h.goldenBoots} Golden Boot${h.goldenBoots > 1 ? "s" : ""}`);
+    const trophyLine = trophyBits.length
+      ? ` Along the way they collected ${trophyBits.join(", ")}.`
+      : " The trophy cabinet stayed bare, but the goals never stopped coming.";
+    const reasonFlavor = {
+      goal: `walked away on their own terms, having smashed the ${LEVERS.goalTarget}-goal mark`,
+      planned: "called time on their own terms, at peace with a job well done",
+      injury: "was forced into an early, unwanted retirement by injury",
+    }[state.endCareerReason] || "hung up the boots for the final time";
+    return `After ${state.season} seasons and ${clubs} club${clubs !== 1 ? "s" : ""}, ${n} ${reasonFlavor}, finishing with ${state.totalGoals} career goals and ${state.totalAssists} assists in ${state.totalApps} appearances.${trophyLine}`;
+  }
+
+  function buildBiographyHtml() {
+    const intro = generateBioIntro();
+    const momentsHtml = (state.bioMoments || []).map((m) =>
+      `<div class="bio-entry"><span class="bio-tag">Season ${m.season} · Age ${m.age}</span><p>${esc(m.text)}</p></div>`
+    ).join("");
+    const closingHtml = state.bioClosing
+      ? `<div class="bio-entry bio-closing"><span class="bio-tag">Retirement</span><p>${esc(state.bioClosing)}</p></div>`
+      : "";
+    return `<div class="bio-intro"><p>${esc(intro)}</p></div>` +
+      (momentsHtml || `<div class="bio-empty">The story is only just beginning…</div>`) + closingHtml;
+  }
+
+  function renderBiography() {
+    const el = document.getElementById("biography-content");
+    if (el) el.innerHTML = buildBiographyHtml();
+  }
+
+  function renderLegacyBiography() {
+    const el = document.getElementById("legacy-biography");
+    if (el) el.innerHTML = buildBiographyHtml();
+  }
   function ordinal(n) {
     const s = ["th", "st", "nd", "rd"], v = n % 100;
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
@@ -5947,7 +6173,7 @@
 
   // DEBUG expose for stress testing
   window.__STRESS_TEST__ = {
-    startCreation, compilePlayer, simulateSeason, applySeasonalAttributeChanges,
+    startCreation, compilePlayer, simulateSeason, applySeasonalAttributeChanges, playSeason,
     recomputePlayerStats, simulateInternational, computeClubContractOffer, generateOffers, generateForcedDestinationOffers, determineNaturalRole,
     adjustPillar, getPillar, checkCareerMilestone, pickSeasonDecision, applyEffects, applyEffectsRaw,
     getEventWeight, pickSeasonEvent, pickSeasonEvents, determineEventCount, getCareerSection, getCareerOutcomeScore, resolveEndOfCareerEvent,

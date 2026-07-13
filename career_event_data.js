@@ -45,7 +45,7 @@
     },
     {
       id: "fitness_plan", category: "FITNESS", weight: 8, req: { ageMin: 28 },
-      text: (n) => `At ${ctx.age}, ${n}'s body needs a different plan.`,
+      text: (n, ctx) => `At ${ctx.age}, ${n}'s body needs a different plan.`,
       choices: (ctx) => [
         { label: "Heavy load — squeeze every drop", fx: { attrChange: { key: "fitness", delta: 1 }, carryOver: true, pillars: { Professionalism: 4, Durability: -6 } } },
         { label: "Balanced programme", fx: { pillars: { Durability: 8, Consistency: 4 } } },
