@@ -54,8 +54,7 @@ function isSetLike(v) { return v && typeof v === 'object' && Object.prototype.to
   assert(isSetLike(migrated.clubsPlayed), 'migration should restore clubsPlayed Set');
   assert(migrated.clubsPlayed.has('Arsenal FC'), 'migration should preserve clubsPlayed values');
   assert(migrated.contractYears === 0, 'migration should clamp negative contracts');
-  assert(migrated.pillars.Ambition === 70, 'migration should preserve nested pillars');
-  assert(migrated.pillars.Loyalty === 50, 'migration should fill missing nested pillars');
+  assert(migrated.pillars == null, 'migration should remove obsolete pillars');
   assert(migrated.seed && migrated.rngState != null, 'migration should add seed fields');
   console.log('Regression passed: legacy saves migrate safely');
 })();

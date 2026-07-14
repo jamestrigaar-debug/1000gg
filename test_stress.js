@@ -307,32 +307,15 @@ function runCohort(label, elite) {
   console.log(`Bottom 5: ${totals.slice(0, 5).join(', ')}`);
 }
 
-// Career Pillars regression tests
+// Career Pillars removed; getPillar remains a neutral stub.
 (function testCareerPillars() {
   createRandomPlayer(true);
   const s = g.getState();
-  if (!s.pillars || Object.keys(s.pillars).length !== 10) throw new Error('pillars not initialized');
-  for (const k of Object.keys(s.pillars)) {
-    if (s.pillars[k] !== 50) throw new Error(`pillar ${k} should start at 50`);
-  }
-  g.adjustPillar('Ambition', 15);
-  g.adjustPillar('Loyalty', -10);
-  if (g.getPillar('Ambition') !== 65) throw new Error('Ambition adjustment failed');
-  if (g.getPillar('Loyalty') !== 40) throw new Error('Loyalty adjustment failed');
-  // Pillars should clamp to 0-100
-  g.adjustPillar('Ego', 200);
-  g.adjustPillar('Professionalism', -200);
-  if (g.getPillar('Ego') !== 100) throw new Error('pillar max clamp failed');
-  if (g.getPillar('Professionalism') !== 0) throw new Error('pillar min clamp failed');
-  console.log('Regression test passed: Career Pillars initialized and clamped');
-
-  // applyEffects should process pillar changes from choices
-  createRandomPlayer(true);
-  const s2 = g.getState();
-  const before = s2.pillars.Durability;
+  if (s.pillars != null) throw new Error('pillars should be removed from state');
+  if (g.getPillar('Ambition') !== 50) throw new Error('getPillar should return 50 after removal');
   g.applyEffects({ pillars: { Durability: 12 } }, 1);
-  if (g.getPillar('Durability') !== before + 12) throw new Error('pillar effects not applied via applyEffects');
-  console.log('Regression test passed: choice effects apply Career Pillar changes');
+  if (g.getPillar('Durability') !== 50) throw new Error('pillar effects should be ignored after removal');
+  console.log('Regression passed: pillars removed and getPillar is neutral');
 
   // Career milestones should be available in age ranges
   createRandomPlayer(true);

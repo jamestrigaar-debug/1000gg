@@ -339,9 +339,13 @@
   .profile-attrs div { background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; text-align: center; font-size: 12px; }
   .profile-attrs b { display: block; font-size: 18px; color: var(--accent); margin-top: 2px; }
   .profile-derived { margin-top: 10px; font-size: 12px; color: var(--muted); }
-  .profile-radar { display: flex; justify-content: center; margin-top: 16px; }
-  .profile-radar canvas { width: 220px; height: 170px; }
-  @media (max-width: 600px) { .profile-attrs { grid-template-columns: repeat(2, 1fr); } .profile-grid { grid-template-columns: repeat(2, 1fr); } }
+  .profile-top { display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: start; margin-bottom: 14px; }
+  .profile-left { min-width: 0; }
+  .profile-radar { display: flex; justify-content: center; margin: 0; }
+  .profile-radar canvas { width: 320px; height: 260px; }
+  .career-biography { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); }
+  @media (max-width: 880px) { .profile-top { grid-template-columns: 1fr; } .profile-radar canvas { width: 260px; height: 210px; } }
+  @media (max-width: 600px) { .profile-attrs { grid-template-columns: repeat(2, 1fr); } .profile-grid { grid-template-columns: repeat(2, 1fr); } .profile-radar canvas { width: 220px; height: 170px; } }
   .cs-box { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 6px; text-align: center; }
   .cs-num { font-size: 20px; font-weight: 900; color: var(--accent); }
   .cs-lab { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
@@ -480,6 +484,15 @@
   .share-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
 
   .footer-note { text-align: center; color: var(--muted); font-size: 12px; margin-top: 40px; }
+
+  /* ---------- Biography ---------- */
+  .biography-panel { font-size: 14px; line-height: 1.65; }
+  .bio-intro { background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; color: var(--txt); }
+  .bio-entry { background: var(--bg2); border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0; padding: 12px 14px; margin-bottom: 10px; }
+  .bio-entry.bio-closing { border-left-color: var(--gold); background: #2a1c00; }
+  .bio-entry p { margin: 0; }
+  .bio-tag { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .bio-empty { color: var(--muted); font-style: italic; padding: 10px 0; }
 
   /* ---------- Alpha 1.1 additions ---------- */
   .chooser-label { color: var(--muted); font-size: 13px; margin: 10px 0 6px; }
@@ -636,6 +649,34 @@
   .about-footer > div p { margin: 0 0 12px; }
   .about-footer > div a { color: var(--accent2); text-decoration: none; }
   .about-footer > div a:hover { text-decoration: underline; }
+
+  /* ---------- Mobile clipping fixes ---------- */
+  @media (max-width: 600px) {
+    .career-tabs { flex-wrap: wrap; }
+    .career-tab { flex: 1 1 auto; min-width: 70px; font-size: 11px; padding: 8px 4px; }
+    .career-head h2 { font-size: 18px; }
+    .hdr-stat { font-size: 12px; padding: 4px 8px; }
+    .spin-labels { gap: 18px; }
+    .spin-boxes { gap: 8px; }
+    .spin-box { min-width: 110px; min-height: 42px; font-size: 14px; padding: 10px 12px; }
+    .spin-x { font-size: 18px; }
+    .spinner-team { font-size: 20px; padding: 28px 0; }
+    .roll-result { font-size: 22px; }
+    .rating-num { font-size: 52px; }
+    .contract-terms { font-size: 18px; }
+    .offer-club, .club-offer-name, .club-assigned-name { font-size: 16px; }
+    .decision-text { font-size: 14px; }
+    .legacy-big { font-size: 64px; }
+    .leg-num { font-size: 22px; }
+    .leg-lab { font-size: 11px; }
+    .league-table { font-size: 11px; }
+    .league-table th, .league-table td { padding: 4px 3px; }
+    .club-history-table { font-size: 11px; }
+    .club-history-table th, .club-history-table td { padding: 4px 5px; }
+    .league-block-table, .table-scroll { overflow-x: auto; }
+    .league-table { min-width: 520px; }
+    .biography-panel { font-size: 13px; }
+  }
 </style>
 </head>
 <body>
@@ -679,7 +720,7 @@
         <div class="panel">
           <h3 style="font-size:16px;color:var(--gold);margin-bottom:12px">Era</h3>
           <div class="setup-options" id="setup-era-options">
-            <label class="setup-option"><input type="radio" name="setup-era" value="all" checked> All Eras (1992–2025)</label>
+            <label class="setup-option"><input type="radio" name="setup-era" value="all" checked> All Eras (1992–2026)</label>
             <label class="setup-option"><input type="radio" name="setup-era" value="classic"> Classic Era (1992–2004)</label>
             <label class="setup-option"><input type="radio" name="setup-era" value="modern"> Modern Era (2005–2014)</label>
             <label class="setup-option"><input type="radio" name="setup-era" value="recent"> Recent Era (2015–2024)</label>
@@ -841,6 +882,7 @@
       <div class="legacy-big-lab">CAREER GOALS</div>
       <div class="legacy-grid" id="legacy-grid"></div>
       <div class="legacy-section" id="legacy-summary"></div>
+      <div class="legacy-section" id="legacy-biography"></div>
       <div class="legacy-section" id="legacy-honours"></div>
       <div class="legacy-section" id="legacy-clubs"></div>
       <div class="legacy-section" id="legacy-history"></div>

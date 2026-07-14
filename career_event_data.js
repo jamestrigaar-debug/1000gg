@@ -16,7 +16,7 @@
    */
   const SEASON_DECISIONS = [
     {
-      id: "manager_meeting", category: "STRATEGY", weight: 10,
+      id: "manager_meeting", category: "STRATEGY", weight: 8,
       text: (n) => `End-of-season review with the manager. ${n} can shape the next campaign now.`,
       choices: (ctx) => [
         { label: "Demand more playing time", fx: { role: "up", rep: -2, pillars: { Ambition: 8, Ego: 4 } } },
@@ -25,17 +25,18 @@
       ],
     },
     {
-      id: "training_focus", category: "TRAINING", weight: 10,
+      id: "training_focus", category: "TRAINING", weight: 5,
       text: (n) => `${n} has one summer focus to sharpen before pre-season.`,
       choices: (ctx) => [
         { label: "Finishing school", fx: { attrChange: { key: "leftFoot", delta: 2 }, carryOver: true, carryOverLog: "Finishing work sharpens the boot next season.", pillars: { KillerInstinct: 8, Professionalism: 4 } } },
         { label: "Pace and movement", fx: { attrChange: { key: "speed", delta: 2 }, carryOver: true, carryOverLog: "Pace work adds half a yard next season.", pillars: { Adaptability: 4, Professionalism: 4 } } },
         { label: "Strength and conditioning", fx: { attrChange: { key: "strength", delta: 2 }, carryOver: true, carryOverLog: "Strength programme adds power next season.", pillars: { Durability: 6, Professionalism: 6 } } },
         { label: "Fitness and recovery", fx: { attrChange: { key: "fitness", delta: 2 }, carryOver: true, carryOverLog: "Pre-season fitness block pays off next season.", pillars: { Durability: 8, Longevity: 6 } } },
+        { label: "Agility and balance", fx: { derivedChange: { agility: 2, balance: 1 }, carryOver: true, carryOverLog: "Agility and balance work sharpens movement next season.", pillars: { Adaptability: 6, Professionalism: 4 } } },
       ],
     },
     {
-      id: "squad_role", category: "PLAYING TIME", weight: 8, req: { roleIn: ["Rotation", "Bench"] },
+      id: "squad_role", category: "PLAYING TIME", weight: 4, req: { roleIn: ["Rotation", "Bench"] },
       text: (n) => `${n} is not a guaranteed starter. How do they handle it?`,
       choices: (ctx) => [
         { label: "Knock on the manager's door", fx: { rep: -2, pillars: { Ambition: 8, Ego: 4 } } },
@@ -44,7 +45,7 @@
       ],
     },
     {
-      id: "fitness_plan", category: "FITNESS", weight: 8, req: { ageMin: 28 },
+      id: "fitness_plan", category: "FITNESS", weight: 5, req: { ageMin: 28 },
       text: (n, ctx) => `At ${ctx.age}, ${n}'s body needs a different plan.`,
       choices: (ctx) => [
         { label: "Heavy load — squeeze every drop", fx: { attrChange: { key: "fitness", delta: 1 }, carryOver: true, pillars: { Professionalism: 4, Durability: -6 } } },
@@ -171,6 +172,7 @@
         { label: "Finishing reps — sharpen both feet", fx: { attrChange: { key: "leftFoot", delta: 1 }, attrChange2: { key: "rightFoot", delta: 1 }, pillars: { Professionalism: 5, KillerInstinct: 4 } } },
         { label: "Aerial work — become more dangerous in the box", fx: { attrChange: { key: "heading", delta: 2 }, pillars: { Professionalism: 4, Durability: 2 } } },
         { label: "Engine work — build pace and repeat sprints", fx: { attrChange: { key: "speed", delta: 1 }, attrChange2: { key: "fitness", delta: 1 }, pillars: { Durability: 4, Consistency: 3 } } },
+        { label: "Movement work — sharpen agility and balance", fx: { derivedChange: { agility: 1, balance: 1 }, pillars: { Adaptability: 5, Professionalism: 3 } } },
       ],
     },
     {
@@ -244,16 +246,16 @@
     },
   ];
   const CAREER_SECTIONS = {
-    Early: { min: 17, max: 21, label: "Early", eventCap: 1, weights: { Development: 3, Injury: 1, "Transfer or Loan": 1, Roleplay: 2 } },
-    Mid: { min: 22, max: 28, label: "Mid", eventCap: 2, weights: { Development: 1.5, Injury: 2, "Transfer or Loan": 2, Roleplay: 2 } },
-    Late: { min: 29, max: 33, label: "Late", eventCap: 3, weights: { Development: 0.6, Injury: 3, "Transfer or Loan": 3, Roleplay: 2 } },
-    Overtime: { min: 34, max: 99, label: "Overtime", eventCap: 4, weights: { Development: 0, Injury: 4, "Transfer or Loan": 4, Roleplay: 3 } },
+    Early: { min: 17, max: 21, label: "Early", eventCap: 0, weights: { Development: 1.5, Injury: 1, "Transfer or Loan": 1, Roleplay: 1.5 } },
+    Mid: { min: 22, max: 28, label: "Mid", eventCap: 2, weights: { Development: 1, Injury: 2, "Transfer or Loan": 2, Roleplay: 1.2 } },
+    Late: { min: 29, max: 33, label: "Late", eventCap: 2, weights: { Development: 0.5, Injury: 3, "Transfer or Loan": 3, Roleplay: 0.8 } },
+    Overtime: { min: 34, max: 99, label: "Overtime", eventCap: 2, weights: { Development: 0, Injury: 4, "Transfer or Loan": 4, Roleplay: 0.5 } },
   };
   const SEASON_TAG_WEIGHTS = {
-    Early: { Development: 3, Injury: 1, "Transfer or Loan": 1, Roleplay: 2 },
-    Mid: { Development: 1.5, Injury: 2, "Transfer or Loan": 2, Roleplay: 2 },
-    Late: { Development: 0.6, Injury: 3, "Transfer or Loan": 3, Roleplay: 2 },
-    Overtime: { Development: 0, Injury: 4, "Transfer or Loan": 4, Roleplay: 3 },
+    Early: { Development: 1.5, Injury: 1, "Transfer or Loan": 1, Roleplay: 1.5 },
+    Mid: { Development: 1, Injury: 2, "Transfer or Loan": 2, Roleplay: 1.2 },
+    Late: { Development: 0.5, Injury: 3, "Transfer or Loan": 3, Roleplay: 0.8 },
+    Overtime: { Development: 0, Injury: 4, "Transfer or Loan": 4, Roleplay: 0.5 },
   };
   const SEASON_EVENTS = [
     // Development

@@ -379,19 +379,9 @@
     }
   }
 
-  // Career Pillars: hidden values that shape the long-term arc of a career.
-  function adjustPillar(key, delta) {
-    if (!state.pillars) state.pillars = { Ambition: 50, Loyalty: 50, Professionalism: 50, Ego: 50, Leadership: 50, Durability: 50, KillerInstinct: 50, Adaptability: 50, Consistency: 50, Longevity: 50 };
-    state.pillars[key] = clamp((state.pillars[key] || 50) + delta, 0, 100);
-  }
-  function getPillar(key) {
-    if (!state.pillars) return 50;
-    return state.pillars[key] == null ? 50 : state.pillars[key];
-  }
-  function applyPillarEffects(fx) {
-    if (!fx || !fx.pillars) return;
-    for (const [k, v] of Object.entries(fx.pillars)) adjustPillar(k, v);
-  }
+  // Career Pillars are removed; getPillar remains as a neutral stub returning 50.
+  function getPillar(key) { return 50; }
+  function applyPillarEffects(fx) { return; }
   function pillarDescription(key) {
     const map = {
       Ambition: "Drives moves to bigger clubs and contract demands.",
@@ -590,7 +580,7 @@
   // Active mode switches in the setup screen.
   const RATING_MODE = { PEAK: "peak", AT_TIME: "at-time" };
   const ERA_OPTIONS = [
-    { key: "all", label: "All Eras (1992–2025)", years: [1992, 2025] },
+    { key: "all", label: "All Eras (1992–2026)", years: [1992, 2026] },
     { key: "classic", label: "Classic Era (1992–2004)", years: [1992, 2004] },
     { key: "modern", label: "Modern Era (2005–2014)", years: [2005, 2014] },
     { key: "recent", label: "Recent Era (2015–2024)", years: [2015, 2024] },
@@ -706,6 +696,20 @@
     "Zambia": { flag: "🇿🇲", development: 1.02, bias: "athletic", story: "Copperbelt athleticism", intlDifficulty: 1, intlStrength: 71 },
     "Kenya": { flag: "🇰🇪", development: 1.02, bias: "athletic", story: "East African pace and stamina", intlDifficulty: 1, intlStrength: 71 },
   };
+
+  const CONFEDERATIONS = {
+    CONMEBOL: ["Brazil", "Argentina", "Uruguay", "Colombia", "Chile", "Ecuador", "Paraguay", "Peru", "Venezuela", "Bolivia"],
+    CAF: ["Nigeria", "Ivory Coast", "Ghana", "Cameroon", "Algeria", "Senegal", "Morocco", "Tunisia", "Egypt", "South Africa", "Mali", "Zimbabwe", "Zambia", "Kenya"],
+    AFC: ["Iran", "Japan", "South Korea", "Australia", "Saudi Arabia", "Qatar", "China", "India", "Uzbekistan", "Thailand", "Vietnam", "Malaysia", "Indonesia", "Philippines", "Syria", "Lebanon", "Iraq", "Jordan", "Oman", "Kuwait", "Bahrain", "UAE"],
+    CONCACAF: ["Mexico", "USA", "Canada", "Jamaica", "Panama", "Costa Rica"],
+    OFC: ["New Zealand"],
+  };
+  const COUNTRY_CONFEDERATION = {};
+  for (const [conf, list] of Object.entries(CONFEDERATIONS)) {
+    for (const c of list) COUNTRY_CONFEDERATION[c] = conf;
+  }
+  function getCountryConfederation(country) { return COUNTRY_CONFEDERATION[country] || "UEFA"; }
+
   function getEraSquadKeys(eraKey) {
     const era = ERA_OPTIONS.find((e) => e.key === eraKey) || ERA_OPTIONS[0];
     const [min, max] = era.years;
@@ -790,8 +794,7 @@
       // compiled
       attrs: null, mentality: null, mentalityRating: 60, playstyle: null,
       potentialRating: 50, determination: 50, longevity: 50, injuryRating: 50,
-      baseRating: 0, synergyNotes: [], mutationNotes: [], derived: null, hiddenTraits: [], traitProgress: {},
-      pillars: { Ambition: 50, Loyalty: 50, Professionalism: 50, Ego: 50, Leadership: 50, Durability: 50, KillerInstinct: 50, Adaptability: 50, Consistency: 50, Longevity: 50 },
+      baseRating: 0, synergyNotes: [], mutationNotes: [], derived: null, derivedBonuses: { agility: 0, balance: 0 }, hiddenTraits: [], traitProgress: {},
       position: "ST", contractYears: 0, contractSignedAt: 0, contractEndSeason: 0, contractRole: null,
       retireNow: false, agent: null, wealth: 0, fame: 0,
       // career
@@ -802,8 +805,8 @@
       careerLog: [], flags: {}, cooldowns: {}, pendingCarryOver: [],
       bioMoments: [], bioClosing: null,
       yearsAtClub: 0, injuryProneSeasons: 0, milestonesHit: {}, pillarMilestones: {},
-      intlCaps: 0, intlGoals: 0, intlDebut: false, intlCaptain: false, intlRetired: false,
-      injuryProneness: 50, retirementAge: 40, luck: 0,
+      intlCaps: 0, intlGoals: 0, intlDebut: false, intlCaptain: false, intlRetired: false, intlTrait: "balanced",
+      injuryProneness: 50, retirementAge: 40, luck: 0, injuryCount: 0,
       seasonHistory: [], retired: false, bestRating: 0,
       clubsPlayed: new Set(), clubStats: {}, lastPerformanceTier: "Met Expectation",
       honours: {
@@ -901,18 +904,21 @@
     s.player = Object.assign({}, base.player, raw && raw.player ? raw.player : {});
     s.player.slots = s.player.slots || {};
     s.player.usedDonors = Array.isArray(s.player.usedDonors) ? s.player.usedDonors : [];
-    s.pillars = Object.assign({}, base.pillars, raw && raw.pillars ? raw.pillars : {});
     s.honours = Object.assign({}, base.honours, raw && raw.honours ? raw.honours : {});
     s.flags = s.flags || {};
     s.cooldowns = s.cooldowns || {};
     s.clubStats = s.clubStats || {};
     s.milestonesHit = s.milestonesHit || {};
     s.pillarMilestones = s.pillarMilestones || {};
+    s.pillars = null; // pillars removed from gameplay
     s.pendingCarryOver = Array.isArray(s.pendingCarryOver) ? s.pendingCarryOver : [];
     s.seasonHistory = Array.isArray(s.seasonHistory) ? s.seasonHistory : [];
     s.competitionHistory = Array.isArray(s.competitionHistory) ? s.competitionHistory : [];
     s.careerLog = Array.isArray(s.careerLog) ? s.careerLog : [];
     s.bioMoments = Array.isArray(s.bioMoments) ? s.bioMoments : [];
+    if (typeof s.injuryCount !== "number") s.injuryCount = 0;
+    if (!s.derivedBonuses || typeof s.derivedBonuses !== "object") s.derivedBonuses = { agility: 0, balance: 0 };
+    if (!s.intlTrait || !["balanced", "nationalistic", "icon"].includes(s.intlTrait)) s.intlTrait = "balanced";
     if (!s.leagueStandings || typeof s.leagueStandings !== "object") s.leagueStandings = null;
     if (s.intlRetired == null) s.intlRetired = false;
     s.clubsPlayed = s.clubsPlayed instanceof Set ? s.clubsPlayed : new Set(Array.isArray(s.clubsPlayed) ? s.clubsPlayed : []);
@@ -1079,13 +1085,33 @@
       <div class="spin-boxes"><div class="spin-box">${esc(leftValue || "")}</div><div class="spin-x">×</div><div class="spin-box accented">${esc(rightValue || "")}</div></div>
     </div>`;
   }
+  function playRollTick() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.setValueAtTime(420, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(120, ctx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.04, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.08);
+    } catch (e) { /* ignore audio failures */ }
+  }
+
   function spin() {
     document.getElementById("btn-spin").disabled = true;
+    playRollTick();
     const target = document.getElementById("roll-result");
     const phase = state.phase;
     let ticks = 0;
     const totalTicks = 16;
     const iv = setInterval(() => {
+      playRollTick();
       if (phase === "country") {
         const c = choice(COUNTRY_KEYS);
         const o = COUNTRY_ORIGINS[c];
@@ -1567,6 +1593,9 @@
     const avgMent = otherRatings.reduce((s, r) => s + r, 0) / (otherRatings.length || 1);
     state.mentalityRating = Math.round(clamp(mSource.mentalityRating * 0.8 + avgMent * 0.2, 15, 99));
 
+    // Hidden international trait based on mentality, country and a roll of the dice.
+    state.intlTrait = deriveInternationalTrait();
+
     // primary position from the merged build roll
     state.position = state.player.position;
 
@@ -1575,6 +1604,7 @@
     state.attrs = syn.attrs;
     state.synergyNotes = syn.notes;
     state.derived = deriveStats(syn.attrs);
+    applyDerivedBonuses();
 
     state.academyTier = state.academy.tier;
     state.luck = rollLuck();
@@ -1726,6 +1756,14 @@
     const balance = Math.round(clamp(a.strength * 0.4 + (186 - a.height) * 0.5 + 30, 30, 99));
     const dribbling = Math.round(clamp(a.speed * 0.4 + foot * 0.35 + agility * 0.2, 30, 99));
     return { agility, balance, dribbling, finishing: Math.round(foot * 0.7 + Math.min(a.leftFoot, a.rightFoot) * 0.3) };
+  }
+
+  function applyDerivedBonuses() {
+    const b = state.derivedBonuses || { agility: 0, balance: 0 };
+    if (!state.derived) return;
+    state.derived.agility = clamp((state.derived.agility || 0) + (b.agility || 0), 30, 99);
+    state.derived.balance = clamp((state.derived.balance || 0) + (b.balance || 0), 30, 99);
+    state.derived.dribbling = clamp((state.derived.dribbling || 0) + (b.agility || 0) * 0.2 + (b.balance || 0) * 0.1, 30, 99);
   }
 
   function calculateStrikerRating(a) {
@@ -1964,8 +2002,10 @@
     state.contractRole = tier === "World Class" ? "Starter" : "Rotation";
 
     showScreen("screen-career");
+    addBioMoment(generateBioIntro());
     log(`🎬 ${state.player.name} begins their career at ${state.club} (${tier} academy). The chase for ${LEVERS.goalTarget} goals starts now.`, "milestone");
     renderCareerHeader();
+    renderBiography();
     renderSeasonReady();
   }
 
@@ -2238,11 +2278,18 @@
     const mentClutch = mentTag(state.mentality);
     const clutchBonus = ["clutch", "winner", "talisman"].includes(mentClutch) ? state.mentalityRating / 100 : 0;
 
+    const seasonClubs = getLeagueClubs(club);
+    const leagueGames = (seasonClubs.length - 1) * 2;
+
     // injuries — driven by hidden injury proneness, fitness, age, playstyle risk, and Durability pillar
     const fitness = state.attrs.fitness;
     const styleRisk = (PLAYSTYLE_PROFILES[state.playstyle] || {}).injuryRisk || 1;
     let gamesMissed = Math.round((randInt(LEVERS.injuryFreqMin, LEVERS.injuryFreqMax) + state.injuryProneness / 18) * styleRisk) +
       (state.injuryProneSeasons > 0 ? randInt(2, 6) : 0) + (state.age >= 32 ? randInt(1, 4) : 0);
+    // Age 35+ injury risk starts to climb and accumulate with past injuries.
+    if (state.age >= 35) {
+      gamesMissed += randInt(2, 5) + Math.floor((state.age - 34) / 2) * randInt(1, 3) + Math.floor(state.injuryCount / 2);
+    }
     const durability = getPillar("Durability");
     gamesMissed = Math.max(0, gamesMissed - Math.round((durability - 50) / 10));
     if (hasTrait("Iron Man")) gamesMissed = Math.max(0, gamesMissed - 6);
@@ -2250,14 +2297,29 @@
     else if (fitness >= 80) gamesMissed = Math.max(0, gamesMissed - 1);
     if (hasTrait("Injury Prone")) gamesMissed += randInt(3, 7);
     if (["workrate"].includes(mentClutch)) gamesMissed = Math.max(0, gamesMissed - 1);
-    gamesMissed = clamp(gamesMissed, 0, 30);
+
+    // Injury season: an entire campaign derailed by fitness issues, more likely as players get older.
+    let injurySeason = false;
+    if (state.age >= 30 && rand() < 0.1 + Math.min(0.35, (state.age - 30) * 0.025)) {
+      injurySeason = true;
+      const missedShare = 0.5 + rand() * 0.5; // 50-100% of league games missed
+      gamesMissed = Math.round(leagueGames * missedShare);
+      log(`   ↳ 🚑 Injury season: ${state.player.name} is expected to miss ${Math.round(missedShare * 100)}% of the campaign.`, "milestone");
+    }
+
+    gamesMissed = clamp(gamesMissed, 0, leagueGames);
+    // 48+ players are stopped by a career-ending injury; log and flag retirement.
+    if (state.age >= 48 && gamesMissed >= 1) {
+      log(`   ↳ 🚑 ${state.player.name} suffers a career-ending injury. At ${state.age}, the body simply won't recover.`, "milestone");
+      state.retireNow = true;
+    }
+    // Track cumulative injury burden: severe games missed add to the count.
+    if (gamesMissed >= 4) state.injuryCount += Math.floor(gamesMissed / 4);
 
     let leagueGoals = 0, assists = 0, apps = 0, cleanSheets = 0, playerMatch = 0;
     let momentum = 0; // shifts with recent results, from -3 to +3
     let lastResults = [];
     const matchHighlights = [];
-
-    const seasonClubs = getLeagueClubs(club);
     for (const h of seasonClubs) {
       for (const a of seasonClubs) {
         if (h === a) continue;
@@ -2481,6 +2543,7 @@
     state.attrs = syn.attrs;
     state.synergyNotes = syn.notes;
     state.derived = deriveStats(state.attrs);
+    applyDerivedBonuses();
     state.baseRating = calculateStrikerRating(state.attrs);
     const syn2 = computeSynergyMultiplier(state.attrs);
     state.synergyMultiplier = syn2.multiplier;
@@ -2572,6 +2635,16 @@
       for (const key of physicalKeys) {
         a[key] = clamp(a[key] - randInt(baseDrop, baseDrop + 2), 40, 99);
       }
+    }
+
+    // Age 35+ wear and tear: speed and strength gradually erode and build up over time.
+    if (age >= 35) {
+      const ageWear = randInt(0, 1 + Math.floor((age - 34) / 2));
+      const injuryWear = Math.min(state.injuryCount, 10);
+      const speedDrop = ageWear + Math.floor(injuryWear / 3);
+      const strengthDrop = ageWear + Math.floor(injuryWear / 3);
+      a.speed = clamp(a.speed - speedDrop, 40, 99);
+      a.strength = clamp(a.strength - strengthDrop, 40, 99);
     }
 
     // Mentality-driven development: consistent/workhorse players shore up weak spots
@@ -2841,6 +2914,128 @@
   }
 
   /* ---------------------- INTERNATIONAL CAREER -------------------------- */
+  function deriveInternationalTrait() {
+    const origin = state.player.origin || COUNTRY_ORIGINS["England"];
+    const tag = mentTag(state.mentality);
+    const strength = origin.intlStrength || 80;
+    const difficulty = origin.intlDifficulty || 5;
+    const chances = { icon: 0.2, nationalistic: 0.2, balanced: 0.6 };
+    // Elite football nations and clutch/winner mentalities lean toward "icon".
+    if (strength >= 85 && difficulty >= 6) {
+      chances.icon += 0.12;
+      chances.balanced -= 0.12;
+    }
+    if (["clutch", "winner", "talisman"].includes(tag)) {
+      chances.icon += 0.1;
+      chances.balanced -= 0.1;
+    }
+    // Nations with passionate or hard paths and leader/workrate mentalities lean toward "nationalistic".
+    if (difficulty >= 4) {
+      chances.nationalistic += 0.08;
+      chances.balanced -= 0.08;
+    }
+    if (["leader", "workrate", "consistency"].includes(tag)) {
+      chances.nationalistic += 0.08;
+      chances.balanced -= 0.08;
+    }
+    const r = rand();
+    let c = 0;
+    if (r < (c += chances.icon)) return "icon";
+    if (r < (c += chances.nationalistic)) return "nationalistic";
+    return "balanced";
+  }
+
+  const INTERNATIONAL_TOURNAMENTS = {
+    WorldCup: {
+      name: "FIFA World Cup",
+      emoji: "🌍",
+      governing: "FIFA",
+      frequency: 4,
+      firstHeld: 1930,
+      context: "The most prestigious tournament in international football. Only eight nations have ever won it.",
+      topCountries: { Brazil: 5, "Germany (incl. West Germany)": 4, Italy: 4, Argentina: 3, France: 2, Uruguay: 2, England: 1, Spain: 1 },
+      recentWinners: ["2022: Argentina", "2018: France", "2014: Germany", "2010: Spain", "2006: Italy", "2002: Brazil", "1998: France", "1994: Brazil"]
+    },
+    Euro: {
+      name: "UEFA European Championship",
+      emoji: "🇪🇺",
+      governing: "UEFA",
+      frequency: 4,
+      firstHeld: 1960,
+      context: "The premier continental tournament for European nations. Ten different countries have won it.",
+      topCountries: { Spain: 4, "Germany (incl. West Germany)": 3, France: 2, Italy: 2 },
+      recentWinners: ["2024: Spain", "2020 (21): Italy", "2016: Portugal", "2012: Spain", "2008: Spain", "2004: Greece", "2000: France", "1996: Germany"]
+    },
+    AFCON: {
+      name: "Africa Cup of Nations",
+      emoji: "🇿🇦",
+      governing: "CAF",
+      frequency: 2,
+      firstHeld: 1957,
+      context: "Africa's most prestigious national team tournament, known for passionate crowds and unpredictable outcomes.",
+      topCountries: { Egypt: 7, Cameroon: 5, Ghana: 4, "Côte d'Ivoire": 3, Nigeria: 3 },
+      recentWinners: ["2025: Senegal", "2023: Côte d'Ivoire", "2021: Senegal", "2019: Algeria", "2017: Cameroon", "2015: Côte d'Ivoire", "2013: Nigeria", "2012: Zambia"]
+    },
+    CopaAmerica: {
+      name: "Copa América",
+      emoji: "🌎",
+      governing: "CONMEBOL",
+      frequency: 2,
+      firstHeld: 1916,
+      context: "The oldest international continental football tournament. Eight of the ten CONMEBOL members have won it at least once.",
+      topCountries: { Argentina: 16, Uruguay: 15, Brazil: 9 },
+      recentWinners: ["2024: Argentina", "2021: Argentina", "2019: Brazil", "2016: Chile", "2015: Chile", "2011: Uruguay", "2007: Brazil", "2004: Brazil"]
+    },
+    AsianCup: {
+      name: "AFC Asian Cup",
+      emoji: "🌏",
+      governing: "AFC",
+      frequency: 4,
+      firstHeld: 1956,
+      context: "The premier continental competition for Asian nations. Australia has competed since joining the AFC.",
+      topCountries: { Japan: 4, Iran: 3, "Saudi Arabia": 3, "South Korea": 2 },
+      recentWinners: ["2023: Qatar", "2019: Qatar", "2015: Australia", "2011: Japan", "2007: Iraq", "2004: Japan", "2000: Japan", "1996: Saudi Arabia"]
+    },
+    GoldCup: {
+      name: "CONCACAF Gold Cup",
+      emoji: "🇺🇸",
+      governing: "CONCACAF",
+      frequency: 2,
+      firstHeld: 1963,
+      context: "The premier tournament for North, Central America and the Caribbean.",
+      topCountries: { Mexico: 12, "United States": 7, "Costa Rica": 3 },
+      recentWinners: ["2025: Mexico", "2023: Mexico", "2021: USA", "2019: Mexico", "2017: USA", "2015: Mexico", "2013: USA", "2011: Mexico"]
+    },
+    OFCNationsCup: {
+      name: "OFC Nations Cup",
+      emoji: "🇳🇿",
+      governing: "OFC",
+      frequency: 4,
+      firstHeld: 1973,
+      context: "Oceania's premier national team tournament. Australia left the OFC to join the AFC in 2006.",
+      topCountries: { "New Zealand": 6, Australia: 4, Tahiti: 1 },
+      recentWinners: ["2024: New Zealand", "2016: New Zealand", "2012: Tahiti", "2008: New Zealand", "2004: Australia", "2002: New Zealand", "2000: Australia", "1998: Australia"]
+    }
+  };
+  const TOURNAMENT_BY_CONFEDERATION = {
+    UEFA: "Euro",
+    CONMEBOL: "CopaAmerica",
+    CAF: "AFCON",
+    AFC: "AsianCup",
+    CONCACAF: "GoldCup",
+    OFC: "OFCNationsCup"
+  };
+  function getTournamentForSeason() {
+    const cycle = state.season % 4;
+    if (cycle === 0) return INTERNATIONAL_TOURNAMENTS.WorldCup;
+    if (cycle === 2) {
+      const conf = getCountryConfederation(state.country);
+      const key = TOURNAMENT_BY_CONFEDERATION[conf] || "WorldCup";
+      return INTERNATIONAL_TOURNAMENTS[key];
+    }
+    return null;
+  }
+
   function getNationalTeam() {
     const origin = state.player.origin || COUNTRY_ORIGINS["England"];
     const strength = origin.intlStrength || 80;
@@ -2873,14 +3068,19 @@
       log(`🦁 ${state.player.name} earns a first ${state.country} call-up!`, "intl");
     }
     if (!state.intlDebut) return null;
-    const isTournament = state.season % 2 === 0;
+    const tournament = getTournamentForSeason();
+    const isTournament = !!tournament;
+    const tournamentName = tournament ? tournament.name : null;
     const oppDiff = getOpponentDifficulty();
     // Hard confederations have fewer caps and fewer easy games
     let games = isTournament ? randInt(5, 7) : randInt(4, 6);
     if (oppDiff.difficulty >= 8) games = Math.max(2, games - 1);
     if (oppDiff.difficulty <= 2) games += 1;
+    // "Icon" players get selected for more big international summers.
+    if (state.intlTrait === "icon" && isTournament) games += 1;
     let g = 0;
     let caps = 0;
+    const trait = state.intlTrait || "balanced";
     for (let i = 0; i < games; i++) {
       const opp = { attack: randInt(oppDiff.min, oppDiff.max), midfield: randInt(oppDiff.min, oppDiff.max), defence: randInt(oppDiff.min, oppDiff.max), manager: randInt(oppDiff.min, oppDiff.max), tacticalStyle: choice(["Possession", "Counter", "High Press", "Direct"]), homeAdvantage: 4 };
       const res = simulateMatch(nat, opp, 0, 0);
@@ -2888,6 +3088,9 @@
       let share = clamp(agedRating() / (agedRating() + teammateThreat), 0.03, 0.42);
       // Hard groups: team scores fewer, individual share is higher, but raw chances are scarce
       if (oppDiff.difficulty >= 8) share *= 0.85;
+      // Hidden international trait: icons are more decisive, nationalists score more.
+      if (trait === "icon") share *= 1.15;
+      if (trait === "nationalistic") share *= 1.2;
       g += poissonRandom(res.homeGoals * share * 0.85);
       caps++;
     }
@@ -2895,14 +3098,18 @@
     state.intlGoals += g;
     state.totalGoals += g;
     let wonTrophy = false;
-    if (isTournament && (g >= 3 || rand() < 0.15) && state.reputation >= 60) {
+    let trophyChance = 0.15;
+    if (trait === "icon") trophyChance += 0.1;
+    if (trait === "nationalistic") trophyChance += 0.05;
+    if (isTournament && (g >= 3 || rand() < trophyChance) && state.reputation >= 60) {
       wonTrophy = true;
       state.honours.intlTrophies++;
-      state.competitionHistory.push({ season: state.season, club: state.country, text: `🦁 Won an international tournament with ${state.country} (${g} goals)` });
+      const trophyLabel = tournament ? tournament.name : "an international tournament";
+      state.competitionHistory.push({ season: state.season, club: state.country, text: `🦁 Won ${trophyLabel} with ${state.country} (${g} goals)` });
       adjustReputation(8);
-      log(`🏆 Tournament glory! ${state.player.name} lifts silverware with ${state.country} (${g} goals).`, "intl");
+      log(`🏆 Tournament glory! ${state.player.name} lifts ${trophyLabel} silverware with ${state.country} (${g} goals).`, "intl");
     }
-    return { caps, games: caps, goals: g, isTournament, wonTrophy };
+    return { caps, games: caps, goals: g, isTournament, tournamentName, wonTrophy };
   }
 
   /* ------------------------- DECISION ENGINE ---------------------------- */
@@ -3620,8 +3827,8 @@
 
   // Minimum guaranteed events per stage — later stages always have at least
   // one more event brewing than earlier ones, on top of the random/cap range.
-  const STAGE_EVENT_FLOOR = { Early: 0, Mid: 1, Late: 2, Overtime: 2 };
-  const STAGE_EVENT_BASE = { Early: 0.6, Mid: 1.6, Late: 2.5, Overtime: 3.2 };
+  const STAGE_EVENT_FLOOR = { Early: 0, Mid: 1, Late: 1, Overtime: 1 };
+  const STAGE_EVENT_BASE = { Early: 0, Mid: 1.4, Late: 1.8, Overtime: 2.0 };
   function determineEventCount(ctx) {
     const stage = getCareerSection(state.age);
     const section = CAREER_SECTIONS[stage];
@@ -3668,7 +3875,7 @@
       return;
     }
     applyEffectsRaw(fx, multiplier);
-    if (state.attrs && (fx.attrChange || fx.positionChange)) recomputePlayerStats();
+    if (state.attrs && (fx.attrChange || fx.attrChange2 || fx.derivedChange || fx.positionChange)) recomputePlayerStats();
   }
   function applyEffectsRaw(fx, multiplier = 1) {
     if (!fx) return;
@@ -3692,6 +3899,11 @@
     if (fx.attrChange2) {
       const { key, delta } = fx.attrChange2;
       state.attrs[key] = clamp(state.attrs[key] + Math.round(delta * multiplier), 40, 99);
+    }
+    if (fx.derivedChange) {
+      state.derivedBonuses = state.derivedBonuses || { agility: 0, balance: 0 };
+      if (fx.derivedChange.agility != null) state.derivedBonuses.agility = (state.derivedBonuses.agility || 0) + Math.round(fx.derivedChange.agility * multiplier);
+      if (fx.derivedChange.balance != null) state.derivedBonuses.balance = (state.derivedBonuses.balance || 0) + Math.round(fx.derivedChange.balance * multiplier);
     }
     if (fx.mentalityChange) {
       state.mentalityRating = clamp(state.mentalityRating + Math.round(fx.mentalityChange * multiplier), 15, 99);
@@ -3727,7 +3939,6 @@
       const i = order.indexOf(state.role);
       if (i > 0) state.role = order[i - 1];
     }
-    applyPillarEffects(fx);
   }
   function applyPendingCarryOver() {
     if (!state.pendingCarryOver || !state.pendingCarryOver.length) return;
@@ -3763,7 +3974,8 @@
     if (currentLeague === "Championship" && !tierByRep.includes("Championship")) tierByRep.push("Championship");
     if (["League1","League2"].includes(currentLeague)) { tierByRep = ["Championship","League1","League2"]; }
     const englishPool = [...getPLLeagueClubs(), ...getChampionshipClubs(), ...getLeague1Clubs(), ...getLeague2Clubs()];
-    const pool = englishPool.filter((t) => t !== state.club && tierByRep.includes(TEAM_DATABASE[t].league));
+    const pool = englishPool.filter((t) => t !== state.club && tierByRep.includes(TEAM_DATABASE[t].league) &&
+      !(PL_TIERS.includes(TEAM_DATABASE[t].league) && state.age > 37));
     // Abroad moves require a World Class agent (or a very high-profile player).
     // Without a world class agent abroad offers are almost never generated.
     const agentKey = state.agent ? state.agent.key : "poor";
@@ -3799,7 +4011,8 @@
     if (agent.influence >= 0.08 && !tierByRep.includes("Elite")) tierByRep.push("Elite");
     if (agent.influence >= 0.18 && !tierByRep.includes("Europe")) tierByRep.push("Europe");
     const englishPool = [...getPLLeagueClubs(), ...getChampionshipClubs(), ...getLeague1Clubs(), ...getLeague2Clubs()];
-    const pool = englishPool.filter((t) => t !== state.club && tierByRep.includes(TEAM_DATABASE[t].league));
+    const pool = englishPool.filter((t) => t !== state.club && tierByRep.includes(TEAM_DATABASE[t].league) &&
+      !(PL_TIERS.includes(TEAM_DATABASE[t].league) && state.age > 37));
     if (agent.key === "worldclass" && rep >= 50) {
       const foreign = getForeignLeagueClubs().filter((t) => t !== state.club && ["LaLiga", "SerieA", "Bundesliga"].includes(TEAM_DATABASE[t].league));
       pool.push(...foreign);
@@ -3948,52 +4161,60 @@
       <div class="cs-section-title">International</div>${intlHtml}
       <div class="cs-section-title">Club Career History</div>${clubHistoryHtml}
       <div class="cs-section-title">Player Profile</div>
-      <div class="profile-grid">
-        <div class="profile-card">
-          <div class="pc-label">Playstyle</div>
-          <div class="pc-val">${esc(state.playstyle)}</div>
-          <div class="pc-meta">${esc(PLAYSTYLE_PROFILES[state.playstyle]?.desc || "")}</div>
+      <div class="profile-top">
+        <div class="profile-left">
+          <div class="profile-grid">
+            <div class="profile-card">
+              <div class="pc-label">Playstyle</div>
+              <div class="pc-val">${esc(state.playstyle)}</div>
+              <div class="pc-meta">${esc(PLAYSTYLE_PROFILES[state.playstyle]?.desc || "")}</div>
+            </div>
+            <div class="profile-card">
+              <div class="pc-label">Position</div>
+              <div class="pc-val">${esc((POSITIONS[state.position] || POSITIONS.ST).label)}</div>
+              <div class="pc-meta">${esc(state.position)}</div>
+            </div>
+            <div class="profile-card">
+              <div class="pc-label">Origin</div>
+              <div class="pc-val">${origin.flag} ${esc(state.country)}</div>
+              <div class="pc-meta">${esc(origin.story)}</div>
+            </div>
+            <div class="profile-card">
+              <div class="pc-label">Mentality</div>
+              <div class="pc-val ${mentIsSpecial(state.mentality) ? "rare" : ""}">${esc(state.mentality)}</div>
+              <div class="pc-meta">Personality on the pitch</div>
+            </div>
+            <div class="profile-card">
+              <div class="pc-label">Agent</div>
+              <div class="pc-val">${esc(agent.label)}<span class="agent-tier-badge ${agentBadgeClass}">${esc(agent.label)}</span></div>
+              <div class="pc-meta">Contract negotiator${agent.key === "worldclass" ? " · unlocks abroad moves" : ""}</div>
+            </div>
+            <div class="profile-card">
+              <div class="pc-label">Peak Rating</div>
+              <div class="pc-val">${state.baseRating}</div>
+              <div class="pc-meta">Current ability</div>
+            </div>
+          </div>
+          <div class="profile-section" style="margin-top:0">
+            <h4>Attributes</h4>
+            <div class="profile-attrs">
+              <div><span>Heading</span><b>${atrs.heading || "—"}</b></div>
+              <div><span>Left Foot</span><b>${atrs.leftFoot || "—"}</b></div>
+              <div><span>Right Foot</span><b>${atrs.rightFoot || "—"}</b></div>
+              <div><span>Speed</span><b>${atrs.speed || "—"}</b></div>
+              <div><span>Strength</span><b>${atrs.strength || "—"}</b></div>
+              <div><span>Fitness</span><b>${atrs.fitness || "—"}</b></div>
+              <div><span>Height</span><b>${atrs.height || "—"}cm</b></div>
+              <div><span>Weight</span><b>${atrs.weight || "—"}kg</b></div>
+            </div>
+          </div>
         </div>
-        <div class="profile-card">
-          <div class="pc-label">Position</div>
-          <div class="pc-val">${esc((POSITIONS[state.position] || POSITIONS.ST).label)}</div>
-          <div class="pc-meta">${esc(state.position)}</div>
-        </div>
-        <div class="profile-card">
-          <div class="pc-label">Origin</div>
-          <div class="pc-val">${origin.flag} ${esc(state.country)}</div>
-          <div class="pc-meta">${esc(origin.story)}</div>
-        </div>
-        <div class="profile-card">
-          <div class="pc-label">Mentality</div>
-          <div class="pc-val ${mentIsSpecial(state.mentality) ? "rare" : ""}">${esc(state.mentality)}</div>
-          <div class="pc-meta">Personality on the pitch</div>
-        </div>
-        <div class="profile-card">
-          <div class="pc-label">Agent</div>
-          <div class="pc-val">${esc(agent.label)}<span class="agent-tier-badge ${agentBadgeClass}">${esc(agent.label)}</span></div>
-          <div class="pc-meta">Contract negotiator${agent.key === "worldclass" ? " · unlocks abroad moves" : ""}</div>
-        </div>
-        <div class="profile-card">
-          <div class="pc-label">Peak Rating</div>
-          <div class="pc-val">${state.baseRating}</div>
-          <div class="pc-meta">Current ability</div>
-        </div>
+        <div class="profile-radar"><canvas id="${radarId}" width="400" height="320"></canvas></div>
       </div>
-      <div class="profile-section">
-        <h4>Attributes</h4>
-        <div class="profile-attrs">
-          <div><span>Heading</span><b>${atrs.heading || "—"}</b></div>
-          <div><span>Left Foot</span><b>${atrs.leftFoot || "—"}</b></div>
-          <div><span>Right Foot</span><b>${atrs.rightFoot || "—"}</b></div>
-          <div><span>Speed</span><b>${atrs.speed || "—"}</b></div>
-          <div><span>Strength</span><b>${atrs.strength || "—"}</b></div>
-          <div><span>Fitness</span><b>${atrs.fitness || "—"}</b></div>
-          <div><span>Height</span><b>${atrs.height || "—"}cm</b></div>
-          <div><span>Weight</span><b>${atrs.weight || "—"}kg</b></div>
-        </div>
-      </div>
-      <div class="profile-radar"><canvas id="${radarId}" width="260" height="200"></canvas></div>`;
+      <div class="profile-section career-biography">
+        <h4>Career Biography</h4>
+        <div id="career-biography-content">${buildBiographyHtml()}</div>
+      </div>`;
     requestAnimationFrame(() => {
       const canvas = document.getElementById(radarId);
       if (canvas && state.attrs) drawRadarChart(canvas, state.attrs);
@@ -4251,13 +4472,14 @@
         applyPendingCarryOver(); // delayed effects from previous season decisions
         if (state.retireNow) { state.retireNow = false; beginRetirement("injury"); return; }
         const sd = simulateSeason();
+        if (state.retireNow) { state.retireNow = false; beginRetirement("injury"); return; }
         const intl = simulateInternational();
         renderSeasonResult(sd, intl);
         renderCareerHeader();
         let line = `S${state.season} (age ${state.age}) — ${state.club}: ${sd.goals}g ${sd.assists}a in ${sd.apps} apps (${sd.rating}). ${ordinal(sd.pos)} [${sd.trajectory}]. ${sd.role}.`;
         if (sd.honours.length) line += ` 🏆 ${sd.honours.join(", ")}.`;
         if (sd.awards.length) line += ` 🎖 ${sd.awards.join(", ")}.`;
-        if (intl && intl.goals) line += ` 🦁 +${intl.goals} for England.`;
+        if (intl && intl.goals) line += ` 🦁 +${intl.goals} for ${state.country}${intl.tournamentName ? ` at ${intl.tournamentName}` : ""}.`;
         log(line, perfClass(sd.perfTier));
         const bioLine = narrateSeasonForBio(sd, intl);
         if (bioLine) addBioMoment(bioLine);
@@ -4347,7 +4569,7 @@
           <span class="summary-label">Goal breakdown</span>
           <span class="summary-val">League ${sd.leagueGoals || sd.goals} · Cup ${sd.cupGoals || 0} · Europe ${sd.europeGoals || 0}</span>
         </div>
-        ${intl ? `<div class="summary-row"><span class="summary-label">International</span><span class="summary-val">${intl.caps} caps · ${intl.goals} goals</span></div>` : ""}
+        ${intl ? `<div class="summary-row"><span class="summary-label">International</span><span class="summary-val">${intl.caps} caps · ${intl.goals} goals${intl.tournamentName ? ` · ${intl.tournamentName}` : ""}</span></div>` : ""}
         <div class="summary-row">
           <span class="summary-label">Career total</span>
           <span class="summary-val">${state.totalGoals} goals · ${state.totalAssists} assists · ${state.totalApps} apps</span>
@@ -4928,6 +5150,20 @@
 
     // Refusal conditions — clubs decide whether to renew based on age, performance, reputation, injury and agent.
     let refused = false;
+    const isPL = PL_TIERS.includes(TEAM_DATABASE[club].league);
+    // Premier League physical barrier: clubs won't sign players over 37.
+    if (isPL && age > 37) refused = true;
+    // Tiered league physical barrier for new signings: PL is strict, Spain/Italy/Germany less so.
+    if (club !== state.club) {
+      const league = TEAM_DATABASE[club].league;
+      const tier = isPL ? 1 : ["LaLiga", "SerieA", "Bundesliga"].includes(league) ? 2 : 3;
+      const attrs = state.attrs || { strength: 60, fitness: 60 };
+      const physicalAvg = (attrs.strength + attrs.fitness) / 2;
+      const physicalMin = Math.min(attrs.strength, attrs.fitness);
+      if (tier === 1 && (physicalAvg < 55 || physicalMin < 45)) refused = true;
+      if (tier === 2 && (physicalAvg < 45 || physicalMin < 40)) refused = true;
+      // Tier 3 (Championship, MLS, Saudi, etc.) has no physical barrier.
+    }
     if (age >= 39 && rep < 55) refused = true;
     if (age >= 37 && rep < 30) refused = true;
     if (age >= 35 && perf === "Flop" && rep < 60) refused = true;
@@ -5246,6 +5482,7 @@
   /* ----------------------------- LEGACY --------------------------------- */
   function endCareer(reachedGoal) {
     state.retired = true;
+    state.bioClosing = generateBioClosing();
     showScreen("screen-legacy");
     const won = reachedGoal || state.totalGoals >= LEVERS.goalTarget;
     const newAchievements = unlockAchievements(checkCareerAchievements());
@@ -5272,6 +5509,7 @@
     renderCompetitionHistory();
     renderEpilogue();
     renderCareerSummary();
+    renderLegacyBiography();
     renderLegacyDNA();
     renderShareCard();
     renderShareTagline();
@@ -5347,8 +5585,10 @@
       `<tr><td class="lt-team">${esc(c)}</td><td>${s.seasons}</td><td>${s.apps}</td><td class="lt-pts">${s.goals}</td><td>${s.assists}</td><td>${s.titles}</td></tr>`).join("");
     document.getElementById("legacy-clubs").innerHTML = `
       <h3>Career by Club</h3>
-      <table class="league-table clubs-table"><thead><tr><th>Club</th><th>Sea</th><th>Apps</th><th>Goals</th><th>Ast</th><th>🏆</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
+      <div class="table-scroll">
+        <table class="league-table clubs-table"><thead><tr><th>Club</th><th>Sea</th><th>Apps</th><th>Goals</th><th>Ast</th><th>🏆</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      </div>`;
   }
 
   function renderCompetitionHistory() {
@@ -5724,6 +5964,7 @@
 
   function checkUrlHashCareer() {
     try {
+      if (!window.location) return;
       const hash = window.location.hash || "";
       if (hash.startsWith("#career=")) {
         const code = hash.slice(8);
@@ -5848,10 +6089,12 @@
       lines.push(`Persistent injury trouble kept ${n} sidelined for a big chunk of the year — ${sd.gamesMissed} games missed.`);
     }
     if (intl && intl.goals >= 3) {
-      lines.push(`On the international stage, ${n} was electric for ${state.country}, scoring ${intl.goals} in ${intl.caps} caps.`);
+      const stage = intl.tournamentName ? `at the ${intl.tournamentName}` : "on the international stage";
+      lines.push(`${n} was electric ${stage} for ${state.country}, scoring ${intl.goals} in ${intl.caps} caps.`);
     }
     if (intl && intl.wonTrophy) {
-      lines.push(`${n} lifted international silverware with ${state.country} this summer.`);
+      const trophy = intl.tournamentName ? `the ${intl.tournamentName}` : "international silverware";
+      lines.push(`${n} lifted ${trophy} with ${state.country} this summer.`);
     }
 
     if (!lines.length) return null;
@@ -5895,8 +6138,9 @@
   }
 
   function buildBiographyHtml() {
-    const intro = generateBioIntro();
-    const momentsHtml = (state.bioMoments || []).map((m) =>
+    const moments = state.bioMoments || [];
+    const intro = moments[0]?.text || generateBioIntro();
+    const momentsHtml = moments.slice(1).map((m) =>
       `<div class="bio-entry"><span class="bio-tag">Season ${m.season} · Age ${m.age}</span><p>${esc(m.text)}</p></div>`
     ).join("");
     const closingHtml = state.bioClosing
@@ -5907,7 +6151,7 @@
   }
 
   function renderBiography() {
-    const el = document.getElementById("biography-content");
+    const el = document.getElementById("career-biography-content") || document.getElementById("biography-content");
     if (el) el.innerHTML = buildBiographyHtml();
   }
 
@@ -6175,7 +6419,7 @@
   window.__STRESS_TEST__ = {
     startCreation, compilePlayer, simulateSeason, applySeasonalAttributeChanges, playSeason,
     recomputePlayerStats, simulateInternational, computeClubContractOffer, generateOffers, generateForcedDestinationOffers, determineNaturalRole,
-    adjustPillar, getPillar, checkCareerMilestone, pickSeasonDecision, applyEffects, applyEffectsRaw,
+    getPillar, checkCareerMilestone, pickSeasonDecision, applyEffects, applyEffectsRaw,
     getEventWeight, pickSeasonEvent, pickSeasonEvents, determineEventCount, getCareerSection, getCareerOutcomeScore, resolveEndOfCareerEvent,
     getState: () => state, setState: (s) => { state = migrateState(s); }, setSeed, serializeState, deserializeState, normalizeContractState,
     get LEAGUE_CLUBS() { return getPLLeagueClubs(); },
