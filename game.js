@@ -1105,13 +1105,13 @@
 
   function spin() {
     document.getElementById("btn-spin").disabled = true;
-    playRollTick();
+    if (state.phase !== "attributes") playRollTick();
     const target = document.getElementById("roll-result");
     const phase = state.phase;
     let ticks = 0;
     const totalTicks = 16;
     const iv = setInterval(() => {
-      playRollTick();
+      if (phase !== "attributes") playRollTick();
       if (phase === "country") {
         const c = choice(COUNTRY_KEYS);
         const o = COUNTRY_ORIGINS[c];
