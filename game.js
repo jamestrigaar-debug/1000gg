@@ -188,7 +188,7 @@
   const LEVERS = {
     startRerolls: 3,
     goalTarget: 1000,
-    conversionMultiplier: 1.085,
+    conversionMultiplier: 0.98,
     primeWindow: [25, 29],
     injuryFreqMin: 3,
     injuryFreqMax: 6,
@@ -203,11 +203,11 @@
     Europe:        { goals: 1.0,  minutes: 0.95, reputation: 0.85, wages: 0.85, compFactor: 0.15, europeWeight: 0.45, shareCap: 0.38, matchCap: 0.95 },
     Mid:           { goals: 1.02, minutes: 1.0,  reputation: 0.70, wages: 0.70, compFactor: 0.08, europeWeight: 0.25, shareCap: 0.40, matchCap: 1.00 },
     Lower:         { goals: 1.05, minutes: 1.0,  reputation: 0.55, wages: 0.55, compFactor: 0.04, europeWeight: 0.10, shareCap: 0.42, matchCap: 1.05 },
-    LaLiga:        { goals: 1.0,  minutes: 0.95, reputation: 0.95, wages: 0.85, compFactor: 0.17, europeWeight: 0.50, shareCap: 0.50, matchCap: 1.20 },
-    SerieA:        { goals: 0.95, minutes: 0.95, reputation: 0.85, wages: 0.75, compFactor: 0.16, europeWeight: 0.50, shareCap: 0.46, matchCap: 1.10 },
-    Bundesliga:    { goals: 1.05, minutes: 1.0,  reputation: 0.88, wages: 0.75, compFactor: 0.16, europeWeight: 0.50, shareCap: 0.50, matchCap: 1.20 },
-    MLS:           { goals: 0.85, minutes: 1.05, reputation: 0.40, wages: 0.80, compFactor: 0.08, europeWeight: 0.05, shareCap: 0.44, matchCap: 1.05 },
-    Saudi:         { goals: 0.90, minutes: 1.05, reputation: 0.35, wages: 1.0,  compFactor: 0.08, europeWeight: 0.05, shareCap: 0.44, matchCap: 1.05 },
+    LaLiga:        { goals: 1.04, minutes: 0.95, reputation: 0.95, wages: 0.85, compFactor: 0.17, europeWeight: 0.50, shareCap: 0.50, matchCap: 1.25 },
+    SerieA:        { goals: 1.02, minutes: 0.95, reputation: 0.85, wages: 0.75, compFactor: 0.16, europeWeight: 0.50, shareCap: 0.46, matchCap: 1.15 },
+    Bundesliga:    { goals: 1.05, minutes: 1.0,  reputation: 0.88, wages: 0.75, compFactor: 0.16, europeWeight: 0.50, shareCap: 0.52, matchCap: 1.25 },
+    MLS:           { goals: 1.06, minutes: 1.05, reputation: 0.40, wages: 0.80, compFactor: 0.08, europeWeight: 0.05, shareCap: 0.48, matchCap: 1.20 },
+    Saudi:         { goals: 1.07, minutes: 1.05, reputation: 0.35, wages: 1.0,  compFactor: 0.08, europeWeight: 0.05, shareCap: 0.50, matchCap: 1.25 },
     Championship:  { goals: 0.80, minutes: 1.05, reputation: 0.35, wages: 0.40, compFactor: 0.07, europeWeight: 0.05, shareCap: 0.38, matchCap: 0.95 },
     League1:       { goals: 0.75, minutes: 1.05, reputation: 0.22, wages: 0.20, compFactor: 0.05, europeWeight: 0.00, shareCap: 0.38, matchCap: 0.95 },
     League2:       { goals: 0.70, minutes: 1.05, reputation: 0.15, wages: 0.12, compFactor: 0.04, europeWeight: 0.00, shareCap: 0.38, matchCap: 0.95 },
@@ -1228,10 +1228,12 @@
       { k: "leftFoot", label: "LF", v: pl.leftFoot },
       { k: "rightFoot", label: "RF", v: pl.rightFoot },
       { k: "speed", label: "SPD", v: pl.speed },
+      { k: "height", label: "HGT", v: pl.height, suffix: "cm" },
+      { k: "weight", label: "WGT", v: pl.weight, suffix: "kg" },
       { k: "mentality", label: "MEN", v: pl.mentality, text: true },
     ];
     return `<div class="donor-attrs">${rows.map((r) =>
-      `<div class="donor-attr${(r.host || r.k) === key ? " highlight" : ""}"><span>${r.label}</span><b>${r.text ? esc(r.v) : r.v}</b></div>`
+      `<div class="donor-attr${(r.host || r.k) === key ? " highlight" : ""}"><span>${r.label}</span><b>${r.text ? esc(r.v) : r.v}${r.suffix ? r.suffix : ""}</b></div>`
     ).join("")}</div>`;
   }
 
@@ -1797,8 +1799,8 @@
     // Nonlinear: diminishing returns only kick in above 95, so true elite players can separate from the pack
     const dim = (v) => v <= 95 ? v : 95 + (v - 95) * 0.5;
     const rating =
-      dim(finishing) * 0.38 + dim(a.heading) * 0.14 + dim(a.speed) * 0.18 +
-      dim(a.strength) * 0.10 + dim(a.fitness) * 0.10 + dim((a.leftFoot + a.rightFoot) / 2) * 0.10;
+      dim(finishing) * 0.28 + dim(a.heading) * 0.14 + dim(a.speed) * 0.20 +
+      dim(a.strength) * 0.12 + dim(a.fitness) * 0.12 + dim((a.leftFoot + a.rightFoot) / 2) * 0.14;
     return Math.round(clamp(rating, 40, 99));
   }
 
@@ -2240,37 +2242,71 @@
   };
   function tierFloor(league) { return TIER_FLOOR[league] || 35; }
 
+  // Track manager tenure per club to enable realistic sackings
+  const MANAGER_TENURE = {};
+
   function updateTeamStrengths() {
     // Team strengths evolve between seasons to reflect transfers, managerial
     // changes, and broader market movements. Clubs are capped to stay realistic.
+    // Manager sackings and tactical shifts create dynamic competition.
     const clubs = Object.keys(TEAM_DATABASE);
     for (const c of clubs) {
       const t = TEAM_DATABASE[c];
       const floor = tierFloor(t.league);
-      const base = t.attack + t.midfield + t.defence + t.manager;
-      const volatility = 1.5 + (t.league === "Elite" ? 0.5 : 0); // elite clubs move more
-      const drift = Math.round((rand() - 0.5) * volatility * 2);
-      const managerChange = rand() < 0.12 ? Math.round((rand() - 0.5) * 4) : 0;
-      t.attack = clamp(t.attack + drift, floor, 99);
-      t.midfield = clamp(t.midfield + drift, floor, 99);
-      t.defence = clamp(t.defence + drift, floor, 99);
-      t.manager = clamp(t.manager + managerChange, floor, 99);
-      // Slight regression toward original mean to stop runaway inflation
-      const change = t.attack + t.midfield + t.defence + t.manager - base;
-      if (change > 5) {
-        const pull = Math.round((change - 5) / 4);
+      MANAGER_TENURE[c] = (MANAGER_TENURE[c] || 0) + 1;
+      
+      // Determine if manager gets sacked (poor performance or long tenure)
+      const managerSacked = shouldSackManager(t, MANAGER_TENURE[c]);
+      if (managerSacked) {
+        MANAGER_TENURE[c] = 0;
+        // New manager brings tactical shift: redistribute attributes
+        const oldManager = t.manager;
+        t.manager = clamp(floor + randInt(0, 20), floor, 99);
+        // Tactical shift: one attribute gains, one loses
+        const gainAttr = choice(["attack", "midfield", "defence"]);
+        const loseAttr = choice(["attack", "midfield", "defence"].filter(a => a !== gainAttr));
+        t[gainAttr] = clamp(t[gainAttr] + randInt(2, 5), floor, 99);
+        t[loseAttr] = clamp(t[loseAttr] - randInt(1, 3), floor, 99);
+      } else {
+        // Normal manager evolution (smaller changes)
+        const managerChange = rand() < 0.15 ? Math.round((rand() - 0.5) * 3) : 0;
+        t.manager = clamp(t.manager + managerChange, floor, 99);
+      }
+      
+      // Attribute drift (independent, not correlated)
+      const driftAttack = Math.round((rand() - 0.5) * 2);
+      const driftMid = Math.round((rand() - 0.5) * 2);
+      const driftDef = Math.round((rand() - 0.5) * 2);
+      t.attack = clamp(t.attack + driftAttack, floor, 99);
+      t.midfield = clamp(t.midfield + driftMid, floor, 99);
+      t.defence = clamp(t.defence + driftDef, floor, 99);
+      
+      // Mean reversion: prevent runaway inflation/deflation
+      const base = floor * 3 + 50; // Expected baseline
+      const current = t.attack + t.midfield + t.defence + t.manager;
+      const deviation = current - base;
+      if (Math.abs(deviation) > 8) {
+        const pull = Math.round(Math.sign(deviation) * (Math.abs(deviation) - 8) / 5);
         t.attack = clamp(t.attack - pull, floor, 99);
         t.midfield = clamp(t.midfield - pull, floor, 99);
         t.defence = clamp(t.defence - pull, floor, 99);
         t.manager = clamp(t.manager - pull, floor, 99);
-      } else if (change < -5) {
-        const pull = Math.round((Math.abs(change) - 5) / 4);
-        t.attack = clamp(t.attack + pull, floor, 99);
-        t.midfield = clamp(t.midfield + pull, floor, 99);
-        t.defence = clamp(t.defence + pull, floor, 99);
-        t.manager = clamp(t.manager + pull, floor, 99);
       }
     }
+  }
+
+  function shouldSackManager(team, tenure) {
+    // Managers get sacked if:
+    // 1. They've been there 4+ seasons and team is underperforming
+    // 2. They've been there 6+ seasons (natural turnover)
+    // 3. Random chaos (5% per season)
+    if (tenure >= 6) return rand() < 0.35; // Natural turnover
+    if (tenure >= 4) {
+      const teamStrength = team.attack + team.midfield + team.defence;
+      const expectedStrength = tierFloor(team.league) * 3;
+      return teamStrength < expectedStrength - 10 && rand() < 0.25; // Underperformance
+    }
+    return rand() < 0.05; // Chaos
   }
 
   function applyPlayerTransferImpact(club, leaving) {
@@ -2297,7 +2333,12 @@
     const fitMult = getTacticalFitMultiplier(state.playstyle, clubData.tacticalStyle);
     const roleMult = getRoleMultiplier(state.role);
     const leagueWeights = LEAGUE_WEIGHTS[clubData.league] || LEAGUE_WEIGHTS.Elite;
-    const appearanceChance = clamp(({ Star: 0.97, Starter: 0.9, Rotation: 0.6, Bench: 0.3 }[state.role] || 0.7) * leagueWeights.minutes, 0.25, 1.0);
+    let appearanceChance = clamp(({ Star: 0.97, Starter: 0.9, Rotation: 0.6, Bench: 0.3 }[state.role] || 0.7) * leagueWeights.minutes, 0.25, 1.0);
+    // Age-based reduction: players decline in availability with age
+    if (state.age >= 32) appearanceChance *= 0.85;
+    if (state.age >= 34) appearanceChance *= 0.75;
+    if (state.age >= 36) appearanceChance *= 0.60;
+    if (state.age >= 38) appearanceChance *= 0.40;
     const mentClutch = mentTag(state.mentality);
     const clutchBonus = ["clutch", "winner", "talisman"].includes(mentClutch) ? state.mentalityRating / 100 : 0;
 
@@ -4014,10 +4055,12 @@
     const englishPool = [...getPLLeagueClubs(), ...getChampionshipClubs(), ...getLeague1Clubs(), ...getLeague2Clubs()];
     const pool = englishPool.filter((t) => t !== state.club && tierByRep.includes(TEAM_DATABASE[t].league) &&
       !(PL_TIERS.includes(TEAM_DATABASE[t].league) && state.age > 37));
-    // Abroad moves require a World Class agent (or a very high-profile player).
-    // Without a world class agent abroad offers are almost never generated.
+    // Abroad moves require a World Class agent OR high fame/reputation/awards.
+    // Fame, goals, and awards can override the agent requirement.
     const agentKey = state.agent ? state.agent.key : "poor";
-    const abroadChance = agentKey === "worldclass" ? 0.85 : agentKey === "average" ? 0.08 : 0.02;
+    const awards = (state.honours.ballonDors || 0) + (state.honours.playerOfSeason || 0) + (state.honours.goldenBoots || 0);
+    const hasHighProfile = fame >= 50 || state.reputation >= 75 || awards >= 2 || state.totalGoals >= 400;
+    const abroadChance = agentKey === "worldclass" ? 0.85 : hasHighProfile ? 0.60 : agentKey === "average" ? 0.08 : 0.02;
     if (rand() < abroadChance && state.reputation >= 50) {
       const foreignElite = getForeignLeagueClubs().filter((t) => t !== state.club && ["LaLiga", "SerieA", "Bundesliga"].includes(TEAM_DATABASE[t].league));
       pool.push(...foreignElite);
@@ -4707,6 +4750,18 @@
   }
 
   function _proceedToTransferInner(sd, intl) {
+    // Check if player is too old and physically broken to continue
+    // If 40+ with speed < 40 and agility < 40, force retirement (career is over)
+    if (state.age >= 40) {
+      const derived = state.derived || {};
+      const agility = derived.agility || state.attrs.speed || 50;
+      if (state.attrs.speed < 40 && agility < 40) {
+        log(`   ↳ 🕯️ At age ${state.age}, ${state.player.name}'s body can no longer keep up. Time to hang up the boots.`, "milestone");
+        beginRetirement("injury");
+        return;
+      }
+    }
+    
     // Players now see out their contract unless an end-of-season event forces a move
     // or the club decides to sell them. Automatic restlessness is suppressed while contracted.
     const hasContract = state.contractYears > 0;
@@ -5391,16 +5446,16 @@
       choices: [{ label: "Soak up the adoration", fx: { rep: 2 } }] },
 
     // ---- RARE END-OF-CAREER GOAL SURGES (the only path from ~800 to 1000) ----
-    { id: "golden_twilight", base: 2, req: (s) => s.age >= 34 && s.reputation >= 75 && s.totalGoals >= 650 && TEAM_DATABASE[s.club].league === "Elite", rare: true,
+    { id: "golden_twilight", base: 2, req: (s) => s.age >= 34 && s.reputation >= 75 && s.totalGoals >= 950 && s.mentalityRating >= 85 && s.longevity >= 80, rare: true,
       text: (n) => `In a golden twilight, ${n} defies age and delivers a season for the ages.`,
       choices: [
-        { label: "Rewrite the record books", fx: { goals: () => randInt(80, 150), rep: 5, fame: 8, trophy: true } },
+        { label: "Rewrite the record books", fx: { goals: () => randInt(50, 100), rep: 5, fame: 8, trophy: true } },
         { label: "Retire while the legend is intact", fx: { rep: 3 } },
       ] },
-    { id: "record_chase_finale", base: 2, req: (s) => s.totalGoals >= 700 && s.reputation >= 80 && s.honours.ballonDors >= 1, rare: true,
+    { id: "record_chase_finale", base: 2, req: (s) => s.totalGoals >= 900 && s.reputation >= 80 && s.mentalityRating >= 80 && s.longevity >= 75, rare: true,
       text: (n) => `The world watches as ${n} chases the impossible 1000-goal mark.`,
       choices: [
-        { label: "One more year, one last chase", fx: { goals: () => randInt(100, 200), rep: 6, fame: 10, extend: true } },
+        { label: "One more year, one last chase", fx: { goals: () => randInt(50, 100), rep: 6, fame: 10, extend: true } },
         { label: "Stop at the summit", fx: { rep: 4 } },
       ] },
     { id: "international_swan_song", base: 2, req: (s) => s.age >= 32 && s.intlCaptain && s.intlGoals >= 15 && s.reputation >= 75, rare: true,
@@ -5409,10 +5464,10 @@
         { label: "Give everything for the country", fx: { goals: () => randInt(50, 100), intlGoals: () => randInt(6, 12), rep: 5, fame: 6 } },
         { label: "Focus on club football", fx: { rep: 2 } },
       ] },
-    { id: "one_last_dance", base: 2, req: (s) => s.age >= 35 && s.reputation >= 70 && s.clubsPlayed.size >= 3 && s.totalGoals >= 600, rare: true,
+    { id: "one_last_dance", base: 2, req: (s) => s.age >= 35 && s.reputation >= 70 && s.clubsPlayed.size >= 3 && s.totalGoals >= 850 && s.mentalityRating >= 75, rare: true,
       text: (n) => `A former club offers ${n} one final dance — and the fans believe in miracles.`,
       choices: [
-        { label: "Return and chase the thousand", fx: { goals: () => randInt(70, 130), returnHome: true, rep: 4, fame: 5 } },
+        { label: "Return and chase the thousand", fx: { goals: () => randInt(40, 80), returnHome: true, rep: 4, fame: 5 } },
         { label: "Retire here instead", fx: { rep: 2 } },
       ] },
 
