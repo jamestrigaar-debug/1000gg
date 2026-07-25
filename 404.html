@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Football DNA Simulator</title>
+  <style>
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+      background: #04120b;
+      color: #f4fff8;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 24px;
+    }
+    a { color: #00d06c; font-weight: 700; }
+  </style>
+  <script>
+    (function () {
+      const path = window.location.pathname.replace(/\/$/, '');
+      if (path === '/donate' || path === '/donate.html') {
+        window.location.replace('https://buymeacoffee.com/trigaar');
+      } else {
+        window.location.replace('/');
+      }
+    })();
+  </script>
+</head>
+<body>
+  <p>Redirecting…</p>
+  <p>If you are not redirected, <a href="/">return home</a>.</p>
+</body>
+</html>
