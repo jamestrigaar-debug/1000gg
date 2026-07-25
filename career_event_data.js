@@ -246,16 +246,16 @@
     },
   ];
   const CAREER_SECTIONS = {
-    Early: { min: 17, max: 21, label: "Early", eventCap: 0, weights: { Development: 1.5, Injury: 1, "Transfer or Loan": 1, Roleplay: 1.5 } },
-    Mid: { min: 22, max: 28, label: "Mid", eventCap: 2, weights: { Development: 1, Injury: 2, "Transfer or Loan": 2, Roleplay: 1.2 } },
-    Late: { min: 29, max: 33, label: "Late", eventCap: 2, weights: { Development: 0.5, Injury: 3, "Transfer or Loan": 3, Roleplay: 0.8 } },
-    Overtime: { min: 34, max: 99, label: "Overtime", eventCap: 2, weights: { Development: 0, Injury: 4, "Transfer or Loan": 4, Roleplay: 0.5 } },
+    Early: { min: 17, max: 21, label: "Early", eventCap: 0, weights: { Development: 1.2, Injury: 0.7, "Transfer or Loan": 0.8, Roleplay: 1.0 } },
+    Mid: { min: 22, max: 28, label: "Mid", eventCap: 1, weights: { Development: 0.8, Injury: 1.3, "Transfer or Loan": 1.2, Roleplay: 0.9 } },
+    Late: { min: 29, max: 33, label: "Late", eventCap: 1, weights: { Development: 0.4, Injury: 1.8, "Transfer or Loan": 1.5, Roleplay: 0.6 } },
+    Overtime: { min: 34, max: 99, label: "Overtime", eventCap: 1, weights: { Development: 0, Injury: 2.0, "Transfer or Loan": 1.8, Roleplay: 0.4 } },
   };
   const SEASON_TAG_WEIGHTS = {
-    Early: { Development: 1.5, Injury: 1, "Transfer or Loan": 1, Roleplay: 1.5 },
-    Mid: { Development: 1, Injury: 2, "Transfer or Loan": 2, Roleplay: 1.2 },
-    Late: { Development: 0.5, Injury: 3, "Transfer or Loan": 3, Roleplay: 0.8 },
-    Overtime: { Development: 0, Injury: 4, "Transfer or Loan": 4, Roleplay: 0.5 },
+    Early: { Development: 1.2, Injury: 0.7, "Transfer or Loan": 0.8, Roleplay: 1.0 },
+    Mid: { Development: 0.8, Injury: 1.3, "Transfer or Loan": 1.2, Roleplay: 0.9 },
+    Late: { Development: 0.4, Injury: 1.8, "Transfer or Loan": 1.5, Roleplay: 0.6 },
+    Overtime: { Development: 0, Injury: 2.0, "Transfer or Loan": 1.8, Roleplay: 0.4 },
   };
   const SEASON_EVENTS = [
     // Development

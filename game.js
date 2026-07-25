@@ -175,7 +175,15 @@
   const DRAFT_ATTRS = ATTRS.filter((a) => a.type !== "build" && a.type !== "position");
   // skill attributes that receive hidden-influence blending
   const HIDDEN_KEYS = ["heading", "fitness", "strength", "leftFoot", "rightFoot", "speed"];
-  const HIDDEN_WEIGHT = 0.22;
+  const HIDDEN_WEIGHT = 0.25;
+
+  // Derived stats formula coefficients — tune these to adjust how attributes combine
+  const DERIVED_STATS_WEIGHTS = {
+    agility: { speed: 0.55, heightInverse: 0.9, base: 22 },
+    balance: { strength: 0.4, heightInverse: 0.5, base: 30 },
+    dribbling: { speed: 0.4, foot: 0.35, agility: 0.2 },
+    finishing: { bestFoot: 0.7, weakFoot: 0.3 },
+  };
 
   const LEVERS = {
     startRerolls: 3,
@@ -1085,33 +1093,13 @@
       <div class="spin-boxes"><div class="spin-box">${esc(leftValue || "")}</div><div class="spin-x">×</div><div class="spin-box accented">${esc(rightValue || "")}</div></div>
     </div>`;
   }
-  function playRollTick() {
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "square";
-      osc.frequency.setValueAtTime(420, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(120, ctx.currentTime + 0.08);
-      gain.gain.setValueAtTime(0.04, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.08);
-    } catch (e) { /* ignore audio failures */ }
-  }
-
   function spin() {
     document.getElementById("btn-spin").disabled = true;
-    if (state.phase !== "attributes") playRollTick();
     const target = document.getElementById("roll-result");
     const phase = state.phase;
     let ticks = 0;
     const totalTicks = 16;
     const iv = setInterval(() => {
-      if (phase !== "attributes") playRollTick();
       if (phase === "country") {
         const c = choice(COUNTRY_KEYS);
         const o = COUNTRY_ORIGINS[c];
@@ -1525,6 +1513,8 @@
     const bodyDonor = slots.body.donorObj;
     const heightGap = h - (headingDonor.height || h);
     const bodyHeightGap = h - (bodyDonor.height || h);
+    
+    // Aerial mutation: small frame trying to copy a tower
     if (h <= 175 && (headingDonor.height || 0) >= 188 && headingDonor.heading >= 78) {
       attrs.heading = clamp(attrs.heading + 5, 40, 99);
       attrs.speed = clamp(attrs.speed - 6, 40, 99);
@@ -1534,6 +1524,8 @@
       attrs.heading = clamp(attrs.heading - 5, 40, 99);
       mutations.push("Size mismatch — tall-player heading DNA does not fully transfer");
     }
+    
+    // Speed mutations: pace donor mismatch with frame
     if (h >= 190 && (speedDonor.height || 190) <= 178 && speedDonor.speed >= 86) {
       attrs.speed = clamp(attrs.speed - 5, 40, 99);
       attrs.strength = clamp(attrs.strength + 3, 40, 99);
@@ -1543,7 +1535,13 @@
       attrs.speed = clamp(attrs.speed + 2, 40, 99);
       attrs.fitness = clamp(attrs.fitness - 4, 40, 99);
       mutations.push("Heavy acceleration load — pace costs durability");
+    } else if (h <= 176 && speedDonor.speed >= 90) {
+      attrs.speed = clamp(attrs.speed + 3, 40, 99);
+      attrs.strength = clamp(attrs.strength - 2, 40, 99);
+      mutations.push("Compact speedster — elite pace in a lean frame");
     }
+    
+    // Body frame mutations: physical mismatch
     if (Math.abs(bodyHeightGap) >= 12 || Math.abs(attrs.weight - (bodyDonor.weight || attrs.weight)) >= 12) {
       if (rand() < 0.5) {
         attrs.strength = clamp(attrs.strength - 4, 40, 99);
@@ -1555,6 +1553,7 @@
         mutations.push("Body mutation — power transfers but agility suffers");
       }
     }
+    
     // Defensive body mutation: power donor is a defender, so finishing instinct is dulled
     if (isDefender(bodyDonor) && (attrs.leftFoot + attrs.rightFoot) / 2 >= 75) {
       attrs.leftFoot = clamp(attrs.leftFoot - 4, 40, 99);
@@ -1562,17 +1561,34 @@
       attrs.strength = clamp(attrs.strength + 4, 40, 99);
       mutations.push("Defensive body — grit over guile");
     }
+    
     // One-trick mutation: a single extreme donor creates a lopsided specialist
     const explicitVals = { heading: slots.heading.donorObj.heading, leftFoot: slots.leftFoot.donorObj.leftFoot, rightFoot: slots.rightFoot.donorObj.rightFoot, speed: slots.speed.donorObj.speed };
     const maxExplicit = Math.max(...Object.values(explicitVals));
     const minExplicit = Math.min(...Object.values(explicitVals));
-    if (maxExplicit - minExplicit >= 30) {
+    const spread = maxExplicit - minExplicit;
+    if (spread >= 30) {
       const topKey = Object.keys(explicitVals).find((k) => explicitVals[k] === maxExplicit);
       attrs[topKey] = clamp(attrs[topKey] + 3, 40, 99);
       const weakKeys = Object.keys(explicitVals).filter((k) => explicitVals[k] <= minExplicit + 5);
       weakKeys.forEach((k) => { attrs[k] = clamp(attrs[k] - 3, 40, 99); });
       mutations.push("One-trick specialist — brilliant at one thing, exposed elsewhere");
+    } else if (spread >= 20) {
+      const topKey = Object.keys(explicitVals).find((k) => explicitVals[k] === maxExplicit);
+      attrs[topKey] = clamp(attrs[topKey] + 1, 40, 99);
+      mutations.push("Specialist profile — strength in one area, weakness in another");
     }
+    
+    // Balanced donor mutation: all donors are similar creates a well-rounded player
+    const donorHeadings = donors.map((d) => d.heading);
+    const donorSpeeds = donors.map((d) => d.speed);
+    const headingVariance = Math.max(...donorHeadings) - Math.min(...donorHeadings);
+    const speedVariance = Math.max(...donorSpeeds) - Math.min(...donorSpeeds);
+    if (headingVariance <= 8 && speedVariance <= 8) {
+      attrs.fitness = clamp(attrs.fitness + 2, 40, 99);
+      mutations.push("Balanced DNA — consistency across donors builds durability");
+    }
+    
     state.mutationNotes = mutations;
 
     // Mentality: 95% of players get a balanced/default trait; 5% roll a rare special trait.
@@ -1751,11 +1767,18 @@
   }
 
   function deriveStats(a) {
-    const foot = Math.max(a.leftFoot, a.rightFoot);
-    const agility = Math.round(clamp(a.speed * 0.55 + (188 - a.height) * 0.9 + 22, 30, 99));
-    const balance = Math.round(clamp(a.strength * 0.4 + (186 - a.height) * 0.5 + 30, 30, 99));
-    const dribbling = Math.round(clamp(a.speed * 0.4 + foot * 0.35 + agility * 0.2, 30, 99));
-    return { agility, balance, dribbling, finishing: Math.round(foot * 0.7 + Math.min(a.leftFoot, a.rightFoot) * 0.3) };
+    const w = DERIVED_STATS_WEIGHTS;
+    const bestFoot = Math.max(a.leftFoot, a.rightFoot);
+    const weakFoot = Math.min(a.leftFoot, a.rightFoot);
+    // Agility: speed-based, but tall frames are less nimble (inverse height relationship)
+    const agility = Math.round(clamp(a.speed * w.agility.speed + (188 - a.height) * w.agility.heightInverse + w.agility.base, 30, 99));
+    // Balance: strength-based, shorter frames more stable
+    const balance = Math.round(clamp(a.strength * w.balance.strength + (186 - a.height) * w.balance.heightInverse + w.balance.base, 30, 99));
+    // Dribbling: speed, foot quality, and agility combined
+    const dribbling = Math.round(clamp(a.speed * w.dribbling.speed + bestFoot * w.dribbling.foot + agility * w.dribbling.agility, 30, 99));
+    // Finishing: heavily weighted to best foot, weak foot provides support
+    const finishing = Math.round(bestFoot * w.finishing.bestFoot + weakFoot * w.finishing.weakFoot);
+    return { agility, balance, dribbling, finishing };
   }
 
   function applyDerivedBonuses() {
@@ -2558,6 +2581,21 @@
       state.injuryProneness = calculateInjuryProneness(state.attrs, academyTier, state.luck, state.injuryRating);
       state.retirementAge = calculateRetirementAge(state.injuryProneness, state.attrs.fitness, state.longevity);
     }
+  }
+
+  // Validate that all attributes are within legal bounds (40-99)
+  function validateAttributeBounds() {
+    const a = state.attrs;
+    if (!a) return true;
+    const fields = ['heading', 'fitness', 'strength', 'leftFoot', 'rightFoot', 'speed'];
+    for (const f of fields) {
+      const val = a[f];
+      if (typeof val !== 'number' || val < 40 || val > 99) {
+        console.error(`Attribute validation failed: ${f} = ${val} (must be 40-99)`);
+        return false;
+      }
+    }
+    return true;
   }
 
   function applySeasonalAttributeChanges(sd) {
@@ -4156,6 +4194,13 @@
         <div class="cs-box"><div class="cs-num">${gRate}%</div><div class="cs-lab">To 1000</div></div>
         <div class="cs-box"><div class="cs-num">${state.bestRating}</div><div class="cs-lab">Best Rating</div></div>
       </div>
+      <div class="cs-section-title">Physical Profile</div>
+      <div class="career-stats-grid">
+        <div class="cs-box"><div class="cs-num">${atrs.height || "—"}</div><div class="cs-lab">Height (cm)</div></div>
+        <div class="cs-box"><div class="cs-num">${atrs.weight || "—"}</div><div class="cs-lab">Weight (kg)</div></div>
+        <div class="cs-box"><div class="cs-num">${state.position || "ST"}</div><div class="cs-lab">Position</div></div>
+        <div class="cs-box"><div class="cs-num">${state.rating || "—"}</div><div class="cs-lab">Current Rating</div></div>
+      </div>
       <div class="cs-section-title">Trophies</div>${trophyHtml}
       <div class="cs-section-title">Awards</div>${awardsHtml}
       <div class="cs-section-title">International</div>${intlHtml}
@@ -4646,6 +4691,9 @@
     if (state.totalGoals >= LEVERS.goalTarget) { beginRetirement("goal"); return; }
     returnFromLoanIfDue();
     applySeasonalAttributeChanges(sd);
+    if (!validateAttributeBounds()) {
+      console.warn("Attribute bounds validation failed after season growth — attributes may be corrupted");
+    }
     state.yearsAtClub++;
     // Fire-agent event: eligible once every 3 seasons, only if not already world class,
     // and only for players with some established career (season 3+).
