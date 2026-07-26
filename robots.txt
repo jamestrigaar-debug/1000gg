@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://1000goals.co.uk/sitemap.xml
