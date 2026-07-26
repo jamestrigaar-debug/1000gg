@@ -2229,12 +2229,14 @@
   }
 
   function determineRole() {
-    let role = determineNaturalRole(state.club);
-    // Contractual playtime acts as a floor: a Star contract guarantees Star minutes;
-    // a Bench contract still lets a clearly better player earn a natural higher role.
-    if (state.contractRole && roleRank(role) < roleRank(state.contractRole)) {
-      role = state.contractRole;
+    // If contract role is explicitly set and we're still within the contract period,
+    // enforce it strictly. Contract role is only overridden by end-of-season events
+    // (refuse, stay, etc.) that explicitly change it.
+    if (state.contractRole && state.contractYears > 0) {
+      return state.contractRole;
     }
+    // Otherwise, determine natural role based on current ability
+    let role = determineNaturalRole(state.club);
     return role;
   }
   function formModifier() {
@@ -3146,9 +3148,39 @@
     OFCNationsCup: ["New Zealand", "Australia", "Tahiti"]
   };
   
+  // Nation reputation tiers: higher tier = more established/stronger nations
+  const NATION_REPUTATION_TIER = {
+    // Tier 1: Elite football nations (World Cup/Euro winners)
+    "Brazil": 1, "Germany": 1, "Italy": 1, "France": 1, "Argentina": 1, "Spain": 1, "England": 1,
+    // Tier 2: Strong nations (frequent tournament contenders)
+    "Netherlands": 2, "Belgium": 2, "Portugal": 2, "Denmark": 2, "Uruguay": 2, "Mexico": 2,
+    // Tier 3: Moderate nations (occasional tournament success)
+    "Japan": 3, "South Korea": 3, "Australia": 3, "Egypt": 3, "Cameroon": 3, "Ghana": 3,
+    "Ivory Coast": 3, "Nigeria": 3, "Senegal": 3, "Algeria": 3, "Paraguay": 3, "Peru": 3,
+    "Colombia": 3, "Costa Rica": 3, "Saudi Arabia": 3, "Iraq": 3, "Iran": 3,
+    // Tier 4: Lesser-known nations (rare tournament success)
+    "Greece": 4, "New Zealand": 4, "Tahiti": 4,
+  };
+  
+  function getNationReputationTier(country) {
+    return NATION_REPUTATION_TIER[country] || 3; // Default to tier 3 for unknown nations
+  }
+  
   function canWinTournament(country, tournamentKey) {
     const winners = TOURNAMENT_WINNERS[tournamentKey] || [];
-    return winners.includes(country);
+    const isHistoricalWinner = winners.includes(country);
+    const tier = getNationReputationTier(country);
+    
+    // Historical winners can always win (with high probability)
+    if (isHistoricalWinner) return true;
+    
+    // Lesser-known nations (tier 4) have a small chance to win (upset)
+    if (tier === 4) return rand() < 0.05; // 5% chance for tier 4 nations
+    
+    // Tier 3 nations have a very small chance
+    if (tier === 3) return rand() < 0.02; // 2% chance for tier 3 nations
+    
+    return false;
   }
   
   function getTournamentForSeason() {
@@ -3235,7 +3267,16 @@
         state.honours.intlTrophies++;
         const trophyLabel = tournament ? tournament.name : "an international tournament";
         state.competitionHistory.push({ season: state.season, club: state.country, text: `🦁 Won ${trophyLabel} with ${state.country} (${g} goals)` });
+        
+        // Reputation boost: all nations get +8
         adjustReputation(8);
+        
+        // Fame boost: higher for lesser-known nations (upset bonus)
+        // Tier 1 (elite): +3 fame, Tier 2: +5 fame, Tier 3: +8 fame, Tier 4: +12 fame
+        const nationTier = getNationReputationTier(state.country);
+        const fameBoost = [0, 3, 5, 8, 12][nationTier] || 8;
+        state.fame = Math.min(100, (state.fame || 0) + fameBoost);
+        
         log(`🏆 Tournament glory! ${state.player.name} lifts ${trophyLabel} silverware with ${state.country} (${g} goals).`, "intl");
       }
     }
@@ -4706,8 +4747,9 @@
       ? `<div class="season-honours">${sd.honours.map((h) => `<span class="hon-badge title">🏆 ${h}</span>`).join("")}${sd.awards.map((a) => `<span class="hon-badge award">🎖 ${a}</span>`).join("")}</div>` : "";
     
     // Highlight key moments: injury season, intl trophy, Ballon d'Or
-    // Only show injury season if player actually suffered injuries this season (not just bench time)
-    const isInjurySeason = state.injuryProneSeasons > 0 && sd.gamesMissed >= 15;
+    // Only show injury season if player actually suffered injuries this season (gamesMissed >= 15)
+    // Don't rely on injuryProneSeasons flag alone — that persists across seasons
+    const isInjurySeason = sd.gamesMissed >= 15;
     const ballonDorWon = sd.awards.includes("Ballon d'Or");
     const highlightHtml = [
       isInjurySeason ? `<div class="highlight-badge injury">⚠️ Injury Season</div>` : "",
@@ -4884,6 +4926,12 @@
     if (state.flags.takeover || state.flags.financialCrisis) triggers.push({ reason: "boardroom pressure changes the project", chance: 0.30 });
     if (state.flags.rivalStriker || state.flags.newSigning) triggers.push({ reason: "a new attacking signing shifts the plan", chance: 0.25 });
     if (hasTrait("Journeyman") && state.reputation >= 60 && state.yearsAtClub >= 2) triggers.push({ reason: "the board cashes in on a hot market", chance: 0.25 });
+    // International trophy winner: bigger clubs want to sign you if you have high fame and won a tournament
+    if (state.honours.intlTrophies > 0 && state.fame >= 60 && state.age <= 32 && clubData.league !== "Elite") {
+      const agentInfluence = state.agent ? state.agent.influence : 0;
+      const transferChance = 0.30 + (agentInfluence * 0.2); // Agent increases transfer chance
+      triggers.push({ reason: "elite clubs want to sign the international champion", chance: transferChance });
+    }
     const hit = triggers.find((t) => rand() < t.chance);
     if (!hit) return null;
     return hit;
