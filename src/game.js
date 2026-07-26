@@ -2062,13 +2062,15 @@
   function getAgeModifier(age) {
     // Nonlinear curve: slow rise, prime window, gradual decline.
     // Peak at age 27 (~1.00x). After 32 the drop is gentler so veterans stay useful.
+    // Veterans (37+) decline more slowly to allow late-career goal runs.
     let base;
     if (age <= 20) base = 0.55 + (age - 17) * 0.067;      // 0.55 → 0.75
     else if (age <= 24) base = 0.75 + (age - 21) * 0.067;      // 0.75 → 0.95
     else if (age <= 27) base = 0.95 + (age - 25) * 0.025;      // 0.95 → 1.00 (prime peak)
     else if (age <= 29) base = 1.00 - (age - 27) * 0.03;       // 1.00 → 0.94
     else if (age <= 32) base = 0.94 - (age - 29) * 0.035;      // 0.94 → 0.84
-    else base = Math.max(0.45, 0.84 - (age - 32) * 0.045);      // gradual decline: 84 at 33 → 45 at 41
+    else if (age <= 36) base = 0.84 - (age - 32) * 0.045;      // 0.84 → 0.64 (ages 33-36)
+    else base = Math.max(0.50, 0.64 - (age - 36) * 0.025);      // slower decline for veterans: 0.64 at 37 → 0.50 at 42
 
     // Hidden traits tweak the curve
     if (hasTrait("Early Bloomer")) {
@@ -2361,11 +2363,35 @@
     const roleMult = getRoleMultiplier(state.role);
     const leagueWeights = LEAGUE_WEIGHTS[clubData.league] || LEAGUE_WEIGHTS.Elite;
     let appearanceChance = clamp(({ Star: 0.97, Starter: 0.9, Rotation: 0.6, Bench: 0.3 }[state.role] || 0.7) * leagueWeights.minutes, 0.25, 1.0);
-    // Age-based reduction: players decline in availability with age
-    if (state.age >= 32) appearanceChance *= 0.85;
-    if (state.age >= 34) appearanceChance *= 0.75;
-    if (state.age >= 36) appearanceChance *= 0.60;
-    if (state.age >= 38) appearanceChance *= 0.40;
+    
+    // Fitness and speed are the PRIMARY drivers of game time, not age
+    // High fitness/speed = more games. Low fitness/speed = fewer games.
+    const fitness = state.attrs.fitness;
+    const speed = state.attrs.speed;
+    const strength = state.attrs.strength;
+    const durability = getPillar("Durability");
+    
+    // Fitness multiplier: 90+ fitness = +10%, 50 fitness = 0%, <50 = -10%
+    const fitnessMult = 1 + (fitness - 50) / 500;
+    
+    // Speed/Strength multiplier: average of both, affects availability
+    const athleticAvg = (speed + strength) / 2;
+    const athleticMult = 1 + (athleticAvg - 50) / 400;
+    
+    // Durability pillar: high durability = more games available
+    const durabilityMult = 1 + (durability - 50) / 200;
+    
+    // Age is now a GENTLE modifier, not a hard cap
+    // Veterans (37+) decline slowly if they have good fitness/speed
+    let ageMult = 1.0;
+    if (state.age >= 32) ageMult *= 0.95;  // -5% (was -15%)
+    if (state.age >= 34) ageMult *= 0.93;  // -7% (was -25%)
+    if (state.age >= 36) ageMult *= 0.90;  // -10% (was -40%)
+    if (state.age >= 38) ageMult *= 0.85;  // -15% (was -60%)
+    if (state.age >= 40) ageMult *= 0.80;  // -20%
+    
+    // Apply all multipliers
+    appearanceChance *= fitnessMult * athleticMult * durabilityMult * ageMult;
     const mentClutch = mentTag(state.mentality);
     const clutchBonus = ["clutch", "winner", "talisman"].includes(mentClutch) ? state.mentalityRating / 100 : 0;
 
@@ -2373,7 +2399,6 @@
     const leagueGames = (seasonClubs.length - 1) * 2;
 
     // injuries — driven by hidden injury proneness, fitness, age, playstyle risk, and Durability pillar
-    const fitness = state.attrs.fitness;
     const styleRisk = (PLAYSTYLE_PROFILES[state.playstyle] || {}).injuryRisk || 1;
     let gamesMissed = Math.round((randInt(LEVERS.injuryFreqMin, LEVERS.injuryFreqMax) + state.injuryProneness / 18) * styleRisk) +
       (state.injuryProneSeasons > 0 ? randInt(2, 6) : 0) + (state.age >= 32 ? randInt(1, 4) : 0);
@@ -2381,7 +2406,6 @@
     if (state.age >= 35) {
       gamesMissed += randInt(2, 5) + Math.floor((state.age - 34) / 2) * randInt(1, 3) + Math.floor(state.injuryCount / 2);
     }
-    const durability = getPillar("Durability");
     gamesMissed = Math.max(0, gamesMissed - Math.round((durability - 50) / 10));
     if (hasTrait("Iron Man")) gamesMissed = Math.max(0, gamesMissed - 6);
     else if (fitness >= 90) gamesMissed = Math.max(0, gamesMissed - 3);
@@ -2560,9 +2584,22 @@
     if (potsScore >= 128 && (perfTier === "Sensational" || perfTier === "Overperformed")) {
       state.honours.playerOfSeason++; awards.push("Player of the Season");
     }
-    // Ballon d'Or: prestigious individual award for elite performances
-    const ballonDorScore = seasonRating * 12 + (champion === club ? 20 : 0) + (honoursThisSeason.includes("European Cup") ? 15 : 0) + (isTopScorer ? 20 : 0) + state.reputation * 0.15;
-    if (ballonDorScore >= 145 && (perfTier === "Sensational" || perfTier === "Overperformed")) {
+    // Ballon d'Or: extremely prestigious award requiring multiple conditions
+    // Must be in Elite league (Premier League, La Liga, Serie A, Bundesliga, Ligue 1)
+    // AND either:
+    //   A) Top-tier performance: rating 8.0+, 25+ goals, reputation 70+, Sensational/Overperformed
+    //   B) International success: won international trophy, 20+ goals, reputation 70+
+    const isEliteLeague = ["Elite", "LaLiga", "SerieA", "Bundesliga", "League1"].includes(clubData.league);
+    const hasHighRating = seasonRating >= 8.0;
+    const hasHighGoals = seasonGoals >= 25;
+    const hasHighReputation = state.reputation >= 70;
+    const isSensational = perfTier === "Sensational" || perfTier === "Overperformed";
+    const wonIntlTrophy = state.honours.intlTrophies > 0;
+    
+    const qualifiesViaElitePerformance = isEliteLeague && hasHighRating && hasHighGoals && hasHighReputation && isSensational;
+    const qualifiesViaIntlSuccess = isEliteLeague && wonIntlTrophy && hasHighGoals && hasHighReputation && isSensational;
+    
+    if ((qualifiesViaElitePerformance || qualifiesViaIntlSuccess) && (isTopScorer || honoursThisSeason.includes("European Cup"))) {
       state.honours.ballonDors++; awards.push("Ballon d'Or");
       adjustReputation(12); // Significant reputation boost from Ballon d'Or
     }
