@@ -14,7 +14,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Football DNA Simulator — Football Career Simulator & Premier League Legends Draft Game</title>
-<meta name="description" content="Play a free football simulator where you draft DNA from 30 years of Premier League legends, build a striker and simulate a career to 1000 goals. No download, play in your browser." />
+<meta name="description" content="Draft DNA from Premier League legends, build a striker, simulate every season and chase 1000 career goals. Play free in your browser — no download." />
 <link rel="canonical" href="https://1000goals.co.uk/" />
 <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
 <meta property="og:site_name" content="Football DNA Simulator" />
@@ -34,22 +34,23 @@
   "@context": "https://schema.org",
   "@graph": [
     {
-      "@type": "VideoGame",
+      "@type": ["VideoGame", "WebApplication"],
       "name": "Football DNA Simulator",
-      "description": "A free football career simulator where you draft DNA from Premier League legends and chase 1000 goals.",
+      "description": "A free browser football career simulator where you draft DNA from Premier League legends and chase 1000 goals.",
       "url": "https://1000goals.co.uk/",
       "image": "https://1000goals.co.uk/share-card.png",
-      "applicationCategory": "Game, WebApplication",
-      "operatingSystem": "Any",
-      "browserRequirements": "Requires JavaScript. Requires HTML5.",
-      "inLanguage": "en",
+      "applicationCategory": "GameApplication",
+      "operatingSystem": "Web browser",
+      "gamePlatform": ["Desktop web", "Mobile web", "Tablet web"],
+      "inLanguage": "en-GB",
       "offers": {
         "@type": "Offer",
         "price": "0",
-        "priceCurrency": "GBP"
+        "priceCurrency": "GBP",
+        "availability": "https://schema.org/InStock"
       },
-      "genre": ["Football", "Simulation", "Sports", "Career"],
-      "keywords": "football simulator, Premier League legends, football career simulator, free browser game, draft game, 1000 goals"
+      "genre": ["Football simulation", "Sports draft game", "Career simulator"],
+      "isAccessibleForFree": true
     },
     {
       "@type": "FAQPage",
@@ -803,6 +804,14 @@
         </ol>
       </details>
      
+      <div style="margin-top: 24px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+        <a href="/how-to-play/" class="btn" style="text-decoration: none;">How to Play</a>
+        <a href="/peak-rating-vs-rating-at-the-time/" class="btn" style="text-decoration: none;">Peak vs At-the-Time</a>
+        <a href="/difficulty-guide/" class="btn" style="text-decoration: none;">Difficulty Guide</a>
+        <a href="/era-guide/" class="btn" style="text-decoration: none;">Era Guide</a>
+        <a href="/hall-of-fame/" class="btn" style="text-decoration: none;">Hall of Fame</a>
+      </div>
+
       <footer class="welcome-footer">
         <a href="https://x.com/1000goalsgame" target="_blank" rel="noopener" class="footer-link">Feedback on X</a>
         <span style="color: var(--line);">·</span>
@@ -991,11 +1000,12 @@
   </div>
 </details>
 
-<div class="footer-note">Football DNA Simulator · Beta · Inspired by 38-0.app · Premier League donor data (1992–2024 real squads, peak &amp; at-the-time ratings) is editable in <code>data.js</code>.</div>
+<div class="footer-note">Football DNA Simulator · Beta · Inspired by 38-0.app · Premier League donor data (1992–2025 real squads, peak &amp; at-the-time ratings) is editable in <code>data.js</code>.</div>
 </div>
 
 <script src="src/data.js"></script>
 <script src="src/career_event_data.js"></script>
+<script src="src/career_share.js"></script>
 <script src="src/game.js"></script>
 </body>
 </html>
