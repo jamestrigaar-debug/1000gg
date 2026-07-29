@@ -501,6 +501,18 @@
   .tag { background: var(--card2); border: 1px solid var(--line); padding: 5px 14px; border-radius: 30px; font-weight: 700; font-size: 13px; }
   .tag.rare { border-color: var(--rare); color: var(--rare); }
   .legacy-dna { max-width: 620px; margin: 0 auto; text-align: left; }
+  
+  /* ---------- DNA Attribute Report ---------- */
+  .dna-report { max-width: 620px; margin: 0 auto; text-align: left; }
+  .report-section { background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+  .report-section h4 { margin: 0 0 12px; font-size: 14px; color: var(--accent2); }
+  .report-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 8px; }
+  .report-item { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .attr-name { font-weight: 700; font-size: 13px; color: var(--accent); }
+  .attr-donor { font-size: 11px; color: var(--muted); }
+  .attr-val { font-size: 14px; font-weight: 700; color: var(--txt); }
+  .attr-impact { font-size: 13px; font-weight: 700; color: var(--accent2); }
+  .report-note { font-size: 13px; color: var(--muted); line-height: 1.5; padding: 10px 0; }
 
   /* ---------- Shareable Career Card ---------- */
   .share-card { max-width: 640px; margin: 28px auto 0; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; text-align: center; }
@@ -922,6 +934,7 @@
       <div class="legacy-section" id="legacy-history"></div>
       <div class="legacy-section" id="legacy-epilogue"></div>
       <div class="legacy-dna" id="legacy-dna"></div>
+      <div class="legacy-section" id="legacy-dna-report"></div>
 
       <div class="share-card" id="share-card" style="display:none;">
         <h3>Share Your Career Card</h3>
