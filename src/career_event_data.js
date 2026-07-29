@@ -235,6 +235,16 @@
         { label: "Decline and focus on playing", fx: { pillars: { Professionalism: 4, Consistency: 4 } } },
       ],
     },
+    {
+      id: "agent_training_choice", category: "DEVELOPMENT", weight: 5,
+      text: (n) => `End of season: ${n} can either work with their agent on the next move or focus on intensive training.`,
+      choices: (ctx) => [
+        { label: "Agent focus — negotiate next contract/transfer", fx: { rep: 2, wealth: 4, pillars: { Ambition: 8, Ego: 4 } } },
+        { label: "Training focus — sharpen finishing", fx: { attrChange: { key: "leftFoot", delta: 2 }, carryOver: true, carryOverLog: "Intensive finishing work pays off next season.", pillars: { Professionalism: 8, KillerInstinct: 6 } } },
+        { label: "Training focus — build strength and pace", fx: { attrChange: { key: "speed", delta: 1 }, attrChange2: { key: "strength", delta: 1 }, carryOver: true, carryOverLog: "Athletic development programme boosts next season.", pillars: { Durability: 8, Professionalism: 6 } } },
+        { label: "Balanced approach — agent + light training", fx: { rep: 1, wealth: 2, attrChange: { key: "fitness", delta: 1 }, carryOver: true, carryOverLog: "Balanced off-season keeps fitness sharp.", pillars: { Professionalism: 6, Adaptability: 4 } } },
+      ],
+    },
   ];
   const EARLY_DEVELOPMENT_DECISIONS = [
     {
@@ -362,11 +372,25 @@
         { label: "Focus on physicality", fx: { attrChange: { key: "strength", delta: 2 }, carryOver: true, carryOverLog: "Strength work adds power next season." } },
       ] },
     { id: "tactical_evolution", tag: "Development", tone: "neutral", base: 4,
-      req: { traj: ["Mid-table", "Europe", "Title"], yearsMin: 1 },
+      req: { traj: ["Mid-table", "Europe", "Title", "Auto Promotion", "Playoffs"], yearsMin: 1 },
       text: (n) => `The manager wants to evolve the system — ${n} will have to adapt.`,
       choices: [
         { label: "Learn the new role inside-out", fx: { attrChange: { key: "fitness", delta: 1 }, carryOver: true, rep: 2, carryOverLog: "Tactical flexibility improves match fitness next season." } },
         { label: "Stick to what you know", fx: { flag: "managerConflict" } },
+      ] },
+    { id: "promotion_step_up", tag: "Roleplay", tone: "positive", base: 6,
+      req: { traj: ["Auto Promotion"] },
+      text: (n) => `Promotion is sealed. ${n} is about to face a completely different level of defender.`,
+      choices: [
+        { label: "Train all summer for the step up", fx: { rep: 3, attrChange: { key: "speed", delta: 1 }, carryOver: true, carryOverLog: "Summer of hard work readies the body for the top flight." } },
+        { label: "Enjoy the promotion party", fx: { fame: 4, rep: -1 } },
+      ] },
+    { id: "playoff_heartbreak", tag: "Roleplay", tone: "mixed", base: 5,
+      req: { traj: ["Playoffs"] },
+      text: (n) => `The play-offs decided the season and ${n} is left to process how it ended.`,
+      choices: [
+        { label: "Use it as fuel for next season", fx: { rep: 2, flag: "inForm" } },
+        { label: "Demand a move to a promotion favourite", fx: { rep: -2, forceTransfer: true } },
       ] },
     { id: "nutritionist", tag: "Development", tone: "neutral", base: 3,
       req: { perf: ["Sensational", "Overperformed"] },

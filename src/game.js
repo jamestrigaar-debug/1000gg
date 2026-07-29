@@ -2165,6 +2165,60 @@
     return { homeGoals: poissonRandom(homeXG), awayGoals: poissonRandom(awayXG) };
   }
 
+  // Championship play-offs (3rd-6th). Promotion itself is already decided by
+  // runPromotionRelegation/swapTiers, which is the single source of truth; this
+  // function only simulates the matches so the player earns play-off goals and
+  // apps, and reports how far the run went so the narrative matches reality.
+  function simulateChampionshipPlayoffs(finishPos, leagueTable, promotedForReal) {
+    const club = state.club;
+    const playoffTeams = leagueTable.slice(2, 6).map((r) => r.team); // positions 3-6
+    const clubIdx = playoffTeams.indexOf(club);
+    if (clubIdx === -1) return null;
+
+    // Standard English seeding: 3rd v 6th and 4th v 5th over two legs.
+    const semiOppIdx = { 0: 3, 1: 2, 2: 1, 3: 0 }[clubIdx];
+    const opponent = playoffTeams[semiOppIdx];
+    if (!opponent || !TEAM_DATABASE[opponent]) return null;
+
+    const clubData = TEAM_DATABASE[club];
+    const oppData = TEAM_DATABASE[opponent];
+    const threat = agedRating();
+    const posMod = getPositionModifiers();
+    const styleMod = (PLAYSTYLE_PROFILES[state.playstyle] || {}).goalMod || 1;
+    const leagueWeights = LEAGUE_WEIGHTS[clubData.league] || LEAGUE_WEIGHTS.Championship;
+
+    // Player's share of his team's play-off goals, capped like a league match.
+    function playerGoalsFrom(teamGoals) {
+      if (teamGoals <= 0) return 0;
+      const teammateThreat = clubData.attack * 3.2;
+      let share = threat / (threat + teammateThreat);
+      share *= styleMod * getRoleMultiplier(state.role) * leagueWeights.goals;
+      share = clamp(share, 0.03, leagueWeights.shareCap || 0.38);
+      const lambda = Math.min(teamGoals * share * posMod.goal * LEVERS.conversionMultiplier, leagueWeights.matchCap || 0.95);
+      return poissonRandom(lambda);
+    }
+
+    // Semi-final, two legs.
+    const leg1 = simulateMatch(clubData, oppData, 0, 0, false);
+    const leg2 = simulateMatch(oppData, clubData, 0, 0, false);
+    const semiFor = leg1.homeGoals + leg2.awayGoals;
+    const semiAgainst = leg1.awayGoals + leg2.homeGoals;
+    let goals = playerGoalsFrom(leg1.homeGoals) + playerGoalsFrom(leg2.awayGoals);
+    let apps = 2;
+
+    // The real promotion result decides whether the run reaches and wins the final.
+    // Otherwise the simulated aggregate decides where the run ended.
+    const reachedFinal = promotedForReal || semiFor > semiAgainst;
+    if (!reachedFinal) {
+      return { goals, apps, reachedFinal: false, promoted: false, semiFor, semiAgainst };
+    }
+
+    const finalRes = simulateMatch(clubData, oppData, 0, 0, false);
+    goals += playerGoalsFrom(finalRes.homeGoals);
+    apps += 1;
+    return { goals, apps, reachedFinal: true, promoted: !!promotedForReal, semiFor, semiAgainst };
+  }
+
   function getTacticalFitMultiplier(playstyle, teamStyle) {
     const fit = {
       "Target Man": { Direct: 1.25, "Route One": 1.2, "Park the Bus": 0.85, Possession: 0.95 },
@@ -2476,7 +2530,20 @@
         const styleMod = (PLAYSTYLE_PROFILES[state.playstyle] || {}).goalMod || 1;
         const ki = getPillar("KillerInstinct");
         const killerBonus = 1 + (ki - 50) / 250;
-        share *= fitMult * roleMult * styleMod * getTraitMatchMultiplier(clubData.tacticalStyle) * getPositionTacticalMultiplier(clubData.tacticalStyle) * (1 + (fm + momentum * 3) / 100) * (1 + clutchBonus * 0.12) * killerBonus * leagueWeights.goals;
+        
+        // Agility/Balance ceiling effect: high agility/balance allows higher goal ceiling
+        const agility = state.derived?.agility || 50;
+        const balance = state.derived?.balance || 50;
+        const ceilingMult = 1 + ((agility + balance) / 2 - 50) / 500;
+        
+        // Speed penalty in Premier League for 38+ players
+        let speedMult = 1.0;
+        if (state.age >= 38 && clubData.league === "Elite") {
+          const speedPenalty = Math.max(0, (88 - speed) / 100);
+          speedMult = 1 - speedPenalty * 0.35;
+        }
+        
+        share *= fitMult * roleMult * styleMod * getTraitMatchMultiplier(clubData.tacticalStyle) * getPositionTacticalMultiplier(clubData.tacticalStyle) * (1 + (fm + momentum * 3) / 100) * (1 + clutchBonus * 0.12) * killerBonus * leagueWeights.goals * ceilingMult * speedMult;
         // Big games: top opponents and derbies bring the best out of stars
         if (isTopOpponent || derby) share *= 1.08;
         if (isTitleRace && (state.role === "Star" || state.role === "Starter")) share *= 1.05;
@@ -2505,7 +2572,13 @@
     }
 
     // cup + european goals (all comps count toward 1000)
-    const compFactor = leagueWeights.compFactor;
+    // Boost cup/Europe goals for high reputation or strength teams.
+    // TEAM_DATABASE has no single "strength" field, so derive it from the four core ratings.
+    const clubStrength = (clubData.attack + clubData.midfield + clubData.defence + clubData.manager) / 4;
+    const reputationBoost = 1 + (state.reputation - 50) / 200;
+    const strengthBoost = 1 + (clubStrength - 70) / 100;
+    const cupEuroBoost = Math.max(1, reputationBoost * strengthBoost);
+    const compFactor = leagueWeights.compFactor * cupEuroBoost;
     const cupEuroGoals = poissonRandom(leagueGoals * compFactor);
     const cupApps = Math.round(cupEuroGoals * 1.3) + (apps > 0 ? randInt(2, 6) : 0);
     // Split cup/European goals proportionally by league prestige
@@ -2656,11 +2729,45 @@
       }
     }
 
+    // Championship play-offs: 3rd-6th contest the final promotion place. The
+    // promotion outcome comes from runPromotionRelegation above so the logs and
+    // the league moves can never contradict each other.
+    let playoffGoals = 0, playoffApps = 0;
+    const wasPromotedThisSeason = !!(promotionRelegation && promotionRelegation.promoted && promotionRelegation.promoted.includes(club));
+    if (clubData.league === "Championship" && pos >= 3 && pos <= 6 && apps > 0) {
+      const po = simulateChampionshipPlayoffs(pos, sorted, wasPromotedThisSeason);
+      if (po) {
+        playoffGoals = po.goals;
+        playoffApps = po.apps;
+        if (po.promoted) {
+          honoursThisSeason.push("Play-off Promotion");
+          state.competitionHistory.push({ season: state.season, club, text: `🎯 Won the Championship play-off final with ${club}` });
+          log(`   ↳ 🎯 ${club} win the Championship play-off final${playoffGoals ? ` (${playoffGoals} goals for ${state.player.name})` : ""}!`, "milestone");
+        } else if (po.reachedFinal) {
+          log(`   ↳ 💔 ${club} lose the Championship play-off final. Promotion missed by one game.`, "milestone");
+        } else {
+          log(`   ↳ 💔 ${club} go out in the play-off semi-finals (${po.semiFor}-${po.semiAgainst} on aggregate).`, "milestone");
+        }
+      }
+    } else if (clubData.league === "Championship" && pos >= 3 && pos <= 6 && wasPromotedThisSeason) {
+      log(`   ↳ 🎯 ${club} win the Championship play-offs while ${state.player.name} watches on from the treatment table.`, "milestone");
+    }
+    // Play-off goals are knockout goals: fold them into the cup column so the
+    // invariant totalGoals === leagueGoals + cupGoals + europeGoals still holds.
+    if (playoffGoals > 0 || playoffApps > 0) {
+      state.totalGoals += playoffGoals;
+      state.cupGoals += playoffGoals;
+      state.totalApps += playoffApps;
+      cs.goals += playoffGoals;
+      cs.apps += playoffApps;
+    }
+
     const seasonData = {
       season: state.season, age: state.age, club, role: state.role,
-      goals: seasonGoals, leagueGoals, cupGoals, europeGoals, assists, apps, rating: seasonRating,
+      goals: seasonGoals + playoffGoals, leagueGoals, cupGoals: cupGoals + playoffGoals, europeGoals,
+      assists, apps: apps + playoffApps, rating: seasonRating,
       yellow, red, cleanSheets, pos, trajectory, perfTier, gamesMissed,
-      champion, honours: honoursThisSeason, awards, isTopScorer, promotionRelegation,
+      champion, honours: honoursThisSeason, awards, isTopScorer, promotionRelegation, playoffGoals, playoffApps,
     };
     state.seasonHistory.push(seasonData);
     return seasonData;
@@ -2837,11 +2944,21 @@
   }
 
   function trajectoryFromPos(pos) {
+    const clubData = TEAM_DATABASE[state.club];
+    const isChampionship = clubData && clubData.league === "Championship";
     if (pos === 1) return "Title";
-    if (pos <= 6) return "Europe";
-    if (pos <= 14) return "Mid-table";
-    if (pos <= 17) return "Battled Relegation";
-    return "Relegated";
+    if (isChampionship) {
+      if (pos <= 2) return "Auto Promotion";
+      if (pos <= 6) return "Playoffs";
+      if (pos <= 14) return "Mid-table";
+      if (pos <= 22) return "Battled Relegation";
+      return "Relegated";
+    } else {
+      if (pos <= 6) return "Europe";
+      if (pos <= 14) return "Mid-table";
+      if (pos <= 17) return "Battled Relegation";
+      return "Relegated";
+    }
   }
 
   /* -------------------- LEAGUE PYRAMID: PROMOTION / RELEGATION --------------
@@ -4708,8 +4825,8 @@
         if (bioLine) addBioMoment(bioLine);
         if (state.finalSeasonForced) {
           state.finalSeasonForced = false;
-          log(`   ↳ 🕯️ Last Dance complete. ${state.player.name} is forced into retirement.`, "milestone");
-          beginRetirement("planned");
+          log(`   ↳ 🕯️ Last Dance complete. ${state.player.name} hangs up the boots.`, "milestone");
+          endCareer(false);
           return;
         }
 
@@ -5768,6 +5885,7 @@
     renderCareerSummary();
     renderLegacyBiography();
     renderLegacyDNA();
+    renderDNAAttributeReport();
     renderShareCard();
     renderShareTagline();
     saveState();
@@ -5918,6 +6036,77 @@
       const canvas = document.getElementById(radarId);
       if (canvas) drawRadarChart(canvas, a);
     });
+  }
+
+  function renderDNAAttributeReport() {
+    const el = document.getElementById("legacy-dna-report");
+    if (!el) return;
+    
+    const slots = state.player.slots || {};
+    const a = state.attrs;
+    if (!a) { el.innerHTML = ""; return; }
+    const derived = state.derived || {};
+    
+    // Relative contribution of each attribute versus a baseline of 50
+    const footContrib = Math.round(((a.leftFoot + a.rightFoot) / 2 - 50) / 50 * 100);
+    const agilityContrib = Math.round(((derived.agility || 50) - 50) / 50 * 100);
+    const balanceContrib = Math.round(((derived.balance || 50) - 50) / 50 * 100);
+    
+    // Estimate goal impact from each attribute
+    const headingGoalImpact = Math.round(state.totalGoals * (a.heading >= 80 ? 0.15 : a.heading >= 70 ? 0.08 : 0.02));
+    const speedGoalImpact = Math.round(state.totalGoals * (a.speed >= 85 ? 0.20 : a.speed >= 75 ? 0.10 : 0.03));
+    const strengthGoalImpact = Math.round(state.totalGoals * (a.strength >= 80 ? 0.12 : a.strength >= 70 ? 0.06 : 0.02));
+    const fitnessGoalImpact = Math.round(state.totalGoals * (a.fitness >= 80 ? 0.10 : a.fitness >= 70 ? 0.05 : 0.01));
+    const footGoalImpact = Math.round(state.totalGoals * (footContrib > 0 ? 0.30 : 0.20));
+    const agilityGoalImpact = Math.round(state.totalGoals * (agilityContrib > 0 ? 0.15 : 0.05));
+    
+    const reportHtml = `
+      <h3>DNA Attribute Impact Report</h3>
+      <div class="dna-report">
+        <div class="report-section">
+          <h4>Drafted Attributes</h4>
+          <div class="report-grid">
+            ${slots.heading ? `<div class="report-item"><span class="attr-name">Heading</span><span class="attr-donor">${esc(slots.heading.donor)}</span><span class="attr-val">${a.heading}</span></div>` : ""}
+            ${slots.speed ? `<div class="report-item"><span class="attr-name">Speed</span><span class="attr-donor">${esc(slots.speed.donor)}</span><span class="attr-val">${a.speed}</span></div>` : ""}
+            ${slots.body ? `<div class="report-item"><span class="attr-name">Fitness</span><span class="attr-donor">${esc(slots.body.donor)}</span><span class="attr-val">${a.fitness}</span></div>` : ""}
+            ${slots.body ? `<div class="report-item"><span class="attr-name">Strength</span><span class="attr-donor">${esc(slots.body.donor)}</span><span class="attr-val">${a.strength}</span></div>` : ""}
+            ${slots.leftFoot ? `<div class="report-item"><span class="attr-name">Left Foot</span><span class="attr-donor">${esc(slots.leftFoot.donor)}</span><span class="attr-val">${a.leftFoot}</span></div>` : ""}
+            ${slots.rightFoot ? `<div class="report-item"><span class="attr-name">Right Foot</span><span class="attr-donor">${esc(slots.rightFoot.donor)}</span><span class="attr-val">${a.rightFoot}</span></div>` : ""}
+            ${slots.mentality ? `<div class="report-item"><span class="attr-name">Mentality</span><span class="attr-donor">${esc(slots.mentality.donor)}</span><span class="attr-val">${esc(state.mentality)}</span></div>` : ""}
+          </div>
+        </div>
+        <div class="report-section">
+          <h4>Derived Stats & Ceiling Effect</h4>
+          <div class="report-grid">
+            <div class="report-item"><span class="attr-name">Agility</span><span class="attr-impact">${agilityContrib > 0 ? "+" : ""}${agilityContrib}%</span><span class="attr-val">${derived.agility || 50}</span></div>
+            <div class="report-item"><span class="attr-name">Balance</span><span class="attr-impact">${balanceContrib > 0 ? "+" : ""}${balanceContrib}%</span><span class="attr-val">${derived.balance || 50}</span></div>
+            <div class="report-item"><span class="attr-name">Dribbling</span><span class="attr-val">${derived.dribbling || 50}</span></div>
+            <div class="report-item"><span class="attr-name">Finishing</span><span class="attr-val">${derived.finishing || 50}</span></div>
+          </div>
+          <div class="report-note">Agility & Balance set your goal ceiling — higher values unlock more scoring potential.</div>
+        </div>
+        <div class="report-section">
+          <h4>Estimated Goal Contribution by Attribute</h4>
+          <div class="report-grid">
+            <div class="report-item"><span class="attr-name">Heading</span><span class="attr-impact">~${headingGoalImpact} goals</span></div>
+            <div class="report-item"><span class="attr-name">Speed</span><span class="attr-impact">~${speedGoalImpact} goals</span></div>
+            <div class="report-item"><span class="attr-name">Strength</span><span class="attr-impact">~${strengthGoalImpact} goals</span></div>
+            <div class="report-item"><span class="attr-name">Fitness</span><span class="attr-impact">~${fitnessGoalImpact} goals</span></div>
+            <div class="report-item"><span class="attr-name">Foot Quality</span><span class="attr-impact">~${footGoalImpact} goals</span></div>
+            <div class="report-item"><span class="attr-name">Agility/Balance</span><span class="attr-impact">~${agilityGoalImpact} goals</span></div>
+          </div>
+        </div>
+        <div class="report-section">
+          <h4>Mentality Impact</h4>
+          <div class="report-note">
+            <strong>${esc(state.mentality)}</strong> mentality affected your consistency, decision-making in end-of-season events, and trait development speed.
+            Mentality rating: ${state.mentalityRating}/99
+          </div>
+        </div>
+      </div>
+    `;
+    
+    el.innerHTML = reportHtml;
   }
 
   /* ------------------------- SHAREABLE CAREER CARD ------------------------- */
