@@ -4856,7 +4856,7 @@
     document.querySelectorAll(".career-panel").forEach((p) => p.classList.toggle("active", p.dataset.tab === tab));
     if (tab === "stats") renderCareerStats();
     if (tab === "history") renderCareerLog();
-    if (tab === "leagues") renderLeaguesView();
+    if (tab === "squad") renderSquadInfo();
     if (tab === "alltime") renderAllTimeGreats();
   }
 
@@ -4884,6 +4884,111 @@
   };
   const LEAGUE_UCL_SPOTS = { "Premier League": 4 };
   const LEAGUE_UEL_SPOTS = { "Premier League": 2 };
+
+  // Squad Info: displays current team squad, managers, and changelog
+  function renderSquadInfo() {
+    const el = document.getElementById("squad-info-content");
+    if (!el || !state || !state.club) {
+      el.innerHTML = `<div class="muted">No squad data available.</div>`;
+      return;
+    }
+
+    const club = state.club;
+    const clubData = TEAM_DATABASE[club];
+    const currentSquad = TEAM_SQUADS[club];
+    
+    if (!currentSquad) {
+      el.innerHTML = `<div class="muted">Squad not initialized.</div>`;
+      return;
+    }
+
+    const teamStrength = (clubData.attack + clubData.midfield + clubData.defence + clubData.manager) / 4;
+    
+    // Current team section
+    let html = `<div class="squad-section">
+      <h4>Your Team: ${esc(club)}</h4>
+      <div class="squad-info-box">
+        <div class="squad-team-header">
+          <div class="squad-team-name">${esc(club)}</div>
+          <div class="squad-team-strength">
+            <div class="squad-attr">ATK: ${clubData.attack}</div>
+            <div class="squad-attr">MID: ${clubData.midfield}</div>
+            <div class="squad-attr">DEF: ${clubData.defence}</div>
+            <div class="squad-attr">STR: ${Math.round(teamStrength)}</div>
+          </div>
+        </div>
+        <div class="manager-card">
+          <div class="manager-name">${esc(currentSquad.manager.name)}</div>
+          <div class="manager-focus">Focus: ${esc(currentSquad.manager.focus)}</div>
+          <div class="manager-tactics">
+            <div class="tactic-badge attack">ATK: ${(MANAGER_TACTICS[currentSquad.manager.tactics] || {}).attack || 1.0}</div>
+            <div class="tactic-badge midfield">MID: ${(MANAGER_TACTICS[currentSquad.manager.tactics] || {}).midfield || 1.0}</div>
+            <div class="tactic-badge defence">DEF: ${(MANAGER_TACTICS[currentSquad.manager.tactics] || {}).defence || 1.0}</div>
+          </div>
+        </div>
+        <h4 style="margin-top: 12px;">Squad (${currentSquad.players.length})</h4>
+        <div class="squad-players-grid">`;
+    
+    for (const player of currentSquad.players) {
+      html += `<div class="squad-player-card">
+        <div class="squad-player-name">${esc(player.name)}</div>
+        <div class="squad-player-pos">${player.position}</div>
+        <div class="squad-player-attrs">
+          <div class="squad-player-attr-row"><span class="squad-player-attr-label">Age:</span><span class="squad-player-attr-value">${player.age}</span></div>
+          <div class="squad-player-attr-row"><span class="squad-player-attr-label">OVR:</span><span class="squad-player-attr-value">${player.overall}</span></div>
+          <div class="squad-player-attr-row"><span class="squad-player-attr-label">SPD:</span><span class="squad-player-attr-value">${player.speed}</span></div>
+          <div class="squad-player-attr-row"><span class="squad-player-attr-label">STR:</span><span class="squad-player-attr-value">${player.strength}</span></div>
+        </div>
+      </div>`;
+    }
+    
+    html += `</div></div></div>`;
+
+    // Available managers section
+    const leagueClubs = getLeagueClubs(club);
+    const otherManagers = leagueClubs
+      .filter((c) => c !== club)
+      .slice(0, 8)
+      .map((c) => ({ club: c, manager: MANAGER_DATABASE[c] || { name: "Manager", focus: "Balanced" } }));
+
+    html += `<div class="squad-section">
+      <h4>Other Managers in ${clubData.league}</h4>`;
+    
+    for (const item of otherManagers) {
+      const mgr = item.manager;
+      html += `<div class="manager-card">
+        <div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">${esc(item.club)}</div>
+        <div class="manager-name">${esc(mgr.name)}</div>
+        <div class="manager-focus">Focus: ${esc(mgr.focus)}</div>
+      </div>`;
+    }
+    
+    html += `</div>`;
+
+    // Changelog section
+    html += `<div class="squad-section">
+      <h4>Changelog</h4>
+      <div class="changelog">`;
+    
+    const changes = [
+      { date: "Season " + state.season, text: "Squad system initialized with 20-player rosters" },
+      { date: "Season " + state.season, text: "Manager tactics integrated into match simulation" },
+      { date: "Season " + state.season, text: "Squad strength affects team performance (±15%)" },
+      { date: "Season " + state.season, text: "End-of-season transfers: 30% departures, 20% signings, 10% youth" },
+      { date: "Season " + state.season, text: "PL teams use real 2025/26 player data; others procedurally generated" },
+    ];
+    
+    for (const change of changes) {
+      html += `<div class="changelog-entry">
+        <div class="changelog-date">${change.date}</div>
+        <div class="changelog-text">${change.text}</div>
+      </div>`;
+    }
+    
+    html += `</div></div>`;
+
+    el.innerHTML = html;
+  }
 
   function renderLeaguesView() {
     const el = document.getElementById("leagues-view-content");
