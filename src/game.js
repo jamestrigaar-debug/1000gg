@@ -65,6 +65,149 @@
     "Luton Town": { name: "R. Edwards", focus: "Underdog Spirit", tag: "Development project", youth: "High", project: "Minnow mentality" },
   };
 
+  /* ----------------------- SQUAD SYSTEM (Background Simulation) ----------------------
+   * Each team has a 20-player squad with attributes matching team strength.
+   * Premier League teams use real 2025/26 player data; others are procedurally generated.
+   * Managers have playstyle and tactics that influence match outcomes.
+   * Squads evolve via end-of-season transfers, creating a living world.
+   * ==================================================================================== */
+
+  // Squad storage: { [teamName]: { players: [...], manager: {...}, lastUpdated: season } }
+  const TEAM_SQUADS = {};
+
+  // Manager tactics: how they set up their team
+  const MANAGER_TACTICS = {
+    "Possession": { attack: 1.1, midfield: 1.15, defence: 0.95, homeAdvantage: 1.0 },
+    "Counter": { attack: 1.2, midfield: 0.9, defence: 1.05, homeAdvantage: 1.1 },
+    "High Press": { attack: 1.05, midfield: 1.2, defence: 0.95, homeAdvantage: 1.15 },
+    "Direct": { attack: 1.15, midfield: 0.85, defence: 1.1, homeAdvantage: 1.05 },
+    "Park the Bus": { attack: 0.8, midfield: 0.95, defence: 1.25, homeAdvantage: 1.2 },
+    "Route One": { attack: 1.1, midfield: 0.8, defence: 1.15, homeAdvantage: 1.0 },
+  };
+
+  // Generate a random player matching team strength
+  function generateSquadPlayer(teamStrength, position, seed) {
+    const baseRating = teamStrength + randInt(-8, 8);
+    const attrs = {
+      name: `Player ${seed}`,
+      position: position || choice(["ST", "CF", "AML", "AMR", "AMC", "Winger", "CM", "CDM", "LB", "RB", "CB", "GK"]),
+      age: randInt(19, 35),
+      heading: clamp(baseRating + randInt(-5, 5), 40, 99),
+      leftFoot: clamp(baseRating + randInt(-5, 5), 40, 99),
+      rightFoot: clamp(baseRating + randInt(-5, 5), 40, 99),
+      speed: clamp(baseRating + randInt(-5, 5), 40, 99),
+      strength: clamp(baseRating + randInt(-5, 5), 40, 99),
+      fitness: clamp(baseRating + randInt(-5, 5), 40, 99),
+      height: randInt(170, 200),
+      weight: randInt(65, 95),
+      overall: clamp(baseRating, 40, 99),
+    };
+    return attrs;
+  }
+
+  // Initialize squad for a team (random generation for non-PL, snapshot for PL)
+  function initializeTeamSquad(teamName, season) {
+    if (TEAM_SQUADS[teamName] && TEAM_SQUADS[teamName].lastUpdated === season) {
+      return TEAM_SQUADS[teamName];
+    }
+
+    const teamData = TEAM_DATABASE[teamName];
+    if (!teamData) return null;
+
+    const teamStrength = (teamData.attack + teamData.midfield + teamData.defence + teamData.manager) / 4;
+    const players = [];
+
+    // For Premier League teams, try to use real 2025/26 data
+    const isPL = teamData.league === "Elite";
+    if (isPL && PLAYER_DATABASE_2025_26[teamName]) {
+      const realPlayers = PLAYER_DATABASE_2025_26[teamName].slice(0, 20);
+      for (const pl of realPlayers) {
+        players.push({
+          name: pl.name,
+          position: pl.position || "ST",
+          age: pl.age || randInt(19, 35),
+          heading: pl.heading || clamp(teamStrength + randInt(-5, 5), 40, 99),
+          leftFoot: pl.leftFoot || clamp(teamStrength + randInt(-5, 5), 40, 99),
+          rightFoot: pl.rightFoot || clamp(teamStrength + randInt(-5, 5), 40, 99),
+          speed: pl.speed || clamp(teamStrength + randInt(-5, 5), 40, 99),
+          strength: pl.strength || clamp(teamStrength + randInt(-5, 5), 40, 99),
+          fitness: pl.fitness || clamp(teamStrength + randInt(-5, 5), 40, 99),
+          height: pl.height || randInt(170, 200),
+          weight: pl.weight || randInt(65, 95),
+          overall: pl.overall || clamp(teamStrength, 40, 99),
+          contractYears: randInt(1, 5),
+        });
+      }
+    }
+
+    // Fill remaining slots with generated players
+    while (players.length < 20) {
+      const pos = choice(["ST", "CF", "AML", "AMR", "AMC", "Winger", "CM", "CDM", "LB", "RB", "CB", "GK"]);
+      players.push(generateSquadPlayer(teamStrength, pos, players.length));
+    }
+
+    const manager = MANAGER_DATABASE[teamName] || { name: "Manager", focus: "Balanced", tag: "Squad players", youth: "Medium" };
+    const tactics = manager.focus || "Possession";
+
+    TEAM_SQUADS[teamName] = {
+      players,
+      manager: { ...manager, tactics },
+      lastUpdated: season,
+    };
+
+    return TEAM_SQUADS[teamName];
+  }
+
+  // Simulate end-of-season transfers: some players leave, new ones arrive
+  function simulateSquadTransfers(teamName, season) {
+    const squad = initializeTeamSquad(teamName, season);
+    if (!squad) return;
+
+    const teamData = TEAM_DATABASE[teamName];
+    const teamStrength = (teamData.attack + teamData.midfield + teamData.defence + teamData.manager) / 4;
+
+    // 30% of squad leaves (contracts expire or transfers)
+    const leavers = Math.floor(squad.players.length * 0.3);
+    for (let i = 0; i < leavers; i++) {
+      const idx = randInt(0, squad.players.length - 1);
+      const pos = squad.players[idx].position;
+      squad.players[idx] = generateSquadPlayer(teamStrength, pos, season * 1000 + i);
+    }
+
+    // New signings: 20% of squad
+    const signings = Math.floor(squad.players.length * 0.2);
+    for (let i = 0; i < signings; i++) {
+      const idx = randInt(0, squad.players.length - 1);
+      const pos = squad.players[idx].position;
+      squad.players[idx] = generateSquadPlayer(teamStrength + randInt(-2, 2), pos, season * 2000 + i);
+    }
+
+    // Youth promotion: 10% of squad
+    const promotions = Math.floor(squad.players.length * 0.1);
+    for (let i = 0; i < promotions; i++) {
+      const idx = randInt(0, squad.players.length - 1);
+      squad.players[idx] = generateSquadPlayer(teamStrength - randInt(5, 15), choice(["ST", "CM", "LB", "RB", "CB"]), season * 3000 + i);
+    }
+
+    squad.lastUpdated = season;
+  }
+
+  // Get squad-based strength adjustment (average player quality vs team rating)
+  function getSquadStrengthAdjustment(teamName) {
+    const squad = TEAM_SQUADS[teamName];
+    if (!squad || !squad.players.length) return 1.0;
+    
+    const avgPlayerRating = squad.players.reduce((sum, p) => sum + (p.overall || 50), 0) / squad.players.length;
+    const teamData = TEAM_DATABASE[teamName];
+    const teamRating = (teamData.attack + teamData.midfield + teamData.defence + teamData.manager) / 4;
+    
+    // If squad is stronger than team rating, apply a small boost; if weaker, apply a penalty
+    const diff = (avgPlayerRating - teamRating) / 50;
+    return clamp(1.0 + diff * 0.1, 0.85, 1.15);
+  }
+
+  /* ==================================================================================== */
+
   /* --------------------------- CONFIG / LEVERS --------------------------- */
   // The 7 attributes drafted from Team+Era squads (chosen in any order).
   const POSITIONS = {
@@ -804,7 +947,7 @@
       attrs: null, mentality: null, mentalityRating: 60, playstyle: null,
       potentialRating: 50, determination: 50, longevity: 50, injuryRating: 50,
       baseRating: 0, synergyNotes: [], mutationNotes: [], derived: null, derivedBonuses: { agility: 0, balance: 0 }, hiddenTraits: [], traitProgress: {},
-      position: "ST", contractYears: 0, contractSignedAt: 0, contractEndSeason: 0, contractRole: null,
+      position: "ST", contractYears: 0, contractSignedAt: 0, contractEndSeason: 0, contractRole: null, lastContractedRole: null,
       retireNow: false, agent: null, wealth: 0, fame: 0,
       // career
       season: 0, age: LEVERS.debutAge, club: null, role: "Rotation",
@@ -2150,12 +2293,15 @@
     const mgrDiff = home.manager - away.manager;
     const mgrSwing = mgrDiff / 220;
     const mgrChaosTrim = clamp(Math.abs(mgrDiff) / 10, 0, 4);
+    // Squad strength adjustment: reflects actual squad quality vs team rating
+    const homeSquadAdj = getSquadStrengthAdjustment(home.name || "");
+    const awaySquadAdj = getSquadStrengthAdjustment(away.name || "");
     // Derby matches are more volatile and unpredictable
     const derbyChaos = derby ? 8 : 0;
     const homeChaos = t.chaosMod + derbyChaos - (mgrDiff > 0 ? mgrChaosTrim : 0);
     const awayChaos = t.chaosMod + derbyChaos - (mgrDiff < 0 ? mgrChaosTrim : 0);
-    let homeXG = resolveDuel(home.attack * t.homeAtkMod, away.defence * t.awayDefMod, homeChaos);
-    let awayXG = resolveDuel(away.attack * t.awayAtkMod, home.defence * t.homeDefMod, awayChaos);
+    let homeXG = resolveDuel(home.attack * t.homeAtkMod * homeSquadAdj, away.defence * t.awayDefMod / awaySquadAdj, homeChaos);
+    let awayXG = resolveDuel(away.attack * t.awayAtkMod * awaySquadAdj, home.defence * t.homeDefMod / homeSquadAdj, awayChaos);
     homeXG *= homeMid; awayXG *= awayMid;
     homeXG += mgrSwing + (home.homeAdvantage || 0) / 100;
     awayXG -= mgrSwing;
@@ -2291,6 +2437,11 @@
     if (state.contractRole && state.contractYears > 0) {
       return state.contractRole;
     }
+    // After contract expires, preserve the last contracted role to prevent age-based
+    // demotion. Veterans should keep their role unless explicitly demoted by events.
+    if (state.lastContractedRole) {
+      return state.lastContractedRole;
+    }
     // Otherwise, determine natural role based on current ability
     let role = determineNaturalRole(state.club);
     return role;
@@ -2408,6 +2559,11 @@
     const club = state.club;
     updateTeamStrengths();
     ensureClubStat(club);
+    // Initialize squads for all teams in the league (background simulation)
+    const seasonClubsInit = getLeagueClubs(club);
+    for (const c of seasonClubsInit) {
+      initializeTeamSquad(c, state.season);
+    }
     state.role = determineRole();
     const threat = agedRating();
     const clubData = TEAM_DATABASE[club];
@@ -2770,6 +2926,13 @@
       champion, honours: honoursThisSeason, awards, isTopScorer, promotionRelegation, playoffGoals, playoffApps,
     };
     state.seasonHistory.push(seasonData);
+    
+    // End-of-season squad transfers: simulate squad evolution for all teams
+    const seasonClubsTransfer = getLeagueClubs(club);
+    for (const c of seasonClubsTransfer) {
+      simulateSquadTransfers(c, state.season);
+    }
+    
     return seasonData;
   }
 
@@ -5062,6 +5225,11 @@
   function handleContractPhase(sd, intl) {
     // Contract countdown; when it hits 0, force negotiation before next season
     normalizeContractState(state);
+    // Before expiring the contract, save the current role so veterans don't get
+    // age-demoted after their contract ends.
+    if (state.contractYears > 0 && state.contractRole) {
+      state.lastContractedRole = state.contractRole;
+    }
     state.contractYears = Math.max(0, state.contractYears - 1);
     if (state.contractYears <= 0) {
       presentContractNegotiation(sd, intl);
@@ -5455,6 +5623,7 @@
     state.contractSignedAt = state.season;
     state.contractEndSeason = state.season + years;
     state.contractForceStays = 0;
+    state.lastContractedRole = null; // Clear the fallback when a new contract is signed
     const fx = { rep: 0, attrChange: null, injuryProne: 0 };
     if (years === 1) fx.rep = 3;
     else if (years === 2) fx.rep = 1;
