@@ -415,6 +415,36 @@
   .rec-row span:last-child { text-align: right; font-weight: 700; color: var(--accent); }
   @media (max-width: 600px) { .rec-row { grid-template-columns: 1fr 1fr 55px 55px; font-size: 12px; padding: 8px; } .top10-row { font-size: 12px; } }
 
+  /* Squad Info Styles */
+  .squad-section { margin-bottom: 24px; }
+  .squad-section h4 { color: var(--accent2); font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .squad-info-box { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+  .squad-team-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .squad-team-name { font-weight: 700; color: var(--txt); font-size: 15px; }
+  .squad-team-strength { display: flex; gap: 8px; font-size: 12px; }
+  .squad-attr { background: var(--card); padding: 2px 8px; border-radius: 4px; color: var(--muted); }
+  .squad-players-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+  .squad-player-card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font-size: 12px; }
+  .squad-player-name { font-weight: 700; color: var(--txt); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .squad-player-pos { color: var(--accent2); font-size: 11px; font-weight: 700; margin-bottom: 4px; }
+  .squad-player-attrs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; font-size: 11px; }
+  .squad-player-attr-row { display: flex; justify-content: space-between; }
+  .squad-player-attr-label { color: var(--muted); }
+  .squad-player-attr-value { color: var(--accent); font-weight: 700; }
+  .manager-card { background: var(--card); border: 1px solid var(--accent2); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+  .manager-name { font-weight: 700; color: var(--accent2); font-size: 15px; margin-bottom: 4px; }
+  .manager-focus { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .manager-tactics { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 6px; }
+  .tactic-badge { background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 11px; text-align: center; }
+  .tactic-badge.attack { color: var(--bad); border-color: var(--bad); }
+  .tactic-badge.midfield { color: var(--accent2); border-color: var(--accent2); }
+  .tactic-badge.defence { color: var(--accent); border-color: var(--accent); }
+  .changelog { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; max-height: 300px; overflow-y: auto; }
+  .changelog-entry { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+  .changelog-entry:last-child { border-bottom: none; }
+  .changelog-date { color: var(--accent2); font-weight: 700; }
+  .changelog-text { color: var(--txt); margin-top: 2px; }
+
   .simming { text-align: center; padding: 30px; color: var(--accent2); font-weight: 700; animation: pulse .4s infinite alternate; }
   .season-prompt { margin-bottom: 12px; color: var(--muted); }
   .result-banner { padding: 10px 14px; border-radius: 10px; font-weight: 700; margin-bottom: 12px; }
@@ -879,7 +909,7 @@
       <button class="career-tab active" data-tab="season">Season</button>
       <button class="career-tab" data-tab="stats">Career Profile</button>
       <button class="career-tab" data-tab="history">History</button>
-      <button class="career-tab" data-tab="leagues">Leagues</button>
+      <button class="career-tab" data-tab="squad">Squad Info</button>
       <button class="career-tab" data-tab="alltime">All Time</button>
     </div>
 
@@ -911,10 +941,10 @@
           <div id="alltime-content"></div>
         </div>
       </div>
-      <div class="career-panel" data-tab="leagues">
+      <div class="career-panel" data-tab="squad">
         <div class="panel">
-          <h3 style="color:var(--accent2);font-size:15px;margin-bottom:10px">League Standings</h3>
-          <div id="leagues-view-content"></div>
+          <h3 style="color:var(--accent2);font-size:15px;margin-bottom:10px">Squad Info</h3>
+          <div id="squad-info-content"></div>
         </div>
       </div>
     </div>
