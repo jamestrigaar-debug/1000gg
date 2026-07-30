@@ -624,6 +624,232 @@
       choices: [{ label: "Retire a legend", fx: {} }] },
   ];
 
+  /* -------------------- VALIDATION FUNCTIONS --------------------
+   * Ensure data integrity at load time
+   */
+  function validateEventData(data) {
+    const ids = new Set();
+    const errors = [];
+    
+    const allEvents = [
+      ...data.SEASON_DECISIONS,
+      ...data.EARLY_DEVELOPMENT_DECISIONS,
+      ...data.CAREER_MILESTONES,
+      ...data.SEASON_EVENTS,
+      ...data.CAREER_ENDINGS,
+    ];
+    
+    for (const event of allEvents) {
+      if (!event.id) {
+        errors.push("Event missing id field");
+        continue;
+      }
+      if (ids.has(event.id)) {
+        errors.push(`Duplicate event ID: ${event.id}`);
+      }
+      ids.add(event.id);
+    }
+    
+    if (errors.length > 0) {
+      throw new Error(`Event data validation failed:\n${errors.join("\n")}`);
+    }
+    
+    return true;
+  }
+
+  /* -------------------- EVENT DIFFICULTY SCALING --------------------
+   * Adapt event weight and effects based on player performance tier
+   * Sensational players get harder choices, Flop players get easier ones
+   */
+  function getPerformanceTierMultiplier(performanceTier) {
+    const multipliers = {
+      "Sensational": 1.3,      // Harder challenges, bigger rewards
+      "Overperformed": 1.15,   // Slightly harder
+      "Met Expectation": 1.0,  // Normal
+      "Underperformed": 0.85,  // Easier
+      "Flop": 0.7,             // Much easier
+    };
+    return multipliers[performanceTier] || 1.0;
+  }
+
+  function scaleEventWeight(baseWeight, performanceTier) {
+    const multiplier = getPerformanceTierMultiplier(performanceTier);
+    return Math.round(baseWeight * multiplier);
+  }
+
+  function scaleEffectValue(baseValue, performanceTier, isPositive = true) {
+    const multiplier = getPerformanceTierMultiplier(performanceTier);
+    if (isPositive) {
+      // Sensational players get bigger rewards
+      return Math.round(baseValue * multiplier);
+    } else {
+      // Sensational players face bigger penalties
+      return Math.round(baseValue * multiplier);
+    }
+  }
+
+  /* -------------------- CAREER MOMENTUM TRACKING --------------------
+   * Track decision patterns to create narrative momentum
+   * Consecutive similar choices unlock special events and bonuses
+   */
+  function createMomentumTracker() {
+    return {
+      lastChoices: [],        // Last 5 choices made
+      streakType: null,       // Current streak type (e.g., "ambitious", "loyal")
+      streakLength: 0,        // How many consecutive similar choices
+      momentumScore: 0,       // 0-100, affects event selection
+      
+      recordChoice: function(choiceLabel, effectPillars) {
+        // Determine choice type from pillars
+        let choiceType = null;
+        if (effectPillars?.Ambition > 5) choiceType = "ambitious";
+        else if (effectPillars?.Loyalty > 5) choiceType = "loyal";
+        else if (effectPillars?.Professionalism > 5) choiceType = "professional";
+        else if (effectPillars?.Adaptability > 5) choiceType = "adaptable";
+        else if (effectPillars?.Leadership > 5) choiceType = "leader";
+        
+        this.lastChoices.push({ type: choiceType, label: choiceLabel });
+        if (this.lastChoices.length > 5) this.lastChoices.shift();
+        
+        // Update streak
+        if (choiceType === this.streakType) {
+          this.streakLength++;
+          this.momentumScore = Math.min(100, this.momentumScore + 10);
+        } else {
+          this.streakType = choiceType;
+          this.streakLength = 1;
+          this.momentumScore = Math.max(0, this.momentumScore - 5);
+        }
+      },
+      
+      getMomentumBonus: function() {
+        // Bonus effects when streak reaches certain lengths
+        if (this.streakLength >= 5) return { rep: 3, pillars: { Consistency: 8 } };
+        if (this.streakLength >= 3) return { rep: 1, pillars: { Consistency: 4 } };
+        return {};
+      },
+      
+      getStreakDescription: function() {
+        const descriptions = {
+          ambitious: "on an ambitious streak",
+          loyal: "showing loyalty",
+          professional: "being professional",
+          adaptable: "adapting well",
+          leader: "showing leadership",
+        };
+        return descriptions[this.streakType] || "making varied choices";
+      }
+    };
+  }
+
+  /* -------------------- CONTEXT SCHEMA --------------------
+   * Formal schema for context object used in requirement checking
+   */
+  const CONTEXT_SCHEMA = {
+    age: "number",
+    role: "string (Star|Starter|Rotation|Bench)",
+    yearsAtClub: "number",
+    reputation: "number",
+    performance: "string (Sensational|Overperformed|Met Expectation|Underperformed|Flop)",
+    contractYears: "number",
+    gamesMissed: "number",
+    trajectory: "string",
+    intlCaps: "number",
+    intlRetired: "boolean",
+    wonHonour: "boolean",
+    season: "number",
+  };
+
+  /* -------------------- PILLAR SYNERGY SYSTEM --------------------
+   * Complementary pillars boost each other when both are high
+   * Creates emergent character archetypes
+   */
+  function calculatePillarSynergies(pillars) {
+    const synergies = {};
+    
+    // Ambition + Leadership = Visionary (rep boost)
+    if ((pillars.Ambition || 50) >= 60 && (pillars.Leadership || 50) >= 60) {
+      synergies.visionary = { rep: 2, fame: 1 };
+    }
+    
+    // Loyalty + Professionalism = Reliable (contract boost)
+    if ((pillars.Loyalty || 50) >= 60 && (pillars.Professionalism || 50) >= 60) {
+      synergies.reliable = { contract: 1, rep: 1 };
+    }
+    
+    // Adaptability + Consistency = Versatile (role flexibility)
+    if ((pillars.Adaptability || 50) >= 60 && (pillars.Consistency || 50) >= 60) {
+      synergies.versatile = { attrBonus: 1 };
+    }
+    
+    // KillerInstinct + Durability = Relentless (goal boost)
+    if ((pillars.KillerInstinct || 50) >= 60 && (pillars.Durability || 50) >= 60) {
+      synergies.relentless = { goals: 2, rep: 1 };
+    }
+    
+    // Leadership + Loyalty = Captain (intl boost)
+    if ((pillars.Leadership || 50) >= 65 && (pillars.Loyalty || 50) >= 65) {
+      synergies.captain = { intlCaps: 1, rep: 2 };
+    }
+    
+    return synergies;
+  }
+
+  function describeSynergies(synergies) {
+    const descriptions = [];
+    if (synergies.visionary) descriptions.push("visionary leader");
+    if (synergies.reliable) descriptions.push("reliable professional");
+    if (synergies.versatile) descriptions.push("versatile player");
+    if (synergies.relentless) descriptions.push("relentless competitor");
+    if (synergies.captain) descriptions.push("natural captain");
+    return descriptions;
+  }
+
+  /* -------------------- EFFECT SCHEMA --------------------
+   * Formal schema for effect objects applied to player state
+   */
+  const EFFECT_SCHEMA = {
+    attrChange: { key: "string", delta: "number" },
+    attrChange2: { key: "string", delta: "number" },
+    derivedChange: { agility: "number", balance: "number" },
+    rep: "number",
+    fame: "number",
+    wealth: "number",
+    role: "string (up|down)",
+    forceTransfer: "boolean",
+    pillars: { "[pillarName]": "number" },
+    flag: "string",
+    carryOver: "boolean",
+    carryOverLog: "string",
+    contract: "number",
+    intlCaps: "number",
+    intlGoals: "number",
+    setIntlRetired: "boolean",
+    retireNow: "boolean",
+    finalSeason: { destination: "string", note: "string" },
+    epilogue: "string",
+    goals: "function|number",
+    assists: "function|number",
+    positionChange: "string",
+    injuryProne: "number",
+  };
+
+  // Validate event data at load time
+  try {
+    validateEventData({
+      SEASON_DECISIONS,
+      EARLY_DEVELOPMENT_DECISIONS,
+      CAREER_MILESTONES,
+      SEASON_EVENTS,
+      CAREER_ENDINGS,
+    });
+  } catch (err) {
+    console.error("Career event data validation error:", err.message);
+    if (typeof window !== "undefined" && window.console) {
+      console.error(err);
+    }
+  }
+
     return {
       SEASON_DECISIONS,
       EARLY_DEVELOPMENT_DECISIONS,
@@ -632,6 +858,15 @@
       SEASON_TAG_WEIGHTS,
       SEASON_EVENTS,
       CAREER_ENDINGS,
+      CONTEXT_SCHEMA,
+      EFFECT_SCHEMA,
+      validateEventData,
+      getPerformanceTierMultiplier,
+      scaleEventWeight,
+      scaleEffectValue,
+      createMomentumTracker,
+      calculatePillarSynergies,
+      describeSynergies,
     };
   };
   
