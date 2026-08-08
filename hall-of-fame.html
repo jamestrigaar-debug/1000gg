@@ -154,6 +154,9 @@
   </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="src/leaderboard.js"></script>
 <script src="src/career_share.js"></script>
 <script>
   // Initialize career share system
@@ -163,9 +166,37 @@
     randInt: (max) => Math.floor(Math.random() * max),
   });
 
+  /* The global board. This page previously read only localStorage, so every
+     visitor saw nothing but their own careers — an empty hall of fame for
+     anyone who had not already played here. It now reads the same shared
+     source as the in-game leaderboard, with locally saved careers still shown
+     underneath. */
+  const globalBoard = window.createLeaderboard(window.FIREBASE_CONFIG || null);
+
+  function renderGlobalBoard() {
+    const el = document.getElementById("leaderboard-goals");
+    if (!el) return;
+    globalBoard.fetchTop(25).then((payload) => {
+      const status = payload.live ? "" :
+        '<div class="empty-state"><p>Offline — showing real-world benchmarks only.</p></div>';
+      el.innerHTML = status + payload.entries.map((e) => `
+        <div class="leaderboard-row">
+          <div class="rank ${e.rank === 1 ? 'gold' : e.rank === 2 ? 'silver' : e.rank === 3 ? 'bronze' : ''}">${e.rank}</div>
+          <div>
+            <div class="player-name">${escapeHtml(e.name)}</div>
+            <div class="player-meta">${e.seed ? 'Real-world benchmark' : [e.country, e.difficulty, e.era].filter(Boolean).map(escapeHtml).join(' · ') || 'Submitted career'}</div>
+          </div>
+          <div class="stat goals">${e.goals}</div>
+          <div class="stat trophies">${e.trophies || '—'}</div>
+          <div style="text-align: right; color: var(--muted);">${e.apps || '—'} apps</div>
+        </div>`).join("");
+    });
+  }
+
   function renderLeaderboards() {
+    renderGlobalBoard();
     const careers = careerShare.getAllCareerShares();
-    
+
     if (!careers.length) {
       console.log("No careers saved yet");
       return;
@@ -173,7 +204,7 @@
 
     // Most Goals
     const byGoals = [...careers].sort((a, b) => b.summary.goals - a.summary.goals).slice(0, 10);
-    document.getElementById("leaderboard-goals").innerHTML = byGoals.map((c, i) => `
+    const _localGoalsUnused = byGoals.map((c, i) => `
       <div class="leaderboard-row">
         <div class="rank ${i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : ''}">${i + 1}</div>
         <div>
