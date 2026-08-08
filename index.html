@@ -335,6 +335,38 @@
   #goal-progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--gold)); transition: width .6s ease; }
   #goal-progress-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
 
+  /* ---- Leaderboard ---- */
+  .lb-head { margin-bottom: 10px; }
+  .lb-title { font-size: 15px; font-weight: 700; color: var(--accent); }
+  .lb-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .lb-live { color: var(--accent); font-weight: 700; }
+  .lb-offline { color: var(--gold); }
+  .lb-table { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .lb-row { display: grid; grid-template-columns: 38px 1fr 58px 58px 62px; gap: 6px; align-items: center;
+            padding: 8px 10px; font-size: 13px; border-bottom: 1px solid var(--line); }
+  .lb-row:last-child { border-bottom: none; }
+  .lb-row.head { background: var(--bg2); color: var(--muted); font-size: 11px; text-transform: uppercase;
+                 letter-spacing: 1px; font-weight: 700; }
+  .lb-row.mine { background: var(--tab-active); }
+  .lb-rank { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .lb-rank.gold { color: #ffd700; } .lb-rank.silver { color: #c0c0c0; } .lb-rank.bronze { color: #cd7f32; }
+  .lb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-apps, .lb-ratio, .lb-goals { text-align: right; font-variant-numeric: tabular-nums; }
+  .lb-goals { font-weight: 700; color: var(--accent); }
+  .lb-tag { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; padding: 1px 5px; margin-left: 6px;
+            border-radius: 20px; border: 1px solid var(--line); color: var(--muted); vertical-align: 1px; }
+  .lb-tag.you { border-color: var(--accent); color: var(--accent); }
+  .lb-foot { font-size: 11px; color: var(--muted); margin-top: 10px; text-align: center; }
+  .lb-submit { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .lb-submit-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .lb-submit-row input { flex: 1 1 160px; max-width: 240px; padding: 10px; border-radius: 8px;
+                         border: 1px solid var(--line); background: var(--bg2); color: var(--txt); font-size: 13px; }
+  .lb-submit-note { font-size: 12px; color: var(--muted); margin-top: 8px; text-align: center; }
+  .lb-submit.done .lb-submit-note { color: var(--accent); }
+  @media (max-width: 520px) {
+    .lb-row { grid-template-columns: 30px 1fr 46px 62px; font-size: 12px; }
+    .lb-row > .lb-ratio { display: none; }
+  }
   .career-tabs { display: flex; gap: 4px; margin-top: 12px; border-bottom: 1px solid var(--line); }
   .career-tab { flex: 1; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--muted); padding: 10px 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
   .career-tab.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--tab-active); }
@@ -910,7 +942,7 @@
       <button class="career-tab" data-tab="stats">Career Profile</button>
       <button class="career-tab" data-tab="history">History</button>
       <button class="career-tab" data-tab="squad">Squad Info</button>
-      <button class="career-tab" data-tab="alltime">All Time</button>
+      <button class="career-tab" data-tab="leaderboard">Leaderboard</button>
     </div>
 
     <div class="career-panels">
@@ -936,9 +968,9 @@
           <div id="career-log"></div>
         </div>
       </div>
-      <div class="career-panel" data-tab="alltime">
+      <div class="career-panel" data-tab="leaderboard">
         <div class="panel">
-          <div id="alltime-content"></div>
+          <div id="leaderboard-content"></div>
         </div>
       </div>
       <div class="career-panel" data-tab="squad">
@@ -954,26 +986,26 @@
   <section id="screen-legacy" class="screen">
     <div class="legacy">
       <div class="legacy-status" id="legacy-status">CAREER COMPLETE</div>
-      <div class="legacy-big" id="legacy-goals">0</div>
-      <div class="legacy-big-lab">CAREER GOALS</div>
-      <div class="legacy-grid" id="legacy-grid"></div>
-      <div class="legacy-section" id="legacy-summary"></div>
-      <div class="legacy-section" id="legacy-biography"></div>
-      <div class="legacy-section" id="legacy-honours"></div>
-      <div class="legacy-section" id="legacy-clubs"></div>
-      <div class="legacy-section" id="legacy-history"></div>
-      <div class="legacy-section" id="legacy-epilogue"></div>
-      <div class="legacy-dna" id="legacy-dna"></div>
-      <div class="legacy-section" id="legacy-dna-report"></div>
 
+      <!-- The card is the deliverable. The career used to end on eight stacked
+           sections; the attributes, honours and totals they listed are all on
+           the card itself now. -->
       <div class="share-card" id="share-card" style="display:none;">
-        <h3>Share Your Career Card</h3>
         <canvas id="share-card-canvas" width="600" height="800"></canvas>
         <div class="share-actions">
           <button class="btn primary" id="btn-download-card">📥 Download Card</button>
           <button class="btn" id="btn-share-card">🔗 Share / Copy</button>
         </div>
+        <div class="lb-submit" id="lb-submit">
+          <div class="lb-submit-row">
+            <input type="text" id="lb-name" maxlength="24" placeholder="Display name" aria-label="Leaderboard display name" />
+            <button class="btn primary" id="btn-submit-leaderboard">🏆 Submit to leaderboard</button>
+          </div>
+          <div class="lb-submit-note" id="lb-submit-note"></div>
+        </div>
       </div>
+
+      <div class="legacy-section" id="legacy-summary"></div>
 
       <div class="share-card" id="share-tagline-card" style="display:none;">
         <h3>Can You Beat Me?</h3>
@@ -1042,6 +1074,12 @@
 <script src="src/data.js"></script>
 <script src="src/career_event_data.js"></script>
 <script src="src/career_share.js"></script>
+<!-- Firebase (compat build: the site has no bundler). Optional — the game
+     plays fine without it and the board falls back to the seed benchmarks. -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="src/firebase-config.js"></script>
+<script src="src/leaderboard.js"></script>
 <script src="src/game.js"></script>
 </body>
 </html>

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>🏆 Leaderboard Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: white;
+        }
+        .container {
+            background: #16213e;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        h1 {
+            text-align: center;
+            color: #f5c842;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        input {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            background: #0f3460;
+            color: white;
+            min-width: 120px;
+        }
+        input::placeholder {
+            color: #888;
+        }
+        button {
+            padding: 12px 30px;
+            background: #f5c842;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        button:hover {
+            transform: scale(1.05);
+            background: #ffd700;
+        }
+        .leaderboard {
+            margin-top: 30px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        th {
+            background: #0f3460;
+            padding: 12px;
+            text-align: left;
+        }
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #0f3460;
+        }
+        tr:hover {
+            background: #1a3a6a;
+        }
+        .rank-1 { color: #ffd700; font-weight: bold; }
+        .rank-2 { color: #c0c0c0; font-weight: bold; }
+        .rank-3 { color: #cd7f32; font-weight: bold; }
+        .loading {
+            text-align: center;
+            color: #888;
+            padding: 30px;
+        }
+        .delete-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .delete-btn:hover {
+            background: #c0392b;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 8px;
+            text-align: center;
+            display: none;
+        }
+        .status.success {
+            background: #27ae60;
+            display: block;
+        }
+        .status.error {
+            background: #e74c3c;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>⚽ 1000 Goals Leaderboard</h1>
+    
+    <!-- Status Messages -->
+    <div id="statusMessage" class="status"></div>
+    
+    <!-- Submit Form -->
+    <div class="input-group">
+        <input type="text" id="playerName" placeholder="Player Name" />
+        <input type="number" id="gamesPlayed" placeholder="Games Played" min="0" />
+        <input type="number" id="goalsScored" placeholder="Goals Scored" min="0" />
+        <button onclick="handleSubmit()">🚀 Submit Score</button>
+    </div>
+
+    <!-- Leaderboard -->
+    <div class="leaderboard">
+        <h2>🏅 Top Players</h2>
+        <button onclick="refreshLeaderboard()" style="margin-bottom: 10px; background: #3498db; color: white;">
+            🔄 Refresh
+        </button>
+        <div id="leaderboardContent">
+            <div class="loading">Loading leaderboard...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<script>
+    // 🔑 PASTE YOUR FIREBASE CONFIG HERE
+    const firebaseConfig = {
+        apiKey: "YOUR_API_KEY",
+        authDomain: "goals-leaderboard.firebaseapp.com",
+        databaseURL: "https://goals-leaderboard-default-rtdb.firebaseio.com/",
+        projectId: "goals-leaderboard",
+        storageBucket: "goals-leaderboard.appspot.com",
+        messagingSenderId: "YOUR_SENDER_ID",
+        appId: "YOUR_APP_ID"
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+
+    // ============================================
+    // SUBMIT SCORE FUNCTION
+    // ============================================
+    function submitPlayerScore(playerName, gamesPlayed, goalsScored) {
+        if (!playerName || playerName.trim() === '') {
+            showStatus('Please enter your name!', 'error');
+            return false;
+        }
+        
+        if (isNaN(gamesPlayed) || isNaN(goalsScored) || gamesPlayed < 0 || goalsScored < 0) {
+            showStatus('Please enter valid numbers (0 or greater)!', 'error');
+            return false;
+        }
+
+        const playerData = {
+            name: playerName.trim(),
+            games: parseInt(gamesPlayed),
+            goals: parseInt(goalsScored),
+            timestamp: firebase.database.ServerValue.TIMESTAMP
+        };
+
+        showStatus('Submitting score...', 'info');
+
+        return database.ref('players').push(playerData)
+            .then(() => {
+                showStatus('✅ Score submitted successfully! 🎉', 'success');
+                // Clear form
+                document.getElementById('playerName').value = '';
+                document.getElementById('gamesPlayed').value = '';
+                document.getElementById('goalsScored').value = '';
+                refreshLeaderboard();
+                return true;
+            })
+            .catch((error) => {
+                showStatus('❌ Error: ' + error.message, 'error');
+                console.error('Error submitting:', error);
+                return false;
+            });
+    }
+
+    // ============================================
+    // GET LEADERBOARD FUNCTION
+    // ============================================
+    function getLeaderboard(limit = 10) {
+        return database.ref('players')
+            .orderByChild('goals')
+            .limitToLast(limit)
+            .once('value')
+            .then((snapshot) => {
+                const players = [];
+                snapshot.forEach((childSnapshot) => {
+                    const player = childSnapshot.val();
+                    player.id = childSnapshot.key;
+                    players.push(player);
+                });
+                return players.reverse();
+            })
+            .catch((error) => {
+                console.error('Error loading leaderboard:', error);
+                return [];
+            });
+    }
+
+    // ============================================
+    // DISPLAY LEADERBOARD
+    // ============================================
+    async function refreshLeaderboard() {
+        const container = document.getElementById('leaderboardContent');
+        container.innerHTML = '<div class="loading">Loading...</div>';
+
+        const players = await getLeaderboard(10);
+
+        if (players.length === 0) {
+            container.innerHTML = '<div class="loading">No players yet. Be the first! 🎯</div>';
+            return;
+        }
+
+        let html = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Player</th>
+                        <th>Games</th>
+                        <th>⚽ Goals</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        players.forEach((player, index) => {
+            const rank = index + 1;
+            let rankClass = '';
+            if (rank === 1) rankClass = 'rank-1';
+            else if (rank === 2) rankClass = 'rank-2';
+            else if (rank === 3) rankClass = 'rank-3';
+
+            html += `
+                <tr>
+                    <td class="${rankClass}">#${rank}</td>
+                    <td>${player.name}</td>
+                    <td>${player.games}</td>
+                    <td>${player.goals}</td>
+                    <td><button class="delete-btn" onclick="deletePlayer('${player.id}')">🗑️</button></td>
+                </tr>
+            `;
+        });
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    // ============================================
+    // DELETE PLAYER FUNCTION
+    // ============================================
+    function deletePlayer(playerId) {
+        if (!confirm('Delete this player from leaderboard?')) return;
+
+        database.ref('players/' + playerId).remove()
+            .then(() => {
+                showStatus('✅ Player deleted!', 'success');
+                refreshLeaderboard();
+            })
+            .catch((error) => {
+                showStatus('❌ Error deleting: ' + error.message, 'error');
+            });
+    }
+
+    // ============================================
+    // STATUS MESSAGE HELPER
+    // ============================================
+    function showStatus(message, type) {
+        const status = document.getElementById('statusMessage');
+        status.textContent = message;
+        status.className = 'status ' + type;
+        
+        // Auto-hide after 3 seconds for success
+        if (type === 'success') {
+            setTimeout(() => {
+                status.style.display = 'none';
+            }, 3000);
+        }
+    }
+
+    // ============================================
+    // HANDLE SUBMIT BUTTON
+    // ============================================
+    function handleSubmit() {
+        const name = document.getElementById('playerName').value;
+        const games = document.getElementById('gamesPlayed').value;
+        const goals = document.getElementById('goalsScored').value;
+        submitPlayerScore(name, games, goals);
+    }
+
+    // ============================================
+    // ALLOW ENTER KEY TO SUBMIT
+    // ============================================
+    document.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            const active = document.activeElement;
+            if (active.id === 'playerName' || active.id === 'gamesPlayed' || active.id === 'goalsScored') {
+                handleSubmit();
+            }
+        }
+    });
+
+    // ============================================
+    // LOAD LEADERBOARD ON START
+    // ============================================
+    window.onload = function() {
+        refreshLeaderboard();
+        
+        // OPTIONAL: Real-time updates when new scores are added
+        database.ref('players')
+            .orderByChild('goals')
+            .limitToLast(10)
+            .on('child_added', (snapshot) => {
+                console.log('🆕 New player added, refreshing...');
+                refreshLeaderboard();
+            });
+    };
+</script>
+
+</body>
+</html>

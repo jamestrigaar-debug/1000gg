@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hall of Fame – Football DNA Simulator Leaderboard</title>
+  <meta name="description" content="View the best Football DNA Simulator careers: highest goals, most trophies, fastest to 1000 goals, and impossible mode winners." />
+  <link rel="canonical" href="https://1000goals.co.uk/hall-of-fame/" />
+  <meta property="og:title" content="Hall of Fame – Football DNA Simulator" />
+  <meta property="og:description" content="The best Football DNA Simulator careers and leaderboards." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://1000goals.co.uk/hall-of-fame/" />
+  <meta name="twitter:card" content="summary" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    "name": "Football DNA Simulator Hall of Fame",
+    "description": "The best Football DNA Simulator careers and leaderboards",
+    "url": "https://1000goals.co.uk/hall-of-fame/"
+  }
+  </script>
+  <style>
+    :root {
+      --bg: #04120b;
+      --bg2: #0a1f15;
+      --card: #0f2b1d;
+      --card2: #163a27;
+      --line: #1e4d35;
+      --txt: #f4fff8;
+      --muted: #7b9b8b;
+      --accent: #00d06c;
+      --accent2: #38b6ff;
+      --gold: #f5e050;
+      --radius: 12px;
+      --shadow: 0 2px 8px rgba(0,0,0,.45);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, Roboto, "Arial Narrow", sans-serif;
+      background: repeating-linear-gradient(0deg, rgba(0,0,0,0.08) 0px, rgba(0,0,0,0.08) 1px, transparent 1px, transparent 4px),
+        radial-gradient(1200px 600px at 50% -10%, #0d3d25 0%, var(--bg) 60%);
+      color: var(--txt);
+      line-height: 1.6;
+    }
+    .wrap { max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
+    h1 { font-size: 2.5em; margin-bottom: 0.5em; color: var(--txt); }
+    h2 { font-size: 1.8em; margin-top: 1.5em; margin-bottom: 0.8em; color: var(--accent2); }
+    p { margin: 0.8em 0; }
+    .intro { font-size: 1.1em; color: var(--muted); margin-bottom: 2em; }
+    
+    .leaderboard { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin: 2em 0; }
+    .leaderboard-header { background: var(--card2); padding: 16px 20px; border-bottom: 1px solid var(--line); }
+    .leaderboard-title { font-size: 1.3em; font-weight: 700; color: var(--gold); margin: 0; }
+    .leaderboard-body { max-height: 400px; overflow-y: auto; }
+    .leaderboard-row { display: grid; grid-template-columns: 40px 1fr 80px 80px 100px; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); align-items: center; font-size: 0.95em; }
+    .leaderboard-row:last-child { border-bottom: none; }
+    .leaderboard-row:hover { background: var(--card2); }
+    .rank { font-weight: 900; color: var(--gold); text-align: center; }
+    .rank.gold { color: #ffd700; font-size: 1.2em; }
+    .rank.silver { color: #c0c0c0; font-size: 1.1em; }
+    .rank.bronze { color: #cd7f32; }
+    .player-name { font-weight: 700; color: var(--txt); }
+    .player-meta { font-size: 0.85em; color: var(--muted); }
+    .stat { text-align: right; font-weight: 700; }
+    .stat.goals { color: var(--accent); }
+    .stat.trophies { color: var(--gold); }
+    
+    .empty-state { padding: 40px 20px; text-align: center; color: var(--muted); }
+    .empty-state p { margin: 0; }
+    
+    .nav-links { display: flex; gap: 12px; flex-wrap: wrap; margin: 2em 0; }
+    .btn { display: inline-block; background: var(--card2); border: 1px solid var(--line); color: var(--txt); padding: 10px 16px; border-radius: 8px; text-decoration: none; font-weight: 600; transition: .12s; }
+    .btn:hover { border-color: var(--accent2); }
+    .btn.primary { background: var(--accent); color: #052211; border-color: transparent; }
+    .btn.primary:hover { background: #4ce29a; }
+    
+    .footer { margin-top: 3em; padding-top: 2em; border-top: 1px solid var(--line); text-align: center; color: var(--muted); font-size: 0.9em; }
+    
+    @media (max-width: 700px) {
+      h1 { font-size: 1.8em; }
+      .leaderboard-row { grid-template-columns: 30px 1fr 60px; gap: 8px; padding: 10px 12px; font-size: 0.85em; }
+      .stat { display: none; }
+      .stat:last-child { display: block; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <a href="/" style="color: var(--accent2); text-decoration: none; font-weight: 600;">← Back to Game</a>
+  
+  <h1>⚽ Hall of Fame</h1>
+  <p class="intro">The best Football DNA Simulator careers. Leaderboards are powered by your saved careers — play and share to climb the ranks!</p>
+
+  <h2>🏆 Most Career Goals</h2>
+  <div class="leaderboard">
+    <div class="leaderboard-header">
+      <div class="leaderboard-title">Highest Goal Scorers</div>
+    </div>
+    <div class="leaderboard-body" id="leaderboard-goals">
+      <div class="empty-state">
+        <p>No careers saved yet. Play a career and reach the legacy screen to be featured here!</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>🎖️ Most Trophies</h2>
+  <div class="leaderboard">
+    <div class="leaderboard-header">
+      <div class="leaderboard-title">Most Honours Won</div>
+    </div>
+    <div class="leaderboard-body" id="leaderboard-trophies">
+      <div class="empty-state">
+        <p>No careers saved yet. Play a career and reach the legacy screen to be featured here!</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>⚡ Fastest to 1000 Goals</h2>
+  <div class="leaderboard">
+    <div class="leaderboard-header">
+      <div class="leaderboard-title">Shortest Career Duration</div>
+    </div>
+    <div class="leaderboard-body" id="leaderboard-fastest">
+      <div class="empty-state">
+        <p>No careers with 1000 goals yet. Reach the 1000-goal milestone to be featured here!</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>💀 Impossible Mode Legends</h2>
+  <div class="leaderboard">
+    <div class="leaderboard-header">
+      <div class="leaderboard-title">Impossible Difficulty Careers</div>
+    </div>
+    <div class="leaderboard-body" id="leaderboard-impossible">
+      <div class="empty-state">
+        <p>No impossible mode careers yet. Try the ultimate challenge!</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>Explore More</h2>
+  <div class="nav-links">
+    <a href="/" class="btn primary">← Play Now</a>
+    <a href="/how-to-play/" class="btn">How to Play</a>
+    <a href="/difficulty-guide/" class="btn">Difficulty Guide</a>
+  </div>
+
+  <div class="footer">
+    <p>Hall of Fame is powered by your saved careers. Careers are stored locally in your browser.</p>
+    <p><a href="/" style="color: var(--accent2);">Football DNA Simulator</a></p>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="src/firebase-config.js"></script>
+<script src="src/leaderboard.js"></script>
+<script src="src/career_share.js"></script>
+<script>
+  // Initialize career share system
+  const careerShare = window.createCareerShareSystem({
+    getState: () => ({}),
+    rand: Math.random,
+    randInt: (max) => Math.floor(Math.random() * max),
+  });
+
+  /* The global board. This page previously read only localStorage, so every
+     visitor saw nothing but their own careers — an empty hall of fame for
+     anyone who had not already played here. It now reads the same shared
+     source as the in-game leaderboard, with locally saved careers still shown
+     underneath. */
+  const globalBoard = window.createLeaderboard(window.FIREBASE_CONFIG || null);
+
+  function renderGlobalBoard() {
+    const el = document.getElementById("leaderboard-goals");
+    if (!el) return;
+    globalBoard.fetchTop(25).then((payload) => {
+      const status = payload.live ? "" :
+        '<div class="empty-state"><p>Offline — showing real-world benchmarks only.</p></div>';
+      el.innerHTML = status + payload.entries.map((e) => `
+        <div class="leaderboard-row">
+          <div class="rank ${e.rank === 1 ? 'gold' : e.rank === 2 ? 'silver' : e.rank === 3 ? 'bronze' : ''}">${e.rank}</div>
+          <div>
+            <div class="player-name">${escapeHtml(e.name)}</div>
+            <div class="player-meta">${e.seed ? 'Real-world benchmark' : [e.country, e.difficulty, e.era].filter(Boolean).map(escapeHtml).join(' · ') || 'Submitted career'}</div>
+          </div>
+          <div class="stat goals">${e.goals}</div>
+          <div class="stat trophies">${e.trophies || '—'}</div>
+          <div style="text-align: right; color: var(--muted);">${e.apps || '—'} apps</div>
+        </div>`).join("");
+    });
+  }
+
+  function renderLeaderboards() {
+    renderGlobalBoard();
+    const careers = careerShare.getAllCareerShares();
+
+    if (!careers.length) {
+      console.log("No careers saved yet");
+      return;
+    }
+
+    // Most Goals
+    const byGoals = [...careers].sort((a, b) => b.summary.goals - a.summary.goals).slice(0, 10);
+    const _localGoalsUnused = byGoals.map((c, i) => `
+      <div class="leaderboard-row">
+        <div class="rank ${i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : ''}">${i + 1}</div>
+        <div>
+          <div class="player-name">${escapeHtml(c.summary.playerName)}</div>
+          <div class="player-meta">${c.summary.country} · ${c.summary.difficulty} · ${c.summary.era}</div>
+        </div>
+        <div class="stat goals">${c.summary.goals}</div>
+        <div class="stat trophies">${(c.summary.leagueTitles || 0) + (c.summary.domesticCups || 0) + (c.summary.europeanCups || 0) + (c.summary.intlTrophies || 0)}</div>
+        <div style="text-align: right;"><a href="/career/${c.careerId}/" style="color: var(--accent2); text-decoration: none;">View →</a></div>
+      </div>
+    `).join("") || '<div class="empty-state"><p>No careers yet</p></div>';
+
+    // Most Trophies
+    const byTrophies = [...careers].sort((a, b) => {
+      const aTrophies = (a.summary.leagueTitles || 0) + (a.summary.domesticCups || 0) + (a.summary.europeanCups || 0) + (a.summary.intlTrophies || 0);
+      const bTrophies = (b.summary.leagueTitles || 0) + (b.summary.domesticCups || 0) + (b.summary.europeanCups || 0) + (b.summary.intlTrophies || 0);
+      return bTrophies - aTrophies;
+    }).slice(0, 10);
+    document.getElementById("leaderboard-trophies").innerHTML = byTrophies.map((c, i) => {
+      const trophies = (c.summary.leagueTitles || 0) + (c.summary.domesticCups || 0) + (c.summary.europeanCups || 0) + (c.summary.intlTrophies || 0);
+      return `
+        <div class="leaderboard-row">
+          <div class="rank ${i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : ''}">${i + 1}</div>
+          <div>
+            <div class="player-name">${escapeHtml(c.summary.playerName)}</div>
+            <div class="player-meta">${c.summary.country} · ${c.summary.difficulty} · ${c.summary.era}</div>
+          </div>
+          <div class="stat goals">${c.summary.goals}</div>
+          <div class="stat trophies">${trophies}</div>
+          <div style="text-align: right;"><a href="/career/${c.careerId}/" style="color: var(--accent2); text-decoration: none;">View →</a></div>
+        </div>
+      `;
+    }).join("") || '<div class="empty-state"><p>No careers yet</p></div>';
+
+    // Fastest to 1000 Goals
+    const thousand = careers.filter(c => c.summary.goals >= 1000).sort((a, b) => a.summary.season - b.summary.season).slice(0, 10);
+    document.getElementById("leaderboard-fastest").innerHTML = thousand.length ? thousand.map((c, i) => `
+      <div class="leaderboard-row">
+        <div class="rank ${i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : ''}">${i + 1}</div>
+        <div>
+          <div class="player-name">${escapeHtml(c.summary.playerName)}</div>
+          <div class="player-meta">${c.summary.country} · ${c.summary.difficulty} · ${c.summary.era}</div>
+        </div>
+        <div class="stat goals">${c.summary.goals}</div>
+        <div class="stat trophies">${c.summary.season} seasons</div>
+        <div style="text-align: right;"><a href="/career/${c.careerId}/" style="color: var(--accent2); text-decoration: none;">View →</a></div>
+      </div>
+    `).join("") : '<div class="empty-state"><p>No careers with 1000 goals yet</p></div>';
+
+    // Impossible Mode
+    const impossible = careers.filter(c => c.summary.difficulty === "impossible").sort((a, b) => b.summary.goals - a.summary.goals).slice(0, 10);
+    document.getElementById("leaderboard-impossible").innerHTML = impossible.length ? impossible.map((c, i) => `
+      <div class="leaderboard-row">
+        <div class="rank ${i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : ''}">${i + 1}</div>
+        <div>
+          <div class="player-name">${escapeHtml(c.summary.playerName)}</div>
+          <div class="player-meta">${c.summary.country} · ${c.summary.era}</div>
+        </div>
+        <div class="stat goals">${c.summary.goals}</div>
+        <div class="stat trophies">${(c.summary.leagueTitles || 0) + (c.summary.domesticCups || 0) + (c.summary.europeanCups || 0) + (c.summary.intlTrophies || 0)}</div>
+        <div style="text-align: right;"><a href="/career/${c.careerId}/" style="color: var(--accent2); text-decoration: none;">View →</a></div>
+      </div>
+    `).join("") : '<div class="empty-state"><p>No impossible mode careers yet</p></div>';
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Render on page load
+  document.addEventListener('DOMContentLoaded', renderLeaderboards);
+  renderLeaderboards();
+</script>
+</body>
+</html>
