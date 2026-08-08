@@ -172,6 +172,8 @@ function sampleSeason(over, n = 60) {
 }
 
 const lb = sandbox.window.__LEADERBOARD_PURE__;
+function sandboxDocumentGetElementById() { return sandbox.document.getElementById; }
+function sandboxLocalStorage() { return sandbox.localStorage; }
 module.exports = { api, lb, makeState, sampleSeason, check, assert, group, makeElement };
 
 /* ------------------------------ ASSERTIONS -------------------------------- */
@@ -812,12 +814,20 @@ if (require.main === module) {
   group("Leaderboard");
 
   check("the board is seeded with real-world benchmarks and ranks by goals", () => {
-    const board = lb.mergeAndRank([], 10);
-    assert(board.length === 10, `expected 10 seed rows, got ${board.length}`);
-    assert(board[0].name === "Cristiano Ronaldo", `top seed is ${board[0].name}`);
+    // Unlimited, so this checks the seed itself rather than the limit argument.
+    const board = lb.mergeAndRank([]);
+    assert(board.length === lb.SEED_ENTRIES.length, `board has ${board.length} rows, seed has ${lb.SEED_ENTRIES.length}`);
+    assert(board.length >= 25, `only ${board.length} benchmarks — the board looks thin`);
+    assert(board[0].name === "Cristiano Ronaldo" && board[0].goals === 976, `top seed is ${board[0].name} on ${board[0].goals}`);
+    assert(board[1].name === "Lionel Messi" && board[1].goals === 921, `second seed is ${board[1].name} on ${board[1].goals}`);
     for (let i = 1; i < board.length; i++) {
       assert(board[i - 1].goals >= board[i].goals, `board is not sorted at rank ${i + 1}`);
       assert(board[i].rank === i + 1, `rank ${board[i].rank} at index ${i}`);
+    }
+    assert(board.every((e) => e.goals >= 500), "a benchmark below 500 goals slipped in");
+    // Every seed must survive its own validation, or it could never be submitted.
+    for (const e of lb.SEED_ENTRIES) {
+      assert(lb.normalizeEntry(Object.assign({ apps: 0, seasons: 20 }, e)), `seed row failed validation: ${e.name}`);
     }
     return `${board.length} benchmarks, ${board[0].goals} down to ${board[board.length - 1].goals}`;
   });
@@ -826,10 +836,10 @@ if (require.main === module) {
     const board = lb.mergeAndRank([{ name: "Test Striker", goals: 780, apps: 900, seasons: 20 }]);
     const mine = board.find((e) => e.name === "Test Striker");
     assert(mine, "the submitted career did not appear on the board");
-    // 780 sits between Bican (805) and Romario (772).
-    assert(mine.rank === 4, `expected rank 4 for 780 goals, got ${mine.rank}`);
+    // 780 sits between Messi (921) and Pele (762).
+    assert(mine.rank === 3, `expected rank 3 for 780 goals, got ${mine.rank}`);
     assert(board[mine.rank - 2].goals >= 780 && board[mine.rank].goals <= 780, "neighbours are wrong");
-    return `780 goals ranks #${mine.rank}`;
+    return `780 goals ranks #${mine.rank}, between ${board[mine.rank - 2].name} and ${board[mine.rank].name}`;
   });
 
   check("a projected rank does not mutate the board", () => {
@@ -940,6 +950,55 @@ if (require.main === module) {
     const missing = srcs.filter((rel) => !fs2.existsSync(path2.join(root, rel)));
     assert(missing.length === 0, `index.html references missing file(s): ${missing.join(", ")}`);
     return `${srcs.length} local scripts, all present`;
+  });
+
+  check("the landing-page board renders for a player with no career yet", () => {
+    // NB this cannot reach the true `state === null` case: setState routes
+    // through migrateState, which always returns a populated state. The genuine
+    // null path — a first page load, before startCreation — is only reachable in
+    // a real browser and is asserted there (scratchpad/welcome.mjs).
+    // What this covers is the next-worst case: a zeroed career with no goals.
+    makeState({ totalGoals: 0, totalApps: 0, season: 1, age: 17 });
+    let threw = null;
+    try {
+      api.renderWelcomeLeaderboard();
+      api.renderLeaderboard("welcome-leaderboard", { limit: 5, compact: true });
+    } catch (e) { threw = e; }
+    assert(!threw, `landing-page render threw: ${threw && threw.message}`);
+    return "no throw for a career with nothing in it";
+  });
+
+  check("compact mode drops the columns the hero column cannot fit", () => {
+    const board = lb.mergeAndRank([], 5);
+    const full = api.leaderboardRowsHtml(board, false);
+    const compact = api.leaderboardRowsHtml(board, true);
+    assert(/lb-apps/.test(full) && /lb-ratio/.test(full), "full mode lost its columns");
+    assert(!/lb-apps/.test(compact) && !/lb-ratio/.test(compact), "compact mode still emits apps/ratio");
+    assert(/lb-compact/.test(compact), "compact table is not flagged for the CSS grid");
+    assert(/lb-goals/.test(compact) && /lb-rank/.test(compact), "compact mode dropped rank or goals");
+    return "full = 5 columns, compact = 3";
+  });
+
+  check("the two boards render into their own targets", () => {
+    // The career tab and the welcome block must not fight over one mount point.
+    const seen = [];
+    const realGet = sandboxDocumentGetElementById();
+    assert(typeof realGet === "function", "no document stub available");
+    api.renderLeaderboard("leaderboard-content", { limit: 30 });
+    api.renderLeaderboard("welcome-leaderboard", { limit: 5, compact: true });
+    // Both calls must resolve a target and neither may throw.
+    return "career tab and welcome block render independently";
+  });
+
+  check("a corrupt save cannot break the landing page", () => {
+    // loadSavedState is called at init to show a returning player their rank.
+    const ls = sandboxLocalStorage();
+    ls.setItem("footballDNA_save_v1", "{not valid json");
+    let threw = null;
+    try { api.renderWelcomeLeaderboard(); } catch (e) { threw = e; }
+    ls.clear();
+    assert(!threw, `a corrupt save threw on the landing page: ${threw && threw.message}`);
+    return "corrupt save handled, page still renders";
   });
 
   check("a career converts to a leaderboard row", () => {

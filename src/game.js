@@ -5409,33 +5409,39 @@
     };
   }
 
-  function leaderboardRowsHtml(entries, youGoals) {
-    let youShown = false;
+  /* `compact` drops the apps and goals-per-app columns. The landing page hero is
+   * a narrow column and those two numbers are not what sells the game there. */
+  function leaderboardRowsHtml(entries, compact) {
     const rows = entries.map((e) => {
-      // Mark the row the player's own career would displace, once.
-      const isYou = !youShown && !e.seed && e.you;
-      if (isYou) youShown = true;
       const medal = e.rank === 1 ? " gold" : e.rank === 2 ? " silver" : e.rank === 3 ? " bronze" : "";
       const tag = e.seed
         ? `<span class="lb-tag" title="Real-world benchmark">real</span>`
         : e.you ? `<span class="lb-tag you">you</span>` : "";
       const ratio = e.apps > 0 ? (e.goals / e.apps).toFixed(2) : "—";
+      const mid = compact ? "" : `<span class="lb-apps">${e.apps || "—"}</span><span class="lb-ratio">${ratio}</span>`;
       return `<div class="lb-row${e.you ? " mine" : ""}">
         <span class="lb-rank${medal}">${e.rank}</span>
         <span class="lb-name">${esc(e.name)}${tag}</span>
-        <span class="lb-apps">${e.apps || "—"}</span>
-        <span class="lb-ratio">${ratio}</span>
+        ${mid}
         <span class="lb-goals">${e.goals}</span>
       </div>`;
     }).join("");
-    return `<div class="lb-table">
-      <div class="lb-row head"><span>#</span><span>Player</span><span>Apps</span><span>G/App</span><span>Goals</span></div>
-      ${rows}
-    </div>`;
+    const head = compact
+      ? `<div class="lb-row head"><span>#</span><span>Player</span><span>Goals</span></div>`
+      : `<div class="lb-row head"><span>#</span><span>Player</span><span>Apps</span><span>G/App</span><span>Goals</span></div>`;
+    return `<div class="lb-table${compact ? " lb-compact" : ""}">${head}${rows}</div>`;
   }
 
-  function renderLeaderboardInto(el, payload, you) {
+  const LEADERBOARD_DEFAULTS = {
+    limit: 30, compact: false,
+    title: "🏆 Career Goals Leaderboard",
+    sub: "Real-world benchmarks, plus careers submitted by other players.",
+    foot: "Submit your own career from the end-of-career screen.",
+  };
+
+  function renderLeaderboardInto(el, payload, you, opts) {
     if (!el) return;
+    const o = Object.assign({}, LEADERBOARD_DEFAULTS, opts || {});
     const board = payload.entries.slice();
     // Splice the player's own career in so they can see their standing.
     if (you && you.goals > 0) {
@@ -5449,25 +5455,59 @@
       : `<span class="lb-offline" title="${esc(payload.error || "offline")}">offline — showing benchmarks only${payload.reason === "config-missing" ? " (no database config)" : ""}</span>`;
     el.innerHTML = `
       <div class="lb-head">
-        <div class="lb-title">🏆 Career Goals Leaderboard</div>
-        <div class="lb-sub">Real-world benchmarks, plus careers submitted by other players. ${status}</div>
+        <div class="lb-title">${o.title}</div>
+        <div class="lb-sub">${o.sub} ${status}</div>
       </div>
-      ${leaderboardRowsHtml(board.slice(0, 30))}
-      <div class="lb-foot">Submit your own career from the end-of-career screen.</div>`;
+      ${leaderboardRowsHtml(board.slice(0, o.limit), o.compact)}
+      ${o.foot ? `<div class="lb-foot">${o.foot}</div>` : ""}`;
   }
 
-  function renderLeaderboard() {
-    const el = document.getElementById("leaderboard-content");
+  /* Shared by the career tab and the landing page. `you` is optional: on the
+   * welcome screen there is no career yet, and `state` is null until
+   * startCreation or resumeGame runs. */
+  function renderLeaderboard(targetId, opts, youOverride) {
+    const el = document.getElementById(targetId || "leaderboard-content");
     if (!el) return;
+    const o = Object.assign({}, LEADERBOARD_DEFAULTS, opts || {});
     const lb = getLeaderboard();
-    const you = state && state.player ? currentCareerRow() : null;
     if (!lb) {
       el.innerHTML = `<div class="cs-empty">Leaderboard unavailable.</div>`;
       return;
     }
+    const you = youOverride !== undefined ? youOverride
+      : (state && state.player ? currentCareerRow() : null);
     // Render from the seed at once, then upgrade in place when the read lands.
-    renderLeaderboardInto(el, { entries: lb.mergeAndRank([], 30), live: false, error: "loading" }, you);
-    lb.fetchTop(30).then((payload) => renderLeaderboardInto(el, payload, you));
+    // Painting immediately is what keeps the landing page free of layout shift.
+    renderLeaderboardInto(el, { entries: lb.mergeAndRank([], o.limit), live: false, error: "loading" }, you, o);
+    lb.fetchTop(Math.max(o.limit, 30)).then((payload) => renderLeaderboardInto(el, payload, you, o));
+  }
+
+  /* The landing-page board. This runs on EVERY page load, before any career
+   * exists, so it must not assume `state` — an error here would take down the
+   * welcome screen and the START button with it. */
+  function renderWelcomeLeaderboard() {
+    if (!document.getElementById("welcome-leaderboard")) return;
+    let you = null;
+    try {
+      // Read a career in progress without loading it, so a returning player can
+      // see where they currently stand.
+      if (hasSave()) {
+        const saved = loadSavedState();
+        if (saved && saved.totalGoals > 0) {
+          you = {
+            name: (saved.player && saved.player.name) || "Your career",
+            goals: saved.totalGoals || 0,
+            apps: saved.totalApps || 0,
+            seasons: Math.max(1, saved.season || 1),
+          };
+        }
+      }
+    } catch (e) {
+      you = null; // A corrupt save must not break the landing page.
+    }
+    const shared = { compact: true, sub: "Real-world benchmarks, plus careers players have submitted." };
+    renderLeaderboard("welcome-leaderboard", Object.assign({ limit: 5, foot: "" }, shared), you);
+    renderLeaderboard("welcome-leaderboard-full", Object.assign({ limit: 25, foot: "" }, shared), you);
   }
 
 
@@ -5545,7 +5585,7 @@
     if (tab === "stats") renderCareerStats();
     if (tab === "history") renderCareerLog();
     if (tab === "squad") renderSquadInfo();
-    if (tab === "leaderboard") renderLeaderboard();
+    if (tab === "leaderboard") renderLeaderboard("leaderboard-content");
   }
 
   // ── Log Preview (Season tab) ───────────────────────────────────────────────
@@ -7718,6 +7758,7 @@
     if (dailyBtn) {
       dailyBtn.addEventListener("click", startDailyChallenge);
     }
+    renderWelcomeLeaderboard();
     if (hasSave()) {
       document.getElementById("continue-box").style.display = "block";
       document.getElementById("btn-continue").addEventListener("click", resumeGame);
@@ -7798,6 +7839,7 @@
     renderCareerStats, renderSeasonResult, renderContractOffer, renderCareerHeader, presentTransfer,
     renderSquadInfo, renderCareerSummary, generateCareerSummary, cardTagline, plural, bodyLoadLabel,
     renderLeaderboard, renderLeaderboardSubmit, currentCareerRow, getLeaderboard,
+    renderWelcomeLeaderboard, leaderboardRowsHtml, init,
     deriveInternationalTrait, intlArchetype, normalizeIntlTrait, getNationReputationTier,
     INTERNATIONAL_TOURNAMENTS, INTL_ARCHETYPES,
     getPillar, checkCareerMilestone, pickSeasonDecision, applyEffects, applyEffectsRaw,

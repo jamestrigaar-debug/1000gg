@@ -49,22 +49,45 @@
     appId: "1:909173853183:web:6d202418c97b87a42ff5ca",
   };
 
-  /* Real-world benchmarks the board starts from. Competitive senior totals,
-   * which is the basis the rest of the game already uses (see RECORDS in
-   * game.js — Ronaldo 900 career goals, 1226 appearances). Appearance figures
-   * are the widely-cited approximations; they are labelled in the UI as
-   * benchmarks rather than presented as simulated careers. */
+  /* Real-world benchmarks the board starts from: the recognised list of top
+   * goalscorers of all time, ranks 1-18. Totals are career competitive goals
+   * across league, cup, continental and international football — the same
+   * basis as the game's own totalGoals, so the comparison is like for like.
+   *
+   * No appearance figures. The source for these totals records goals only, and
+   * the earlier numbers here were approximations of my own that fed a
+   * goals-per-game column and made invented data look authoritative. Rows with
+   * no apps render as "—" in both columns, which is the honest answer.
+   *
+   * Ranks 1-27, the full published top 27. Everyone above 500 career goals. */
   const SEED_ENTRIES = [
-    { name: "Cristiano Ronaldo", goals: 900, apps: 1226, seed: true },
-    { name: "Lionel Messi", goals: 860, apps: 1100, seed: true },
-    { name: "Josef Bican", goals: 805, apps: 530, seed: true },
-    { name: "Romário", goals: 772, apps: 1002, seed: true },
-    { name: "Pelé", goals: 762, apps: 812, seed: true },
-    { name: "Gerd Müller", goals: 735, apps: 793, seed: true },
-    { name: "Ferenc Puskás", goals: 725, apps: 754, seed: true },
-    { name: "Robert Lewandowski", goals: 700, apps: 1000, seed: true },
-    { name: "Jimmy Jones", goals: 647, apps: 700, seed: true },
-    { name: "Eusébio", goals: 622, apps: 715, seed: true },
+    { name: "Cristiano Ronaldo", goals: 976, seed: true },
+    { name: "Lionel Messi", goals: 921, seed: true },
+    { name: "Pelé", goals: 762, seed: true },
+    { name: "Romário", goals: 756, seed: true },
+    { name: "Ferenc Puskás", goals: 725, seed: true },
+    { name: "Josef Bican", goals: 722, seed: true },
+    { name: "Robert Lewandowski", goals: 699, seed: true },
+    { name: "Jimmy Jones", goals: 639, seed: true },
+    { name: "Gerd Müller", goals: 634, seed: true },
+    { name: "Joe Bambrick", goals: 626, seed: true },
+    { name: "Abe Lenstra", goals: 624, seed: true },
+    { name: "Luis Suárez", goals: 610, seed: true },
+    { name: "Eusébio", goals: 578, seed: true },
+    { name: "Glenn Ferguson", goals: 563, seed: true },
+    { name: "Zlatan Ibrahimović", goals: 561, seed: true },
+    { name: "Imre Schlosser", goals: 553, seed: true },
+    { name: "Fernando Peyroteo", goals: 553, seed: true },
+    { name: "Uwe Seeler", goals: 552, seed: true },
+    { name: "Jimmy McGrory", goals: 550, seed: true },
+    { name: "Alfredo Di Stéfano", goals: 537, seed: true },
+    { name: "György Sárosi", goals: 530, seed: true },
+    { name: "Karim Benzema", goals: 523, seed: true },
+    { name: "Roberto Dinamite", goals: 513, seed: true },
+    { name: "Harry Kane", goals: 511, seed: true },
+    { name: "Hugo Sánchez", goals: 506, seed: true },
+    { name: "Franz Binder", goals: 503, seed: true },
+    { name: "Zico", goals: 501, seed: true },
   ];
 
   // Bounds mirrored by the database rules. A career cannot exceed these, so an
