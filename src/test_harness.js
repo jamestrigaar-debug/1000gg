@@ -37,10 +37,16 @@ function makeElement() {
 }
 function makeCanvasContext() {
   const noop = () => {};
+  // Gradient factories must return an object, not undefined — canvas drawing
+  // code chains .addColorStop() straight off the call.
+  const gradient = () => ({ addColorStop() {} });
   return new Proxy({}, {
     get(_t, k) {
       if (k === "canvas") return makeElement();
-      if (k === "measureText") return () => ({ width: 0 });
+      if (k === "measureText") return (s) => ({ width: String(s || "").length * 7 });
+      if (k === "createLinearGradient" || k === "createRadialGradient" || k === "createConicGradient") return gradient;
+      if (k === "createPattern") return () => ({});
+      if (k === "getImageData") return () => ({ data: [] });
       return noop;
     },
     set() { return true; },
@@ -76,6 +82,7 @@ const sandbox = {
   navigator: { userAgent: "node", clipboard: { writeText: async () => {} } },
   location: { href: "http://localhost/", search: "", hash: "" },
   history: { pushState() {}, replaceState() {} },
+  scrollTo() {}, scrollBy() {}, alert() {}, matchMedia: () => ({ matches: false, addListener() {}, removeListener() {} }),
 };
 sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
@@ -84,7 +91,7 @@ sandbox.self = sandbox;
 /* ------------------------------ LOAD GAME -------------------------------- */
 const here = __dirname;
 const ctx = vm.createContext(sandbox);
-for (const f of ["data.js", "career_event_data.js", "career_share.js", "game.js"]) {
+for (const f of ["data.js", "career_event_data.js", "career_share.js", "leaderboard.js", "game.js"]) {
   const src = fs.readFileSync(path.join(here, f), "utf8");
   vm.runInContext(src, ctx, { filename: f });
 }
@@ -124,21 +131,31 @@ function makeState(over = {}) {
   return live;
 }
 
-/* -------------------------------- RUNNER ---------------------------------- */
+/* -------------------------------- RUNNER ----------------------------------
+ * Checks are queued rather than run inline so a check can return a promise and
+ * still be awaited. Running them inline meant an async check resolved to
+ * "[object Promise]" and passed vacuously — its assertions never gated the
+ * result, so a broken async path would have reported green. */
 let passed = 0;
 const failures = [];
-function check(name, fn) {
-  try {
-    const detail = fn();
-    passed++;
-    console.log(`  ✓ ${name}${detail ? ` — ${detail}` : ""}`);
-  } catch (e) {
-    failures.push(name);
-    console.log(`  ✗ ${name}\n      ${e.message}`);
+const queue = [];
+function check(name, fn) { queue.push({ kind: "check", name, fn }); }
+function group(title) { queue.push({ kind: "group", title }); }
+function assert(cond, msg) { if (!cond) throw new Error(msg); }
+
+async function runQueued() {
+  for (const item of queue) {
+    if (item.kind === "group") { console.log(`\n${item.title}`); continue; }
+    try {
+      const detail = await item.fn();
+      passed++;
+      console.log(`  ✓ ${item.name}${detail ? ` — ${detail}` : ""}`);
+    } catch (e) {
+      failures.push(item.name);
+      console.log(`  ✗ ${item.name}\n      ${e.message}`);
+    }
   }
 }
-function assert(cond, msg) { if (!cond) throw new Error(msg); }
-function group(title) { console.log(`\n${title}`); }
 
 /** Mean league apps across `n` simulated seasons for a given state template. */
 function sampleSeason(over, n = 60) {
@@ -154,7 +171,8 @@ function sampleSeason(over, n = 60) {
   return { apps: m("apps"), goals: m("goals"), gamesMissed: m("gamesMissed"), wear: m("wear") };
 }
 
-module.exports = { api, makeState, sampleSeason, check, assert, group, makeElement };
+const lb = sandbox.window.__LEADERBOARD_PURE__;
+module.exports = { api, lb, makeState, sampleSeason, check, assert, group, makeElement };
 
 /* ------------------------------ ASSERTIONS -------------------------------- */
 if (require.main === module) {
@@ -636,6 +654,306 @@ if (require.main === module) {
     return `${st.totalGoals} goals, ${st.totalApps} apps, ${st.intlCaps} caps over 14 seasons`;
   });
 
-  console.log(`\n${passed} passed, ${failures.length} failed`);
-  if (failures.length) { failures.forEach((f) => console.log(`  FAILED: ${f}`)); process.exit(1); }
+  group("Ballon d'Or scarcity");
+
+  // Play `seasons` seasons and count Ballon d'Ors, tracking whether any was won
+  // without a major trophy that year.
+  const ballonRun = (over, careers = 20, seasons = 14) => {
+    let total = 0, noTrophy = 0; const dist = [];
+    for (let r = 0; r < careers; r++) {
+      makeState(Object.assign({ era: "all", age: 24, season: 7, role: "Star", contractRole: "Star", intlDebut: true, intlTrait: "icon" }, over, { seed: `bdt-${JSON.stringify(over)}-${r}` }));
+      const st = api.getState();
+      for (let s = 0; s < seasons; s++) {
+        const sd = api.simulateSeason();
+        const intl = api.simulateInternational();
+        if (api.resolveBallonDor(sd, intl)) {
+          const major = (sd.honours || []).includes("League Title") || (sd.euroCampaign && sd.euroCampaign.won) || (intl && intl.wonTrophy);
+          if (!major) noTrophy++;
+        }
+        st.season++; st.age++;
+      }
+      total += st.honours.ballonDors; dist.push(st.honours.ballonDors);
+    }
+    dist.sort((a, b) => b - a);
+    return { mean: total / careers, max: dist[0], dist, noTrophy };
+  };
+
+  check("an all-time great career lands near the Messi/Ronaldo benchmark", () => {
+    const r = ballonRun({ club: "Manchester City", baseRating: 92, reputation: 88 });
+    assert(r.mean >= 1.5 && r.mean <= 6, `mean ${r.mean.toFixed(1)} outside 1.5-6`);
+    assert(r.max >= 4, `best career only managed ${r.max} — the benchmark is Messi 8, Ronaldo 5`);
+    assert(r.max <= 12, `best career won ${r.max} — beyond any real benchmark`);
+    return `mean ${r.mean.toFixed(1)}, best ${r.max} (Messi 8, Ronaldo 5)`;
+  });
+
+  check("an excellent but not historic career wins at most one", () => {
+    const r = ballonRun({ club: "Arsenal", baseRating: 84, reputation: 76 });
+    assert(r.mean < 1, `mean ${r.mean.toFixed(1)} — still too easy for a merely excellent career`);
+    assert(r.max <= 2, `best such career won ${r.max}`);
+    return `mean ${r.mean.toFixed(1)}, best ${r.max}`;
+  });
+
+  check("a very good career never wins one", () => {
+    const r = ballonRun({ club: "Newcastle United", baseRating: 80, reputation: 68 });
+    assert(r.max === 0, `a very good striker won ${r.max}`);
+    return "0 across 20 careers";
+  });
+
+  check("it is never won without a league, European or international trophy", () => {
+    // 92% of wins by a very good player used to come with no league title.
+    let noTrophy = 0;
+    for (const over of [{ club: "Manchester City", baseRating: 92, reputation: 88 }, { club: "Arsenal", baseRating: 86, reputation: 80 }]) {
+      noTrophy += ballonRun(over, 12, 12).noTrophy;
+    }
+    assert(noTrophy === 0, `${noTrophy} Ballon d'Ors were won with no major trophy`);
+    return "0 trophyless wins across 24 careers";
+  });
+
+  check("the award is losable — a qualifying season can be beaten by the field", () => {
+    // The old threshold check could not be lost. Run the same strong season
+    // repeatedly and confirm the outcome varies.
+    let wins = 0; const N = 60;
+    for (let r = 0; r < N; r++) {
+      makeState({ club: "Manchester City", baseRating: 92, reputation: 90, role: "Star", contractRole: "Star", intlDebut: true, age: 27, season: 10, seed: `losable-${r}` });
+      const sd = api.simulateSeason();
+      const intl = api.simulateInternational();
+      if (api.resolveBallonDor(sd, intl)) wins++;
+    }
+    assert(wins > 0, "an elite season never won it — the gate is too tight");
+    assert(wins < N, "an elite season always won it — the field never beats the player");
+    return `${wins}/${N} elite seasons won it`;
+  });
+
+  group("The prime career card");
+
+  check("the peak snapshot lands in the prime window, not the first season", () => {
+    const ages = [];
+    for (let r = 0; r < 10; r++) {
+      makeState({ club: "Arsenal", age: 18, season: 2, baseRating: 74, reputation: 55, role: "Starter", contractRole: "Starter", seed: `pk-${r}` });
+      const st = api.getState();
+      for (let i = 0; i < 24 && st.age < 41; i++) { const sd = api.simulateSeason(); api.applySeasonalAttributeChanges(sd); st.season++; st.age++; }
+      assert(st.peak, "no peak was captured");
+      assert(st.peak.age >= 23 && st.peak.age <= 32, `peak captured at age ${st.peak.age}, outside the prime window`);
+      ages.push(st.peak.age);
+    }
+    return `peak ages ${[...new Set(ages)].sort((a, b) => a - b).join("/")}`;
+  });
+
+  check("the card shows the player at their prime, not at retirement", () => {
+    makeState({ club: "Arsenal", age: 18, season: 2, baseRating: 78, reputation: 60, role: "Star", contractRole: "Star", seed: "card-prime" });
+    const st = api.getState();
+    for (let i = 0; i < 24 && st.age < 41; i++) { const sd = api.simulateSeason(); api.applySeasonalAttributeChanges(sd); st.season++; st.age++; }
+    const peak = api.peakSnapshot();
+    assert(peak.rating > st.baseRating, `peak ${peak.rating} not better than retirement ${st.baseRating}`);
+    assert(peak.attrs.speed > st.attrs.speed, `peak pace ${peak.attrs.speed} not better than retirement ${st.attrs.speed}`);
+    return `prime ${peak.rating} ovr / ${peak.attrs.speed} pace at ${peak.age} vs ${st.baseRating} / ${st.attrs.speed} at ${st.age}`;
+  });
+
+  check("a save with no peak still produces a renderable snapshot", () => {
+    const s = api.deserializeState(JSON.stringify({ state: { club: "Arsenal", age: 34, baseRating: 81, attrs: { heading: 70, fitness: 70, strength: 70, height: 185, weight: 80, leftFoot: 70, rightFoot: 82, speed: 75 } } }));
+    assert(s.peak === null, "a legacy save was given a bogus peak");
+    api.setState(s);
+    const snap = api.peakSnapshot();
+    assert(snap && snap.attrs && snap.rating > 0, "peakSnapshot did not fall back for a legacy save");
+    assert(snap.inferred === true, "the fallback was not marked as inferred");
+    return `legacy save falls back to ${snap.rating} ovr`;
+  });
+
+  check("the career ends on one card, not eight sections", () => {
+    makeState({ club: "Arsenal", age: 30, season: 12, baseRating: 86, reputation: 80, role: "Star", contractRole: "Star", intlDebut: true, seed: "end" });
+    const st = api.getState();
+    for (let i = 0; i < 5; i++) { const sd = api.simulateSeason(); api.simulateInternational(); st.season++; st.age++; }
+    api.endCareer(false);
+    assert(st.retired === true, "endCareer did not retire the player");
+    // The deleted sections must no longer be reachable.
+    for (const fn of ["renderClubBreakdown", "renderCompetitionHistory", "renderEpilogue", "renderLegacyBiography", "renderLegacyDNA", "renderDNAAttributeReport", "renderHonours"]) {
+      assert(typeof api[fn] === "undefined", `${fn} still exists`);
+    }
+    return "endCareer runs; six detail sections and the honours grid are gone";
+  });
+
+  check("the career summary and card tagline read as English", () => {
+    const cases = [
+      { leagueTitles: 6, domesticCups: 3, europeanCups: 2, intlTrophies: 1, goldenBoots: 5, ballonDors: 3 },
+      { leagueTitles: 1, domesticCups: 0, europeanCups: 1, intlTrophies: 1, goldenBoots: 0, ballonDors: 1 },
+      { leagueTitles: 0, domesticCups: 0, europeanCups: 0, intlTrophies: 0, goldenBoots: 0, ballonDors: 0 },
+    ];
+    for (const h of cases) {
+      makeState({
+        club: "Arsenal", age: 39, season: 22, totalGoals: 861, totalApps: 1043, totalAssists: 244,
+        intlGoals: 92, intlCaps: 168, country: "England",
+        honours: Object.assign({ playerOfSeason: 0, youngPlayer: 0, tots: 0 }, h),
+        clubsPlayed: ["Southampton", "Arsenal"],
+        clubStats: { Arsenal: { apps: 883, goals: 790, assists: 214, seasons: 18, titles: 6 } },
+      });
+      const text = `${api.generateCareerSummary().body} ${api.cardTagline()}`;
+      // "trophy" + "ies" printed "trophyies"; "trophy" + "y" printed "trophyy".
+      assert(!/trophyies|trophyy|cupss|titless/.test(text), `malformed plural in: ${text.match(/\w*troph\w*/g)}`);
+      // "a England national hero" / "a England mainstay".
+      assert(!/\ba England\b|\ba Argentina\b|\ba Italy\b/.test(text), `wrong article in: ${text}`);
+      // A trophyless career must not be described as a list of zeros.
+      assert(!/\b0 (league|domestic|European|Golden|Ballon|international)/.test(text), `zero-honour listing in: ${text}`);
+    }
+    return "plurals, articles and empty honour lists all read correctly";
+  });
+
+  check("the card tagline fits the space it is given", () => {
+    // The bio closing paragraph overran three lines and rendered cut off
+    // mid-sentence ("...3 Ballon"). The card line has to stay short.
+    makeState({ club: "Arsenal", age: 39, season: 22, totalGoals: 861, country: "England", intlCaps: 168,
+      honours: { leagueTitles: 6, domesticCups: 3, europeanCups: 2, intlTrophies: 1, goldenBoots: 5, ballonDors: 3, playerOfSeason: 0, youngPlayer: 0, tots: 0 },
+      clubsPlayed: ["Southampton", "Arsenal"] });
+    const line = api.cardTagline();
+    assert(line.length <= 130, `tagline is ${line.length} chars — too long for the card`);
+    assert(/[.!?]$/.test(line), `tagline does not end in a full stop: "${line}"`);
+    return `${line.length} chars`;
+  });
+
+  group("Leaderboard");
+
+  check("the board is seeded with real-world benchmarks and ranks by goals", () => {
+    const board = lb.mergeAndRank([], 10);
+    assert(board.length === 10, `expected 10 seed rows, got ${board.length}`);
+    assert(board[0].name === "Cristiano Ronaldo", `top seed is ${board[0].name}`);
+    for (let i = 1; i < board.length; i++) {
+      assert(board[i - 1].goals >= board[i].goals, `board is not sorted at rank ${i + 1}`);
+      assert(board[i].rank === i + 1, `rank ${board[i].rank} at index ${i}`);
+    }
+    return `${board.length} benchmarks, ${board[0].goals} down to ${board[board.length - 1].goals}`;
+  });
+
+  check("submitted careers merge into the seed and rank against it", () => {
+    const board = lb.mergeAndRank([{ name: "Test Striker", goals: 780, apps: 900, seasons: 20 }]);
+    const mine = board.find((e) => e.name === "Test Striker");
+    assert(mine, "the submitted career did not appear on the board");
+    // 780 sits between Bican (805) and Romario (772).
+    assert(mine.rank === 4, `expected rank 4 for 780 goals, got ${mine.rank}`);
+    assert(board[mine.rank - 2].goals >= 780 && board[mine.rank].goals <= 780, "neighbours are wrong");
+    return `780 goals ranks #${mine.rank}`;
+  });
+
+  check("a projected rank does not mutate the board", () => {
+    const before = lb.mergeAndRank([]).length;
+    const rank = lb.projectedRank(1000, []);
+    assert(rank === 1, `1000 goals should rank first, got ${rank}`);
+    assert(lb.projectedRank(0, []) === before + 1, "a zero-goal career should rank last");
+    assert(lb.mergeAndRank([]).length === before, "projectedRank mutated the seed board");
+    return `1000 goals → #1; board still ${before} rows`;
+  });
+
+  check("submissions outside what a career can produce are rejected", () => {
+    const bad = [
+      [{ name: "x", goals: 99999, apps: 10, seasons: 5 }, "absurd goal total"],
+      [{ name: "x", goals: -5, apps: 10, seasons: 5 }, "negative goals"],
+      [{ name: "", goals: 100, apps: 10, seasons: 5 }, "empty name"],
+      [{ name: "x", goals: 100, apps: 10, seasons: 99 }, "impossible season count"],
+      [{ name: "x", goals: "many", apps: 10, seasons: 5 }, "non-numeric goals"],
+      [null, "null entry"],
+    ];
+    for (const [entry, why] of bad) {
+      assert(lb.normalizeEntry(entry) === null, `accepted an entry with ${why}`);
+    }
+    const good = lb.normalizeEntry({ name: "  Real Player  ", goals: "412", apps: 700, seasons: 18 });
+    assert(good && good.goals === 412 && good.name === "Real Player", "a valid entry was rejected or mangled");
+    return `${bad.length} invalid shapes rejected, valid entry coerced`;
+  });
+
+  check("hostile display names are defanged", () => {
+    const nasty = lb.cleanName('<img src=x onerror=alert(1)>');
+    assert(!/[\u0000-\u001F]/.test(nasty), "control characters survived");
+    assert(nasty.length <= lb.LIMITS.nameMax, `name length ${nasty.length} exceeds the cap`);
+    const long = lb.cleanName("A".repeat(200));
+    assert(long.length === lb.LIMITS.nameMax, `long name was not capped, got ${long.length}`);
+    // The string is still raw HTML — escaping is the renderer's job, and the
+    // game escapes it with esc(). This only checks length and control chars.
+    return `capped at ${lb.LIMITS.nameMax}, control chars stripped`;
+  });
+
+  check("the database rules are append-only and bounded", () => {
+    const rules = lb.LEADERBOARD_RULES.rules.players;
+    assert(rules[".read"] === true, "the board is not publicly readable");
+    assert(rules[".write"] === undefined, "the players node itself is writable — one call could wipe the board");
+    const entry = rules.$entry;
+    assert(/!data\.exists\(\)/.test(entry[".write"]), "entries can be overwritten");
+    assert(/newData\.exists\(\)/.test(entry[".write"]), "entries can be deleted");
+    assert(/goals.*<= 2000/s.test(entry[".validate"]), "goal totals are unbounded");
+    assert(rules[".indexOn"] && rules[".indexOn"].includes("goals"), "no index on goals — queries would scan");
+    return "create-only, value-bounded, indexed on goals";
+  });
+
+  check("the game degrades cleanly when the leaderboard is unreachable", () => {
+    // No Firebase SDK in the harness, which is the offline case exactly.
+    const client = api.getLeaderboard();
+    assert(client, "no leaderboard client was created");
+    assert(client.available() === false, "claimed availability with no SDK loaded");
+    return `offline path reports: ${client.initError()}`;
+  });
+
+  check("an offline read still returns a full board", () => {
+    const client = api.getLeaderboard();
+    return client.fetchTop(10).then((payload) => {
+      assert(payload.entries.length === 10, `got ${payload.entries.length} rows offline`);
+      assert(payload.live === false, "claimed a live read with no database");
+      return `${payload.entries.length} benchmark rows, live=false`;
+    });
+  });
+
+  check("an offline submission fails cleanly instead of throwing", () => {
+    const client = api.getLeaderboard();
+    return client.submit({ name: "Test", goals: 400, apps: 700, seasons: 18 }).then((res) => {
+      assert(res.ok === false, "claimed a successful submission with no database");
+      assert(typeof res.error === "string" && res.error.length, "no error message for the user");
+      return `reports: ${res.error}`;
+    });
+  });
+
+  check("the offline reason names its actual cause", () => {
+    // This is the regression that shipped: a missing config file 404'd and the
+    // board reported "Firebase SDK unavailable", sending us after a network
+    // fault that did not exist. Each cause must now identify itself.
+    const client = api.getLeaderboard();
+    const d = client.diagnostics();
+    assert(d.reason === "sdk-missing", `expected sdk-missing in the harness, got ${d.reason}`);
+    assert(/SDK did not load/i.test(d.error), `error does not name the SDK: ${d.error}`);
+    assert(d.configPresent === true, "config should be present — it is built into leaderboard.js");
+    assert(typeof d.fix === "string" && d.fix.length, "no remediation hint offered");
+    return `reason="${d.reason}", config from ${d.configSource}`;
+  });
+
+  check("the config survives without a separate file", () => {
+    // src/firebase-config.js is gone precisely because its hyphenated filename
+    // did not survive the upload path and silently 404'd in production.
+    const client = api.getLeaderboard();
+    assert(client.config && client.config.databaseURL, "no databaseURL available");
+    assert(/goals-leaderboard/.test(client.config.databaseURL), `unexpected databaseURL: ${client.config.databaseURL}`);
+    const fs2 = require("fs");
+    assert(!fs2.existsSync(__dirname + "/firebase-config.js"), "src/firebase-config.js still exists");
+    return client.config.databaseURL;
+  });
+
+  check("every script index.html requests actually exists", () => {
+    // The whole outage was a filename mismatch between markup and disk.
+    const fs2 = require("fs"), path2 = require("path");
+    const root = path2.join(__dirname, "..");
+    const html = fs2.readFileSync(path2.join(root, "index.html"), "utf8");
+    const srcs = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1]).filter((u) => !/^https?:/.test(u));
+    const missing = srcs.filter((rel) => !fs2.existsSync(path2.join(root, rel)));
+    assert(missing.length === 0, `index.html references missing file(s): ${missing.join(", ")}`);
+    return `${srcs.length} local scripts, all present`;
+  });
+
+  check("a career converts to a leaderboard row", () => {
+    makeState({ club: "Arsenal", age: 34, season: 18, totalGoals: 512, totalApps: 830, totalAssists: 150,
+      honours: { leagueTitles: 3, domesticCups: 1, europeanCups: 1, intlTrophies: 1, ballonDors: 2,
+                 goldenBoots: 3, playerOfSeason: 0, youngPlayer: 0, tots: 0 } });
+    const row = api.currentCareerRow();
+    assert(lb.normalizeEntry(row), "a real career failed its own validation");
+    assert(row.goals === 512 && row.trophies === 6, `row was ${row.goals} goals / ${row.trophies} trophies`);
+    return `${row.goals} goals, ${row.apps} apps, ${row.trophies} trophies`;
+  });
+
+  runQueued().then(() => {
+    console.log(`\n${passed} passed, ${failures.length} failed`);
+    if (failures.length) { failures.forEach((f) => console.log(`  FAILED: ${f}`)); process.exit(1); }
+  });
 }

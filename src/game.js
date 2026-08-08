@@ -5446,7 +5446,7 @@
     }
     const status = payload.live
       ? `<span class="lb-live">● live</span>`
-      : `<span class="lb-offline" title="${esc(payload.error || "offline")}">offline — showing benchmarks only</span>`;
+      : `<span class="lb-offline" title="${esc(payload.error || "offline")}">offline — showing benchmarks only${payload.reason === "config-missing" ? " (no database config)" : ""}</span>`;
     el.innerHTML = `
       <div class="lb-head">
         <div class="lb-title">🏆 Career Goals Leaderboard</div>
@@ -7225,7 +7225,9 @@
       return;
     }
     if (!lb || !lb.available()) {
-      note.textContent = "Leaderboard unavailable — you are offline or the service is unreachable.";
+      // Name the actual cause. A generic "unreachable" once sent us hunting for a
+      // network fault when the SDK was fine and a config file had 404'd.
+      note.textContent = `Leaderboard unavailable — ${lb ? lb.initError() : "module not loaded"}`;
       btn.disabled = true;
       input.disabled = true;
       return;

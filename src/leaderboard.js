@@ -27,6 +27,28 @@
 (function () {
   "use strict";
 
+  /* The Firebase config lives here rather than in its own file. These values
+   * are public identifiers, not secrets — every Firebase web app ships them in
+   * page source, and what protects the data is the database rules.
+   *
+   * It used to be src/firebase-config.js, which broke in production: the
+   * hyphen was stripped somewhere in the file's journey to the repo, so
+   * index.html requested src/firebase-config.js, the server had
+   * src/firebaseconfig.js, the request 404'd and the board silently ran in
+   * offline mode. One fewer file is one fewer thing that can arrive misnamed.
+   *
+   * window.FIREBASE_CONFIG still wins if set, so the values can be swapped
+   * without editing this module. */
+  const DEFAULT_FIREBASE_CONFIG = {
+    apiKey: "AIzaSyCeW3uHXfO2ncGy2hjJnIYuxEP_EIN1Fug",
+    authDomain: "goals-leaderboard.firebaseapp.com",
+    databaseURL: "https://goals-leaderboard-default-rtdb.firebaseio.com",
+    projectId: "goals-leaderboard",
+    storageBucket: "goals-leaderboard.firebasestorage.app",
+    messagingSenderId: "909173853183",
+    appId: "1:909173853183:web:6d202418c97b87a42ff5ca",
+  };
+
   /* Real-world benchmarks the board starts from. Competitive senior totals,
    * which is the basis the rest of the game already uses (see RECORDS in
    * game.js — Ronaldo 900 career goals, 1226 appearances). Appearance figures
@@ -151,26 +173,63 @@
     return rank;
   }
 
-  window.createLeaderboard = function (config) {
+  window.createLeaderboard = function (configOverride) {
     let db = null;
     let initError = null;
+    let initReason = null;
     let listener = null;
+    let lastRead = null;
+    const config = configOverride || window.FIREBASE_CONFIG || DEFAULT_FIREBASE_CONFIG;
 
-    // Firebase is optional. If the CDN is blocked, the user is offline, or the
-    // config is missing, the board degrades to the seed rather than breaking.
+    /* Firebase is optional; the board degrades to the seed rather than breaking.
+     * The failure REASON is recorded separately, because a single generic
+     * "unavailable" message once sent us hunting for a network problem when the
+     * SDK was fine and the config file had 404'd. Each cause now names itself. */
+    const sdkPresent = typeof firebase !== "undefined";
     try {
-      if (typeof firebase !== "undefined" && config && config.databaseURL) {
+      if (!sdkPresent) {
+        initReason = "sdk-missing";
+        initError = "Firebase SDK did not load (blocked, offline, or the <script> tag is missing).";
+      } else if (!config || !config.databaseURL) {
+        initReason = "config-missing";
+        initError = "No Firebase config — databaseURL is missing.";
+      } else {
         if (!firebase.apps || !firebase.apps.length) firebase.initializeApp(config);
         db = firebase.database();
-      } else {
-        initError = "Firebase SDK unavailable";
+        initReason = "ok";
       }
     } catch (e) {
-      initError = (e && e.message) || "Firebase init failed";
+      initReason = "init-threw";
+      initError = `Firebase failed to initialise: ${(e && e.message) || e}`;
       db = null;
     }
 
     const available = () => !!db;
+
+    /* One-line health check for the browser console:
+     *     window.LEADERBOARD.diagnostics()
+     * Reports every link in the chain so a connectivity question can be
+     * answered without digging through the Network tab. */
+    function diagnostics() {
+      const report = {
+        sdkLoaded: sdkPresent,
+        configPresent: !!(config && config.databaseURL),
+        configSource: configOverride ? "argument" : window.FIREBASE_CONFIG ? "window.FIREBASE_CONFIG" : "built-in default",
+        databaseURL: (config && config.databaseURL) || null,
+        initialised: !!db,
+        reason: initReason,
+        error: initError,
+        lastRead,
+      };
+      if (!db) {
+        report.fix = initReason === "sdk-missing"
+          ? "Check the firebase-app-compat.js and firebase-database-compat.js <script> tags load (Network tab)."
+          : initReason === "config-missing"
+            ? "databaseURL is not set — check DEFAULT_FIREBASE_CONFIG in src/leaderboard.js."
+            : "See error above.";
+      }
+      return report;
+    }
 
     // Reads are bounded so a hanging socket cannot leave the tab spinning.
     function withTimeout(promise, ms, fallback) {
@@ -186,7 +245,7 @@
      * unconditionally. `live` reports whether the database actually answered. */
     function fetchTop(limit) {
       const n = Math.max(1, Math.min(200, limit || 25));
-      if (!db) return Promise.resolve({ entries: mergeAndRank([], n), live: false, error: initError });
+      if (!db) return Promise.resolve({ entries: mergeAndRank([], n), live: false, error: initError, reason: initReason });
       const query = db.ref("players").orderByChild("goals").limitToLast(n);
       const read = query.once("value").then((snap) => {
         const rows = [];
@@ -199,7 +258,13 @@
             era: v.era, difficulty: v.difficulty, country: v.country, createdAt: v.createdAt,
           });
         });
+        lastRead = { at: new Date().toISOString(), live: true, rows: rows.length, error: null };
         return { entries: mergeAndRank(rows, n), live: true, error: null };
+      }).catch((e) => {
+        // Most likely a rules problem — surface it rather than blaming the network.
+        const msg = (e && (e.code || e.message)) || "read failed";
+        lastRead = { at: new Date().toISOString(), live: false, rows: 0, error: msg };
+        return { entries: mergeAndRank([], n), live: false, error: msg };
       });
       return withTimeout(read, 6000, { entries: mergeAndRank([], n), live: false, error: "timed out" });
     }
@@ -208,7 +273,7 @@
     function submit(raw) {
       const entry = normalizeEntry(raw);
       if (!entry) return Promise.resolve({ ok: false, error: "That career could not be validated." });
-      if (!db) return Promise.resolve({ ok: false, error: "No connection to the leaderboard." });
+      if (!db) return Promise.resolve({ ok: false, error: initError || "No connection to the leaderboard.", reason: initReason });
       entry.createdAt = firebase.database.ServerValue.TIMESTAMP;
       const write = db.ref("players").push(entry)
         .then((ref) => ({ ok: true, id: ref.key, error: null }))
@@ -227,10 +292,11 @@
     }
 
     return {
-      available, fetchTop, submit, subscribe,
+      available, fetchTop, submit, subscribe, diagnostics,
       normalizeEntry, mergeAndRank, projectedRank, cleanName,
-      SEED_ENTRIES, LIMITS, LEADERBOARD_RULES,
+      SEED_ENTRIES, LIMITS, LEADERBOARD_RULES, config,
       initError: () => initError,
+      initReason: () => initReason,
     };
   };
 
