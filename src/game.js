@@ -213,6 +213,10 @@
 
   /* --------------------------- CONFIG / LEVERS --------------------------- */
   // The 7 attributes drafted from Team+Era squads (chosen in any order).
+  /* The hard-coded all-time record tables and TOP_10_* lists that used to live
+   * here powered the old "All Time" tab. That tab is now a live leaderboard
+   * (src/leaderboard.js), whose seed carries the real-world benchmarks, so the
+   * duplicates are gone rather than left behind unused. */
   const POSITIONS = {
     "ST": { label: "Striker", goalMod: 1.18, assistMod: 0.82, wide: false, central: true, forward: true },
     "CF": { label: "Center Forward", goalMod: 1.08, assistMod: 0.92, wide: false, central: true, forward: true },
@@ -232,81 +236,6 @@
   const AGENT_BY_KEY = Object.fromEntries(AGENT_TIERS.map((a) => [a.key, a]));
 
   // All-time records for the career stats comparison tables.
-  const ALL_TIME_RECORDS = {
-    plGoals: { recordHolder: "Alan Shearer", total: 260 },
-    plAssists: { recordHolder: "Ryan Giggs", total: 162 },
-    plAppearances: { recordHolder: "James Milner", total: 658 },
-    plCleanSheets: { recordHolder: "Petr Čech", total: 202 },
-    plPenaltiesSaved: { recordHolder: "David James", total: 13 },
-    careerGoals: { recordHolder: "Cristiano Ronaldo", total: 900 },
-    careerAssists: { recordHolder: "Lionel Messi", total: 380 },
-    careerAppearances: { recordHolder: "Cristiano Ronaldo", total: 1226 },
-    ballonDors: { recordHolder: "Lionel Messi", total: 8 },
-    championsLeagueGoals: { recordHolder: "Cristiano Ronaldo", total: 140 },
-    championsLeagueAssists: { recordHolder: "Cristiano Ronaldo", total: 42 },
-    worldCupGoals: { recordHolder: "Miroslav Klose", total: 16 },
-    worldCupAssists: { recordHolder: "Lionel Messi", total: 9 },
-    worldCupAppearances: { recordHolder: "Lionel Messi", total: 26 },
-    intlCaps: { recordHolder: "Cristiano Ronaldo", total: 221 },
-    intlGoals: { recordHolder: "Cristiano Ronaldo", total: 143 },
-  };
-  const TOP_10_PL_GOALS = [
-    { name: "Alan Shearer", total: 260 },
-    { name: "Harry Kane", total: 213 },
-    { name: "Wayne Rooney", total: 208 },
-    { name: "Mohamed Salah", total: 193 },
-    { name: "Andy Cole", total: 187 },
-    { name: "Sergio Agüero", total: 184 },
-    { name: "Frank Lampard", total: 177 },
-    { name: "Thierry Henry", total: 175 },
-    { name: "Robbie Fowler", total: 163 },
-    { name: "Jermain Defoe", total: 162 },
-  ];
-  const TOP_10_PL_ASSISTS = [
-    { name: "Ryan Giggs", total: 162 },
-    { name: "Kevin De Bruyne", total: 121 },
-    { name: "Cesc Fàbregas", total: 111 },
-    { name: "Wayne Rooney", total: 103 },
-    { name: "Frank Lampard", total: 102 },
-    { name: "Mohamed Salah", total: 94 },
-    { name: "Dennis Bergkamp", total: 94 },
-    { name: "David Silva", total: 93 },
-    { name: "Steven Gerrard", total: 92 },
-    { name: "James Milner", total: 90 },
-  ];
-  const TOP_10_PL_APPEARANCES = [
-    { name: "James Milner", total: 658 },
-    { name: "Gareth Barry", total: 653 },
-    { name: "Ryan Giggs", total: 632 },
-    { name: "Frank Lampard", total: 609 },
-    { name: "David James", total: 572 },
-  ];
-  const TOP_10_ALL_TIME_GOALS = [
-    { name: "Cristiano Ronaldo", total: 900 },
-    { name: "Lionel Messi", total: 860 },
-    { name: "Josef Bican", total: 805 },
-    { name: "Romário", total: 770 },
-    { name: "Pelé", total: 760 },
-    { name: "Ferenc Puskás", total: 725 },
-    { name: "Gerd Müller", total: 735 },
-    { name: "Robert Lewandowski", total: 700 },
-    { name: "Jimmy Jones", total: 640 },
-    { name: "Eusébio", total: 620 },
-  ];
-  const TOP_10_INTL_CAPS = [
-    { name: "Cristiano Ronaldo", total: 221 },
-    { name: "Bader Al-Mutawa", total: 196 },
-    { name: "Soh Chin Ann", total: 195 },
-    { name: "Lionel Messi", total: 193 },
-    { name: "Ahmed Hassan", total: 184 },
-  ];
-  const TOP_10_INTL_GOALS = [
-    { name: "Cristiano Ronaldo", total: 143 },
-    { name: "Lionel Messi", total: 120 },
-    { name: "Ali Daei", total: 109 },
-    { name: "Sunil Chhetri", total: 95 },
-    { name: "Mokhtar Dahari", total: 89 },
-  ];
 
   const ATTRS = [
     { key: "heading", name: "Heading", short: "HDR", type: "numeric", desc: "Aerial threat — wins headers and attacks crosses." },
@@ -994,6 +923,10 @@
       intlNarrated: {}, worldTournaments: [],
       injuryProneness: 50, retirementAge: 40, luck: 0, injuryCount: 0,
       seasonHistory: [], retired: false, bestRating: 0,
+      // Snapshot of the player at their highest overall rating; drives the card.
+      peak: null,
+      // Set once this career has been posted to the global leaderboard.
+      leaderboardSubmitted: false,
       clubsPlayed: new Set(), clubStats: {}, lastPerformanceTier: "Met Expectation",
       honours: {
         leagueTitles: 0, domesticCups: 0, europeanCups: 0, intlTrophies: 0,
@@ -1118,6 +1051,8 @@
     s.intlNarrated = s.intlNarrated && typeof s.intlNarrated === "object" ? s.intlNarrated : {};
     s.worldTournaments = Array.isArray(s.worldTournaments) ? s.worldTournaments : [];
     if (!s.europeanEntry || typeof s.europeanEntry !== "object") s.europeanEntry = null;
+    if (!s.peak || typeof s.peak !== "object" || !s.peak.attrs) s.peak = null;
+    s.leaderboardSubmitted = !!s.leaderboardSubmitted;
     if (!s.leagueStandings || typeof s.leagueStandings !== "object") s.leagueStandings = null;
     if (s.intlRetired == null) s.intlRetired = false;
     s.clubsPlayed = s.clubsPlayed instanceof Set ? s.clubsPlayed : new Set(Array.isArray(s.clubsPlayed) ? s.clubsPlayed : []);
@@ -2925,6 +2860,99 @@
     return { goals, apps, fixtures, roundReached, won };
   }
 
+  /* ---------------------------- BALLON D'OR -------------------------------
+   * This was a threshold check — elite league, rating 8.0+, 25 goals,
+   * reputation 70+ — with nothing else in the world competing. Clear the bars
+   * and you won it, every single year. A merely very good striker took one
+   * every other season, 92% of them without a league title.
+   *
+   * It is now a contest with an entry requirement. A player must first have
+   * won something that matters, then must outscore a simulated field of the
+   * world's other elite forwards. The award becomes losable, which is the
+   * whole point of it being coveted.
+   *
+   * Resolved after simulateInternational rather than inside simulateSeason,
+   * because the real award covers a calendar year: the club season AND the
+   * summer tournament that followed it.
+   */
+  const BALLON_DOR_WEIGHTS = {
+    goal: 1.0, rating: 8, reputation: 0.15,
+    leagueTitle: 18, europeanTrophy: 22, intlTrophy: 25, domesticCup: 4, topScorer: 10,
+  };
+
+  // One scoring function for the player and every rival, so the two can never
+  // drift apart into different standards.
+  function ballonDorScore(c) {
+    const w = BALLON_DOR_WEIGHTS;
+    return (c.goals || 0) * w.goal
+      + (c.rating || 0) * w.rating
+      + (c.reputation || 0) * w.reputation
+      + (c.leagueTitle ? w.leagueTitle : 0)
+      + (c.europeanTrophy ? w.europeanTrophy : 0)
+      + (c.intlTrophy ? w.intlTrophy : 0)
+      + (c.domesticCup ? w.domesticCup : 0)
+      + (c.topScorer ? w.topScorer : 0);
+  }
+
+  // The rest of the world's elite forwards. Their calibre tracks the strongest
+  // attacks in the game, so a golden generation is genuinely harder to win in.
+  function simulateBallonDorField(isTournamentYear) {
+    const bestAttack = Math.max(...ALL_CLUBS.map((c) => TEAM_DATABASE[c].attack));
+    const eraShift = clamp((bestAttack - 88) * 0.4, -2, 3);
+    const rivals = [];
+    const count = randInt(8, 10);
+    for (let i = 0; i < count; i++) {
+      rivals.push(ballonDorScore({
+        goals: randInt(24, 42) + Math.round(eraShift),
+        rating: randomBetween(7.8, 9.5) + eraShift * 0.05,
+        reputation: randInt(72, 96),
+        leagueTitle: rand() < 0.42,
+        europeanTrophy: rand() < 0.16,
+        intlTrophy: isTournamentYear && rand() < 0.16,
+        domesticCup: rand() < 0.25,
+        topScorer: rand() < 0.34,
+      }));
+    }
+    return Math.max(...rivals);
+  }
+
+  /* Decide the Ballon d'Or for the calendar year just completed. Mutates
+   * honours and appends to sd.awards, so it must run before renderSeasonResult. */
+  function resolveBallonDor(sd, intl) {
+    if (!sd) return false;
+    const clubData = TEAM_DATABASE[sd.club];
+    if (!clubData) return false;
+    // NB "League1" is English League One in this codebase, not Ligue 1.
+    const isEliteLeague = ["Elite", "LaLiga", "SerieA", "Bundesliga"].includes(clubData.league);
+    if (!isEliteLeague) return false;
+
+    const leagueTitle = (sd.honours || []).includes("League Title");
+    const europeanTrophy = !!(sd.euroCampaign && sd.euroCampaign.won);
+    const intlTrophy = !!(intl && intl.wonTrophy);
+    const domesticCup = !!(sd.cupRun && sd.cupRun.won);
+
+    // Entry requirement: you have to have won something that matters. A
+    // domestic cup on its own is not enough. A league title is sufficient but
+    // not necessary — Messi 2021 (Copa, no league) and Ronaldo 2016 (Euro and
+    // the European Cup, no league) both won without one.
+    if (!leagueTitle && !europeanTrophy && !intlTrophy) return false;
+
+    // Calendar-year goals: the club season plus the summer that followed it.
+    const goals = (sd.goals || 0) + (intl ? intl.goals || 0 : 0);
+    const playerScore = ballonDorScore({
+      goals, rating: sd.rating, reputation: state.reputation,
+      leagueTitle, europeanTrophy, intlTrophy, domesticCup, topScorer: sd.isTopScorer,
+    });
+
+    if (playerScore <= simulateBallonDorField(!!(intl && intl.isTournament))) return false;
+
+    state.honours.ballonDors++;
+    (sd.awards = sd.awards || []).push("Ballon d'Or");
+    adjustReputation(12);
+    log(`   ↳ 🏅 ${state.player.name} wins the Ballon d'Or.`, "milestone");
+    return true;
+  }
+
   function simulateSeason() {
     const club = state.club;
     updateTeamStrengths();
@@ -3178,28 +3206,8 @@
     if (potsScore >= 128 && (perfTier === "Sensational" || perfTier === "Overperformed")) {
       state.honours.playerOfSeason++; awards.push("Player of the Season");
     }
-    // Ballon d'Or: extremely prestigious award requiring multiple conditions
-    // Must be in Elite league (Premier League, La Liga, Serie A, Bundesliga, Ligue 1)
-    // AND either:
-    //   A) Top-tier performance: rating 8.0+, 25+ goals, reputation 70+, Sensational/Overperformed
-    //   B) International success: won international trophy, 20+ goals, reputation 70+
-    // NB "League1" here is English League One (see ENGLISH_PYRAMID), not Ligue 1
-    // — including it let a third-tier striker qualify for the Ballon d'Or.
-    // French Ligue 1 is not modelled in TEAM_DATABASE at all.
-    const isEliteLeague = ["Elite", "LaLiga", "SerieA", "Bundesliga"].includes(clubData.league);
-    const hasHighRating = seasonRating >= 8.0;
-    const hasHighGoals = seasonGoals >= 25;
-    const hasHighReputation = state.reputation >= 70;
-    const isSensational = perfTier === "Sensational" || perfTier === "Overperformed";
-    const wonIntlTrophy = state.honours.intlTrophies > 0;
-    
-    const qualifiesViaElitePerformance = isEliteLeague && hasHighRating && hasHighGoals && hasHighReputation && isSensational;
-    const qualifiesViaIntlSuccess = isEliteLeague && wonIntlTrophy && hasHighGoals && hasHighReputation && isSensational;
-    
-    if ((qualifiesViaElitePerformance || qualifiesViaIntlSuccess) && (isTopScorer || honoursThisSeason.includes("European Cup"))) {
-      state.honours.ballonDors++; awards.push("Ballon d'Or");
-      adjustReputation(12); // Significant reputation boost from Ballon d'Or
-    }
+    // The Ballon d'Or is resolved separately in resolveBallonDor, after the
+    // international summer is known — it covers a calendar year, not a season.
     if (state.age <= 21 && (seasonGoals >= 14 || perfTier === "Sensational" || perfTier === "Overperformed")) {
       state.honours.youngPlayer++; awards.push("Young Player of the Year");
     }
@@ -3296,6 +3304,7 @@
       euroCampaign, cupRun,
     };
     state.seasonHistory.push(seasonData);
+    capturePeak(seasonData);
     
     // End-of-season squad transfers: simulate squad evolution for all teams
     const seasonClubsTransfer = getLeagueClubs(club);
@@ -3307,6 +3316,55 @@
   }
 
   function rollLuck() { return Math.round(randBetween(-8, 8)); }
+
+  /* -------------------------- PRIME SNAPSHOT ------------------------------
+   * Attributes decay with age, so by retirement `state.attrs` describes a faded
+   * forty-year-old. The career card is supposed to show the player at their
+   * peak, which means capturing that peak while it is happening — nothing was
+   * recorded before this (`bestRating` is the best match rating on a 5.3-9.9
+   * scale, not the player's overall).
+   */
+  function capturePeak(sd) {
+    // Ranked on effective ability (agedRating), not baseRating. Base attributes
+    // plateau from about 22 and only ever decline, so ranking on them would
+    // stamp a player's "prime" on their first season. Effective ability runs
+    // base through the age curve, which peaks around 27 — the actual prime.
+    const effective = agedRating();
+    if (state.peak && state.peak.effective >= effective) return;
+    state.peak = {
+      effective,
+      rating: Math.round(clamp(effective, 40, 99)),
+      baseRating: state.baseRating || 0,
+      attrs: Object.assign({}, state.attrs),
+      derived: Object.assign({}, state.derived || {}),
+      playstyle: state.playstyle,
+      age: state.age,
+      season: state.season,
+      club: state.club,
+      seasonGoals: sd ? sd.goals : 0,
+      seasonRating: sd ? sd.rating : 0,
+    };
+  }
+
+  // Careers saved before the snapshot existed, or that retired without ever
+  // completing a season, still need something to render.
+  function peakSnapshot() {
+    if (state.peak && state.peak.attrs) return state.peak;
+    return {
+      effective: state.baseRating || 0,
+      rating: state.baseRating || 0,
+      baseRating: state.baseRating || 0,
+      attrs: Object.assign({}, state.attrs || {}),
+      derived: Object.assign({}, state.derived || {}),
+      playstyle: state.playstyle,
+      age: state.age,
+      season: state.season,
+      club: state.club,
+      seasonGoals: 0,
+      seasonRating: state.bestRating || 0,
+      inferred: true,
+    };
+  }
 
   function recomputePlayerStats() {
     const syn = applyPhysicalSynergy(state.attrs);
@@ -5315,64 +5373,103 @@
     });
   }
 
-  function renderAllTimeGreats() {
-    const el = document.getElementById("alltime-content");
-    if (!el) return;
-    const g = state.totalGoals;
-    const a = state.totalAssists;
-    const apps = state.totalApps;
-    const leagueG = state.leagueGoals;
-    const intlG = state.intlGoals;
-    const rec = ALL_TIME_RECORDS;
-    const recordsHtml = `
-      <div class="records-table">
-        <div class="rec-row head"><span>Stat</span><span>Record Holder</span><span>Total</span><span>You</span></div>
-        <div class="rec-row"><span>PL Goals</span><span>${esc(rec.plGoals.recordHolder)}</span><span>${rec.plGoals.total}</span><span>${leagueG}</span></div>
-        <div class="rec-row"><span>PL Assists</span><span>${esc(rec.plAssists.recordHolder)}</span><span>${rec.plAssists.total}</span><span>${a}</span></div>
-        <div class="rec-row"><span>PL Appearances</span><span>${esc(rec.plAppearances.recordHolder)}</span><span>${rec.plAppearances.total}</span><span>${apps}</span></div>
-        <div class="rec-row"><span>Career Goals</span><span>${esc(rec.careerGoals.recordHolder)}</span><span>${rec.careerGoals.total}</span><span>${g}</span></div>
-        <div class="rec-row"><span>Career Assists</span><span>${esc(rec.careerAssists.recordHolder)}</span><span>${rec.careerAssists.total}</span><span>${a}</span></div>
-        <div class="rec-row"><span>Intl Caps</span><span>${esc(rec.intlCaps.recordHolder)}</span><span>${rec.intlCaps.total}</span><span>${state.intlCaps}</span></div>
-        <div class="rec-row"><span>Intl Goals</span><span>${esc(rec.intlGoals.recordHolder)}</span><span>${rec.intlGoals.total}</span><span>${intlG}</span></div>
-        <div class="rec-row"><span>Ballon d'Or</span><span>${esc(rec.ballonDors.recordHolder)}</span><span>${rec.ballonDors.total}</span><span>${state.honours.ballonDors}</span></div>
-        <div class="rec-row"><span>UCL Goals</span><span>${esc(rec.championsLeagueGoals.recordHolder)}</span><span>${rec.championsLeagueGoals.total}</span><span>${state.europeGoals}</span></div>
-        <div class="rec-row"><span>World Cup Goals</span><span>${esc(rec.worldCupGoals.recordHolder)}</span><span>${rec.worldCupGoals.total}</span><span>—</span></div>
-      </div>`;
-    const mkTop10 = (list, val) => insertPlayerIntoTop10(list, val, state.player.name || "You")
-      .map((r, i) => `<div class="top10-row${r.mine ? " mine" : ""}"><span>${i + 1}</span><span>${esc(r.name)}</span><span>${r.total}</span></div>`)
-      .join("");
-    el.innerHTML = `
-      <div class="wip-banner">
-        <div class="wip-banner-title">🏆 All Time Greats</div>
-        <div class="wip-banner-sub">Work in progress — more legends, head-to-head comparisons and era rankings coming soon.</div>
-      </div>
-      <div class="cs-section-title">All-Time Records</div>${recordsHtml}
-      <div class="cs-section-title">All-Time Top Scorers</div>
-      <div class="top10-table">${mkTop10(TOP_10_ALL_TIME_GOALS, g)}</div>
-      <div class="cs-section-title">Top PL Scorers</div>
-      <div class="top10-table">${mkTop10(TOP_10_PL_GOALS, leagueG)}</div>
-      <div class="cs-section-title">Top PL Assists</div>
-      <div class="top10-table">${mkTop10(TOP_10_PL_ASSISTS, a)}</div>
-      <div class="cs-section-title">Top PL Appearances</div>
-      <div class="top10-table">${mkTop10(TOP_10_PL_APPEARANCES, apps)}</div>
-      <div class="cs-section-title">Top International Caps</div>
-      <div class="top10-table">${mkTop10(TOP_10_INTL_CAPS, state.intlCaps)}</div>
-      <div class="cs-section-title">Top International Goals</div>
-      <div class="top10-table">${mkTop10(TOP_10_INTL_GOALS, intlG)}</div>`;
+  /* ---------------------------- LEADERBOARD -------------------------------
+   * Replaces the old "All Time" tab. That tab compared the player against a
+   * hard-coded list of real players and nothing else; this is a live board
+   * seeded with those same real-world benchmarks and topped up by careers
+   * other players have submitted.
+   *
+   * Reads never block the UI: the board renders from the seed immediately and
+   * upgrades in place if the database answers.
+   */
+  let leaderboardClient = null;
+  function getLeaderboard() {
+    if (leaderboardClient) return leaderboardClient;
+    if (typeof window.createLeaderboard !== "function") return null;
+    leaderboardClient = window.createLeaderboard(window.FIREBASE_CONFIG || null);
+    window.LEADERBOARD = leaderboardClient;
+    return leaderboardClient;
   }
 
-  function insertPlayerIntoTop10(list, total, name) {
-    const copy = list.map((r) => ({ ...r, mine: false }));
-    if (total > 0) {
-      const idx = copy.findIndex((r) => total > r.total);
-      if (idx !== -1) {
-        copy.splice(idx, 0, { name, total, mine: true });
-      } else {
-        copy.push({ name, total, mine: true });
-      }
-    }
-    return copy.slice(0, 10);
+  // The player's current career as a leaderboard row, so they can see where
+  // they would sit before deciding to submit anything.
+  function currentCareerRow() {
+    return {
+      name: state.player && state.player.name ? state.player.name : "Your striker",
+      goals: state.totalGoals || 0,
+      apps: state.totalApps || 0,
+      seasons: Math.max(1, state.season || 1),
+      assists: state.totalAssists || 0,
+      trophies: (state.honours.leagueTitles || 0) + (state.honours.domesticCups || 0) +
+                (state.honours.europeanCups || 0) + (state.honours.intlTrophies || 0),
+      ballonDors: state.honours.ballonDors || 0,
+      country: state.country,
+      era: state.era,
+      difficulty: state.difficulty,
+    };
   }
+
+  function leaderboardRowsHtml(entries, youGoals) {
+    let youShown = false;
+    const rows = entries.map((e) => {
+      // Mark the row the player's own career would displace, once.
+      const isYou = !youShown && !e.seed && e.you;
+      if (isYou) youShown = true;
+      const medal = e.rank === 1 ? " gold" : e.rank === 2 ? " silver" : e.rank === 3 ? " bronze" : "";
+      const tag = e.seed
+        ? `<span class="lb-tag" title="Real-world benchmark">real</span>`
+        : e.you ? `<span class="lb-tag you">you</span>` : "";
+      const ratio = e.apps > 0 ? (e.goals / e.apps).toFixed(2) : "—";
+      return `<div class="lb-row${e.you ? " mine" : ""}">
+        <span class="lb-rank${medal}">${e.rank}</span>
+        <span class="lb-name">${esc(e.name)}${tag}</span>
+        <span class="lb-apps">${e.apps || "—"}</span>
+        <span class="lb-ratio">${ratio}</span>
+        <span class="lb-goals">${e.goals}</span>
+      </div>`;
+    }).join("");
+    return `<div class="lb-table">
+      <div class="lb-row head"><span>#</span><span>Player</span><span>Apps</span><span>G/App</span><span>Goals</span></div>
+      ${rows}
+    </div>`;
+  }
+
+  function renderLeaderboardInto(el, payload, you) {
+    if (!el) return;
+    const board = payload.entries.slice();
+    // Splice the player's own career in so they can see their standing.
+    if (you && you.goals > 0) {
+      const mine = Object.assign({}, you, { you: true });
+      board.push(mine);
+      board.sort((a, b) => (b.goals || 0) - (a.goals || 0) || (a.apps || 0) - (b.apps || 0));
+      board.forEach((e, i) => { e.rank = i + 1; });
+    }
+    const status = payload.live
+      ? `<span class="lb-live">● live</span>`
+      : `<span class="lb-offline" title="${esc(payload.error || "offline")}">offline — showing benchmarks only</span>`;
+    el.innerHTML = `
+      <div class="lb-head">
+        <div class="lb-title">🏆 Career Goals Leaderboard</div>
+        <div class="lb-sub">Real-world benchmarks, plus careers submitted by other players. ${status}</div>
+      </div>
+      ${leaderboardRowsHtml(board.slice(0, 30))}
+      <div class="lb-foot">Submit your own career from the end-of-career screen.</div>`;
+  }
+
+  function renderLeaderboard() {
+    const el = document.getElementById("leaderboard-content");
+    if (!el) return;
+    const lb = getLeaderboard();
+    const you = state && state.player ? currentCareerRow() : null;
+    if (!lb) {
+      el.innerHTML = `<div class="cs-empty">Leaderboard unavailable.</div>`;
+      return;
+    }
+    // Render from the seed at once, then upgrade in place when the read lands.
+    renderLeaderboardInto(el, { entries: lb.mergeAndRank([], 30), live: false, error: "loading" }, you);
+    lb.fetchTop(30).then((payload) => renderLeaderboardInto(el, payload, you));
+  }
+
 
   function renderProfile() {
     const el = document.getElementById("profile-content");
@@ -5448,7 +5545,7 @@
     if (tab === "stats") renderCareerStats();
     if (tab === "history") renderCareerLog();
     if (tab === "squad") renderSquadInfo();
-    if (tab === "alltime") renderAllTimeGreats();
+    if (tab === "leaderboard") renderLeaderboard();
   }
 
   // ── Log Preview (Season tab) ───────────────────────────────────────────────
@@ -5673,6 +5770,8 @@
         const sd = simulateSeason();
         if (state.retireNow) { state.retireNow = false; beginRetirement("injury"); return; }
         const intl = simulateInternational();
+        // Covers the calendar year, so it needs the summer as well as the season.
+        resolveBallonDor(sd, intl);
         renderSeasonResult(sd, intl);
         renderCareerHeader();
         let line = `${seasonLabel()} (age ${state.age}) — ${state.club}: ${sd.goals}g ${sd.assists}a in ${sd.apps} apps (${sd.rating}). ${ordinal(sd.pos)} [${sd.trajectory}]. ${sd.role}.`;
@@ -6741,28 +6840,38 @@
     const statusEl = document.getElementById("legacy-status");
     statusEl.textContent = won ? "⚽ FOOTBALL GOD — 1000 GOALS!" : (state.totalGoals >= 500 ? "LEGENDARY CAREER!" : "CAREER COMPLETE");
     statusEl.className = "legacy-status " + (won ? "god" : (state.totalGoals >= 500 ? "legend" : ""));
-    document.getElementById("legacy-goals").textContent = state.totalGoals;
 
-    document.getElementById("legacy-grid").innerHTML = [
-      ["Seasons", state.season], ["Clubs", state.clubsPlayed.size], ["Final Age", state.age],
-      ["Career Goals", state.totalGoals], ["League Goals", state.leagueGoals], ["Cup Goals", state.cupGoals],
-      ["Europe Goals", state.europeGoals], ["Assists", state.totalAssists], ["Apps", state.totalApps],
-      ["Yellow/Red", `${state.totalYellow}/${state.totalRed}`],
-      [`${state.country} Caps`, state.intlCaps], [`${state.country} Goals`, state.intlGoals],
-      ["Best Rating", state.bestRating || "—"], ["Peak Rep", `${state.reputationTier}`],
-    ].map(([k, v]) => `<div class="leg-box"><div class="leg-num">${v}</div><div class="leg-lab">${k}</div></div>`).join("");
-
-    renderHonours();
-    renderClubBreakdown();
-    renderCompetitionHistory();
-    renderEpilogue();
-    renderCareerSummary();
-    renderLegacyBiography();
-    renderLegacyDNA();
-    renderDNAAttributeReport();
+    // The card is the screen. The career used to end on eight stacked sections
+    // and a scrolling log; it now ends on one shareable artefact, a paragraph
+    // that sums the career up, and the share controls. Everything the deleted
+    // sections showed — attributes, honours, totals — lives on the card itself.
     renderShareCard();
+    renderCareerSummary();
+    renderLeaderboardSubmit();
     renderShareTagline();
     saveState();
+  }
+
+  // "trophy" + "ies" printed "trophyies" on the career summary. Take the stem
+  // and the two endings explicitly instead of appending to a singular word.
+  function plural(n, one, many) {
+    return `${n} ${n === 1 ? one : many}`;
+  }
+
+  // Only list what was actually won. A trophyless career used to be described as
+  // "0 league titles, 0 domestic cups, 0 European trophies..." all the way down.
+  function honoursLine(h) {
+    const bits = [
+      [h.leagueTitles, "league title", "league titles"],
+      [h.domesticCups, "domestic cup", "domestic cups"],
+      [h.europeanCups, "European trophy", "European trophies"],
+      [h.goldenBoots, "Golden Boot", "Golden Boots"],
+      [h.ballonDors, "Ballon d'Or", "Ballon d'Ors"],
+      [h.intlTrophies, "international trophy", "international trophies"],
+    ].filter(([n]) => n > 0).map(([n, one, many]) => plural(n, one, many));
+    if (!bits.length) return " The trophy cabinet stayed bare, but the goals never stopped coming.";
+    const last = bits.pop();
+    return ` They collected ${bits.length ? bits.join(", ") + ", and " : ""}${last}.`;
   }
 
   function generateCareerSummary() {
@@ -6787,7 +6896,7 @@
     if (state.clubsPlayed.size === 1) taglines.push("a one-club icon");
     if (state.honours.ballonDors > 0) taglines.push("a Ballon d'Or winner");
     if (h.leagueTitles >= 3) taglines.push("a serial champion");
-    if (state.intlGoals >= 20) taglines.push(`a ${esc(state.country)} national hero`);
+    if (state.intlGoals >= 20) taglines.push(`a national hero for ${esc(state.country)}`);
     else if (state.intlCaps >= 20) taglines.push(`a loyal ${esc(state.country)} servant`);
 
     const clubList = Object.entries(state.clubStats)
@@ -6800,7 +6909,7 @@
     const body = `${esc(state.player.name)} was ${esc(taglines[0])}${taglines.length > 1 ? ", " + taglines.slice(1).map(esc).join(" and ") : ""}.` +
       ` Over ${years} seasons as a ${esc(pos.label)} ${esc(state.country)} international, they scored <span class="highlight">${total} goals</span> in ${apps} appearances — ` +
       `${avg} goals per season at ${gpg} goals per game.` +
-      `${clubLine} They collected ${h.leagueTitles} league title${h.leagueTitles !== 1 ? "s" : ""}, ${h.domesticCups} domestic cup${h.domesticCups !== 1 ? "s" : ""}, ${h.europeanCups} European trophy${h.europeanCups !== 1 ? "ies" : "y"}, ${h.goldenBoots} Golden Boot${h.goldenBoots !== 1 ? "s" : ""}, ${h.ballonDors} Ballon d'Or${h.ballonDors !== 1 ? "s" : ""}, and ${h.intlTrophies} international trophy${h.intlTrophies !== 1 ? "ies" : "y"}.`;
+      `${clubLine} ${honoursLine(h)}`;
 
     return { title: `${esc(state.player.name)} — ${esc(playstyle)}`, body };
   }
@@ -6812,184 +6921,21 @@
     el.innerHTML = `<h3>Career Summary</h3><div class="legacy-summary-text">${summary.body}</div>`;
   }
 
-  function renderHonours() {
-    const h = state.honours;
-    const items = [
-      ["🏆", "League Titles", h.leagueTitles], ["🥇", "Domestic Cups", h.domesticCups],
-      ["🌍", "European Cups", h.europeanCups], ["🦁", "Intl Trophies", h.intlTrophies],
-      ["👟", "Golden Boots", h.goldenBoots], ["🏅", "Ballon d'Ors", h.ballonDors],
-      ["⭐", "Player of the Season", h.playerOfSeason], ["🌱", "Young Player", h.youngPlayer],
-      ["📋", "Team of the Season", h.tots],
-    ].filter(([, , v]) => v > 0);
-    const el = document.getElementById("legacy-honours");
-    if (!items.length) { el.innerHTML = "<h3>Honours & Awards</h3><div class='muted'>No major honours — but a career to be proud of.</div>"; return; }
-    el.innerHTML = "<h3>Honours & Awards</h3><div class='honours-grid'>" +
-      items.map(([ic, k, v]) => `<div class="hon-item"><span class="hon-ic">${ic}</span><span class="hon-count">${v}×</span><span class="hon-name">${k}</span></div>`).join("") + "</div>";
-  }
 
-  function renderClubBreakdown() {
-    const clubs = Object.entries(state.clubStats).filter(([, s]) => s.apps > 0)
-      .sort((a, b) => b[1].goals - a[1].goals);
-    const rows = clubs.map(([c, s]) =>
-      `<tr><td class="lt-team">${esc(c)}</td><td>${s.seasons}</td><td>${s.apps}</td><td class="lt-pts">${s.goals}</td><td>${s.assists}</td><td>${s.titles}</td></tr>`).join("");
-    document.getElementById("legacy-clubs").innerHTML = `
-      <h3>Career by Club</h3>
-      <div class="table-scroll">
-        <table class="league-table clubs-table"><thead><tr><th>Club</th><th>Sea</th><th>Apps</th><th>Goals</th><th>Ast</th><th>🏆</th></tr></thead>
-        <tbody>${rows}</tbody></table>
-      </div>`;
-  }
 
-  function renderCompetitionHistory() {
-    const el = document.getElementById("legacy-history");
-    if (!state.competitionHistory.length) { el.innerHTML = ""; return; }
-    const items = state.competitionHistory.slice().reverse().map((c) =>
-      `<li><span class="hist-season">${seasonLabel(c.season)}</span> ${esc(c.text)}</li>`).join("");
-    el.innerHTML = `<h3>Trophy Cabinet Timeline</h3><ul class="history-list">${items}</ul>`;
-  }
 
-  function renderEpilogue() {
-    const el = document.getElementById("legacy-epilogue");
-    const map = {
-      manager: "🧑‍💼 After hanging up the boots, they moved into management, chasing silverware from the dugout.",
-      pundit: "🎙️ They became a beloved TV pundit, dissecting the game for millions every weekend.",
-      coach: "⚽ They became a respected coach, shaping the next generation from the training ground.",
-      ambassador: "🌟 They became a global club ambassador, forever tied to the badge they made famous.",
-      agent: "💼 They moved into the business side of the game, building a reputation as a sharp agent and scout.",
-      academyDirector: "🏟️ They took charge of a club academy, dedicating their post-playing days to developing the next generation.",
-      businessMogul: "💰 They pivoted into business, building a commercial empire off the back of a football fortune.",
-      hometownHero: "🏡 They returned home to grassroots football, giving back to the community that raised them.",
-      clubDirector: "📋 They transitioned into the boardroom as club director, overseeing strategy, recruitment, and the academy's future.",
-      conspiracyTheorist: "🧠 They became an internet personality, posting hot takes and conspiracy theories on social media to millions of followers.",
-      ruralFarmer: "🌾 They left football behind entirely, buying a farm in the countryside to live a quiet, simple life away from the spotlight.",
-    };
-    const reasonMap = {
-      age: "Retired gracefully with age catching up.",
-      planned: "Bowed out after a planned farewell season.",
-      goal: "Retired the moment the 1000-goal dream was realised.",
-      unwanted: "No club was willing to offer a new contract.",
-    };
-    const parts = [];
-    if (state.endCareerReason && reasonMap[state.endCareerReason]) parts.push(reasonMap[state.endCareerReason]);
-    if (state.epilogue && map[state.epilogue]) parts.push(map[state.epilogue]);
-    if (state.finalSeason) parts.push(`🌍 ${state.finalSeason.note}.`);
-    el.innerHTML = parts.length ? `<div class="epilogue">${parts.map((p) => `<div>${p}</div>`).join("")}</div>` : "";
-  }
 
-  function renderLegacyDNA() {
-    const a = state.attrs;
-    const traitsHtml = state.hiddenTraits.length
-      ? `<div class="traits-list" style="margin-bottom:12px;">${state.hiddenTraits.map((t) => {
-        const tier = getTraitTier(t);
-        const color = TRAIT_TIER_COLORS[tier];
-        const name = TRAIT_TIER_NAMES[tier];
-        return `<span class="trait-chip trait-tier-${tier}" title="${esc(HIDDEN_TRAITS[t].desc)} (${name})" style="border-color:${color};color:${color}">${esc(t)} <small>${tier}</small></span>`;
-      }).join("")}</div>`
-      : "";
-    const radarId = "legacy-radar";
-    const pos = POSITIONS[state.position] || POSITIONS.ST;
-    const rv = computeRadarValues(a);
-    document.getElementById("legacy-dna").innerHTML = `
-      <h3>Player DNA</h3>
-      <div class="dna-summary">
-        <span class="tag">${esc(pos.label)}</span>
-        <span class="tag">${esc(state.playstyle)}</span>
-        <span class="tag ${mentIsSpecial(state.mentality) ? "rare" : ""}">${esc(state.mentality)}</span>
-        <span class="tag">🎓 ${esc(state.academy.club)} (${esc(state.academy.tier)})</span>
-        <span class="tag">Peak ${state.baseRating}</span>
-      </div>
-      ${traitsHtml}
-      <div class="legacy-radar"><canvas id="${radarId}" width="340" height="260"></canvas></div>
-      <div class="dna-key">
-        ${dnaLine("Aerial", Math.round(rv.aerial))}${dnaLine("Shooting", Math.round(rv.shooting))}${dnaLine("Mental", Math.round(rv.mental))}
-        ${dnaLine("Speed", Math.round(rv.speed))}${dnaLine("Balance & Agility", Math.round(rv.balanceAgility))}${dnaLine("Physical", Math.round(rv.physical))}
-        ${dnaLine("Height", a.height + "cm")}${dnaLine("Weight", a.weight + "kg")}
-      </div>`;
-    function dnaLine(label, v) { return `<div class="dna-row"><span class="dna-k">${label}</span><span class="dna-v">${v}</span></div>`; }
-    requestAnimationFrame(() => {
-      const canvas = document.getElementById(radarId);
-      if (canvas) drawRadarChart(canvas, a);
-    });
-  }
 
-  function renderDNAAttributeReport() {
-    const el = document.getElementById("legacy-dna-report");
-    if (!el) return;
-    
-    const slots = state.player.slots || {};
-    const a = state.attrs;
-    if (!a) { el.innerHTML = ""; return; }
-    const derived = state.derived || {};
-    
-    // Relative contribution of each attribute versus a baseline of 50
-    const footContrib = Math.round(((a.leftFoot + a.rightFoot) / 2 - 50) / 50 * 100);
-    const agilityContrib = Math.round(((derived.agility || 50) - 50) / 50 * 100);
-    const balanceContrib = Math.round(((derived.balance || 50) - 50) / 50 * 100);
-    
-    // Estimate goal impact from each attribute
-    const headingGoalImpact = Math.round(state.totalGoals * (a.heading >= 80 ? 0.15 : a.heading >= 70 ? 0.08 : 0.02));
-    const speedGoalImpact = Math.round(state.totalGoals * (a.speed >= 85 ? 0.20 : a.speed >= 75 ? 0.10 : 0.03));
-    const strengthGoalImpact = Math.round(state.totalGoals * (a.strength >= 80 ? 0.12 : a.strength >= 70 ? 0.06 : 0.02));
-    const fitnessGoalImpact = Math.round(state.totalGoals * (a.fitness >= 80 ? 0.10 : a.fitness >= 70 ? 0.05 : 0.01));
-    const footGoalImpact = Math.round(state.totalGoals * (footContrib > 0 ? 0.30 : 0.20));
-    const agilityGoalImpact = Math.round(state.totalGoals * (agilityContrib > 0 ? 0.15 : 0.05));
-    
-    const reportHtml = `
-      <h3>DNA Attribute Impact Report</h3>
-      <div class="dna-report">
-        <div class="report-section">
-          <h4>Drafted Attributes</h4>
-          <div class="report-grid">
-            ${slots.heading ? `<div class="report-item"><span class="attr-name">Heading</span><span class="attr-donor">${esc(slots.heading.donor)}</span><span class="attr-val">${a.heading}</span></div>` : ""}
-            ${slots.speed ? `<div class="report-item"><span class="attr-name">Speed</span><span class="attr-donor">${esc(slots.speed.donor)}</span><span class="attr-val">${a.speed}</span></div>` : ""}
-            ${slots.body ? `<div class="report-item"><span class="attr-name">Fitness</span><span class="attr-donor">${esc(slots.body.donor)}</span><span class="attr-val">${a.fitness}</span></div>` : ""}
-            ${slots.body ? `<div class="report-item"><span class="attr-name">Strength</span><span class="attr-donor">${esc(slots.body.donor)}</span><span class="attr-val">${a.strength}</span></div>` : ""}
-            ${slots.leftFoot ? `<div class="report-item"><span class="attr-name">Left Foot</span><span class="attr-donor">${esc(slots.leftFoot.donor)}</span><span class="attr-val">${a.leftFoot}</span></div>` : ""}
-            ${slots.rightFoot ? `<div class="report-item"><span class="attr-name">Right Foot</span><span class="attr-donor">${esc(slots.rightFoot.donor)}</span><span class="attr-val">${a.rightFoot}</span></div>` : ""}
-            ${slots.mentality ? `<div class="report-item"><span class="attr-name">Mentality</span><span class="attr-donor">${esc(slots.mentality.donor)}</span><span class="attr-val">${esc(state.mentality)}</span></div>` : ""}
-          </div>
-        </div>
-        <div class="report-section">
-          <h4>Derived Stats & Ceiling Effect</h4>
-          <div class="report-grid">
-            <div class="report-item"><span class="attr-name">Agility</span><span class="attr-impact">${agilityContrib > 0 ? "+" : ""}${agilityContrib}%</span><span class="attr-val">${derived.agility || 50}</span></div>
-            <div class="report-item"><span class="attr-name">Balance</span><span class="attr-impact">${balanceContrib > 0 ? "+" : ""}${balanceContrib}%</span><span class="attr-val">${derived.balance || 50}</span></div>
-            <div class="report-item"><span class="attr-name">Dribbling</span><span class="attr-val">${derived.dribbling || 50}</span></div>
-            <div class="report-item"><span class="attr-name">Finishing</span><span class="attr-val">${derived.finishing || 50}</span></div>
-          </div>
-          <div class="report-note">Agility & Balance set your goal ceiling — higher values unlock more scoring potential.</div>
-        </div>
-        <div class="report-section">
-          <h4>Estimated Goal Contribution by Attribute</h4>
-          <div class="report-grid">
-            <div class="report-item"><span class="attr-name">Heading</span><span class="attr-impact">~${headingGoalImpact} goals</span></div>
-            <div class="report-item"><span class="attr-name">Speed</span><span class="attr-impact">~${speedGoalImpact} goals</span></div>
-            <div class="report-item"><span class="attr-name">Strength</span><span class="attr-impact">~${strengthGoalImpact} goals</span></div>
-            <div class="report-item"><span class="attr-name">Fitness</span><span class="attr-impact">~${fitnessGoalImpact} goals</span></div>
-            <div class="report-item"><span class="attr-name">Foot Quality</span><span class="attr-impact">~${footGoalImpact} goals</span></div>
-            <div class="report-item"><span class="attr-name">Agility/Balance</span><span class="attr-impact">~${agilityGoalImpact} goals</span></div>
-          </div>
-        </div>
-        <div class="report-section">
-          <h4>Mentality Impact</h4>
-          <div class="report-note">
-            <strong>${esc(state.mentality)}</strong> mentality affected your consistency, decision-making in end-of-season events, and trait development speed.
-            Mentality rating: ${state.mentalityRating}/99
-          </div>
-        </div>
-      </div>
-    `;
-    
-    el.innerHTML = reportHtml;
-  }
 
   /* ------------------------- SHAREABLE CAREER CARD ------------------------- */
   function computeCareerRarity() {
     const goals = state.totalGoals;
     const h = state.honours;
     const trophies = h.leagueTitles + h.domesticCups + h.europeanCups + h.intlTrophies;
-    if (goals >= 1000 || h.ballonDors >= 1 || trophies >= 5) return { label: "FOOTBALL GOD", color: "#f6c453", border: "#ff8a3c" };
-    if (goals >= 700 || h.ballonDors >= 1 || trophies >= 3) return { label: "LEGENDARY", color: "#f6c453", border: "#f6c453" };
+    // Retuned now the Ballon d'Or is a contest rather than a threshold: a single
+    // one used to top out the tier list, when it was winnable most seasons.
+    if (goals >= 1000 || h.ballonDors >= 3 || trophies >= 8) return { label: "FOOTBALL GOD", color: "#f6c453", border: "#ff8a3c" };
+    if (goals >= 700 || h.ballonDors >= 1 || trophies >= 4) return { label: "LEGENDARY", color: "#f6c453", border: "#f6c453" };
     if (goals >= 400 || trophies >= 2) return { label: "WORLD CLASS", color: "#4de0b4", border: "#4de0b4" };
     if (goals >= 200 || trophies >= 1 || state.reputation >= 70) return { label: "CULT HERO", color: "#70a7ff", border: "#70a7ff" };
     if (state.clubsPlayed.size >= 5) return { label: "JOURNEYMAN", color: "#b8c0d0", border: "#b8c0d0" };
@@ -7009,6 +6955,76 @@
     return donors.slice(0, 4);
   }
 
+  /* --------------------------- CAREER CARD --------------------------------
+   * One shareable artefact standing in for the whole career. It depicts the
+   * player at their PRIME, not at retirement — the old card drew state.attrs
+   * as they were on the last day, so it showed a faded forty-year-old with the
+   * pace and fitness floors of a man who should have stopped years ago.
+   * Career totals stay career-long; only the player is frozen at their peak.
+   */
+  function cardFifaStats(peak) {
+    const a = peak.attrs || {};
+    const d = peak.derived || {};
+    const val = (v, fallback) => Math.round(clamp(v == null ? fallback : v, 1, 99));
+    const bestFoot = Math.max(a.leftFoot || 0, a.rightFoot || 0);
+    const weakFoot = Math.min(a.leftFoot || 0, a.rightFoot || 0);
+    return [
+      ["PAC", val(a.speed, 50)],
+      ["SHO", val(d.finishing == null ? bestFoot : d.finishing, 50)],
+      ["PAS", val(weakFoot, 50)],
+      ["DRI", val(((d.agility == null ? a.speed : d.agility) + (d.balance == null ? a.strength : d.balance)) / 2, 50)],
+      ["PHY", val(a.strength, 50)],
+      ["HEA", val(a.heading, 50)],
+    ];
+  }
+
+  /* A single characterful line for the card. Deliberately not generateBioClosing:
+   * that repeats the goals, apps and assists already printed directly above it,
+   * and runs several lines past the space available. This says what kind of
+   * career it was, which the numbers cannot. */
+  function cardTagline() {
+    const h = state.honours;
+    const clubs = state.clubsPlayed ? state.clubsPlayed.size : 0;
+    const seasons = Math.max(1, state.season);
+    const ending = {
+      goal: `chased down ${LEVERS.goalTarget} goals and got there`,
+      planned: "walked away on their own terms",
+      injury: "was forced out early by injury",
+    }[state.endCareerReason] || "played on until the body said no";
+    const shape =
+      h.ballonDors >= 3 ? "the defining forward of a generation" :
+      h.ballonDors >= 1 ? "a Ballon d'Or winner" :
+      h.europeanCups >= 2 ? "a European giant" :
+      h.leagueTitles >= 4 ? "a serial champion" :
+      h.intlTrophies >= 1 ? `a tournament winner with ${state.country}` :
+      clubs === 1 ? "a one-club man" :
+      clubs >= 5 ? "a journeyman who scored everywhere" :
+      state.intlCaps >= 80 ? `a mainstay of the ${state.country} side` :
+      "a striker who kept turning up";
+    return `${seasons} seasons, ${clubs} club${clubs !== 1 ? "s" : ""} — ${shape}, who ${ending}.`;
+  }
+
+  // Canvas has no text wrapping; the tagline is the one free-form string here.
+  function wrapCanvasText(ctx, text, maxWidth, maxLines) {
+    const words = String(text || "").split(/\s+/).filter(Boolean);
+    const lines = [];
+    let line = "";
+    for (const word of words) {
+      const attempt = line ? `${line} ${word}` : word;
+      if (ctx.measureText(attempt).width > maxWidth && line) { lines.push(line); line = word; }
+      else line = attempt;
+    }
+    if (line) lines.push(line);
+    // Trim to the space available, marking the cut so an unexpectedly long
+    // string reads as deliberately shortened rather than broken mid-sentence.
+    if (maxLines && lines.length > maxLines) {
+      const kept = lines.slice(0, maxLines);
+      kept[maxLines - 1] = kept[maxLines - 1].replace(/[.,;:\s]+$/, "") + "…";
+      return kept;
+    }
+    return lines;
+  }
+
   function renderShareCard() {
     const canvas = document.getElementById("share-card-canvas");
     const cardWrap = document.getElementById("share-card");
@@ -7018,172 +7034,138 @@
     cardWrap.style.display = "block";
     const ctx = canvas.getContext("2d");
     const w = canvas.width, h = canvas.height;
+    const peak = peakSnapshot();
+    const rarity = computeCareerRarity();
+    const hon = state.honours;
+    const GOLD = "#f6c453", MUTED = "#8b93a7", INK = "#ffffff";
 
-    // Clear
     ctx.clearRect(0, 0, w, h);
 
-    // Background gradient
-    const grad = ctx.createLinearGradient(0, 0, w, h);
-    grad.addColorStop(0, "#0f111a");
-    grad.addColorStop(0.5, "#171a27");
-    grad.addColorStop(1, "#0c0d14");
+    // Ground
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, "#141826");
+    grad.addColorStop(0.55, "#0f111a");
+    grad.addColorStop(1, "#0a0b11");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
-
-    // Card border
-    const rarity = computeCareerRarity();
-    ctx.lineWidth = 8;
+    ctx.lineWidth = 6;
     ctx.strokeStyle = rarity.color;
-    ctx.strokeRect(4, 4, w - 8, h - 8);
+    ctx.strokeRect(3, 3, w - 6, h - 6);
 
-    // Rarity badge
-    ctx.fillStyle = rarity.color;
-    ctx.beginPath();
-    ctx.roundRect(40, 40, 200, 36, 8);
-    ctx.fill();
-    ctx.fillStyle = "#0f111a";
-    ctx.font = "bold 18px Arial, sans-serif";
+    // Rarity tier, centred under the top edge
     ctx.textAlign = "center";
-    ctx.fillText(rarity.label, 140, 65);
-
-    // Name & position
-    const pos = POSITIONS[state.position] || POSITIONS.ST;
-    const flag = state.player.origin?.flag || "🏴";
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 42px Arial, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(state.player.name.toUpperCase(), w / 2, 150);
-
     ctx.fillStyle = rarity.color;
-    ctx.font = "bold 24px Arial, sans-serif";
-    ctx.fillText(`${flag} ${pos.label} · ${state.country}`, w / 2, 192);
+    ctx.font = "bold 15px Arial, sans-serif";
+    ctx.fillText(rarity.label, w / 2, 52);
 
-    // Overall rating circle
-    const rating = state.baseRating;
+    // Overall at prime, in a ring
+    const cx = w / 2, cy = 138;
     ctx.beginPath();
-    ctx.arc(w / 2, 280, 60, 0, Math.PI * 2);
-    ctx.fillStyle = "#1a1d2b";
+    ctx.arc(cx, cy, 56, 0, Math.PI * 2);
+    ctx.fillStyle = "#171b2a";
     ctx.fill();
     ctx.lineWidth = 4;
     ctx.strokeStyle = rarity.color;
     ctx.stroke();
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 52px Arial, sans-serif";
-    ctx.fillText(String(rating), w / 2, 295);
-    ctx.fillStyle = "#b8c0d0";
-    ctx.font = "12px Arial, sans-serif";
-    ctx.fillText("OVERALL", w / 2, 320);
+    ctx.fillStyle = INK;
+    ctx.font = "bold 50px Arial, sans-serif";
+    ctx.fillText(String(peak.rating), cx, cy + 12);
+    ctx.fillStyle = MUTED;
+    ctx.font = "bold 11px Arial, sans-serif";
+    ctx.fillText("OVERALL", cx, cy + 33);
 
-    // Career stats
-    const h2 = state.honours;
-    const stats = [
+    // Identity
+    const pos = POSITIONS[state.position] || POSITIONS.ST;
+    const flag = (state.player.origin && state.player.origin.flag) || "";
+    ctx.fillStyle = INK;
+    ctx.font = "bold 40px Arial, sans-serif";
+    ctx.fillText(String(state.player.name || "").toUpperCase(), cx, 238);
+    ctx.fillStyle = rarity.color;
+    ctx.font = "bold 17px Arial, sans-serif";
+    ctx.fillText(`${flag} ${pos.label.toUpperCase()} · ${String(state.country || "").toUpperCase()}`, cx, 266);
+
+    // The prime this card is frozen at
+    ctx.fillStyle = MUTED;
+    ctx.font = "12px Arial, sans-serif";
+    const primeBits = [`PRIME ${seasonLabel(peak.season)}`, `AGE ${peak.age}`];
+    if (peak.club) primeBits.push(String(peak.club).toUpperCase());
+    ctx.fillText(primeBits.join("  ·  "), cx, 290);
+
+    // FIFA-style stat block, two rows of three
+    const stats = cardFifaStats(peak);
+    const colX = [w / 2 - 160, w / 2, w / 2 + 160];
+    stats.forEach(([label, val], i) => {
+      const x = colX[i % 3];
+      const y = 350 + Math.floor(i / 3) * 74;
+      ctx.fillStyle = INK;
+      ctx.font = "bold 34px Arial, sans-serif";
+      ctx.fillText(String(val), x, y);
+      ctx.fillStyle = MUTED;
+      ctx.font = "bold 12px Arial, sans-serif";
+      ctx.fillText(label, x, y + 19);
+    });
+
+    // Divider
+    ctx.strokeStyle = "#262c3d";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(60, 492); ctx.lineTo(w - 60, 492); ctx.stroke();
+
+    // Career totals — the whole career, not the prime season
+    const trophies = hon.leagueTitles + hon.domesticCups + hon.europeanCups + hon.intlTrophies;
+    const totals = [
       ["GOALS", state.totalGoals],
       ["APPS", state.totalApps],
-      ["TROPHIES", h2.leagueTitles + h2.domesticCups + h2.europeanCups + h2.intlTrophies],
       ["ASSISTS", state.totalAssists],
+      ["TROPHIES", trophies],
     ];
-    const startX = 70, gap = 120, statY = 395;
-    stats.forEach(([label, val], i) => {
-      const x = startX + i * gap;
-      ctx.fillStyle = "#f6c453";
-      ctx.font = "bold 34px Arial, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(String(val), x, statY);
-      ctx.fillStyle = "#b8c0d0";
-      ctx.font = "bold 12px Arial, sans-serif";
-      ctx.fillText(label, x, statY + 20);
+    totals.forEach(([label, val], i) => {
+      const x = 105 + i * 130;
+      ctx.fillStyle = GOLD;
+      ctx.font = "bold 30px Arial, sans-serif";
+      ctx.fillText(String(val), x, 548);
+      ctx.fillStyle = MUTED;
+      ctx.font = "bold 11px Arial, sans-serif";
+      ctx.fillText(label, x, 568);
     });
 
-    // Radar chart (rendered on an offscreen canvas and copied over)
-    const radarCanvas = document.createElement("canvas");
-    radarCanvas.width = 260; radarCanvas.height = 220;
-    drawRadarChart(radarCanvas, state.attrs);
-    ctx.drawImage(radarCanvas, w - 260, 420, 240, 200);
-
-    // DNA stats
-    const a = state.attrs;
-    const dnaLines = [
-      ["Heading", a.heading],
-      ["Left Foot", a.leftFoot],
-      ["Right Foot", a.rightFoot],
-      ["Speed", a.speed],
-      ["Strength", a.strength],
-      ["Fitness", a.fitness],
-      ["Height", a.height + "cm"],
-      ["Weight", a.weight + "kg"],
-    ];
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 16px Arial, sans-serif";
-    ctx.textAlign = "left";
-    ctx.fillText("DNA", 55, 435);
-    ctx.font = "13px Arial, sans-serif";
-    dnaLines.forEach(([label, val], i) => {
-      const y = 460 + i * 26;
-      ctx.fillStyle = "#b8c0d0";
-      ctx.fillText(label, 55, y);
-      ctx.fillStyle = rarity.color;
-      ctx.font = "bold 13px Arial, sans-serif";
-      ctx.fillText(String(val), 140, y);
-      ctx.font = "13px Arial, sans-serif";
-    });
-
-    // Honours as symbols
-    const hon = [
-      ["🏆", h2.leagueTitles],
-      ["🥇", h2.domesticCups],
-      ["🌍", h2.europeanCups],
-      ["🦁", h2.intlTrophies],
-      ["👟", h2.goldenBoots],
-      ["🏅", h2.ballonDors],
+    // Honours, as a single row of chips
+    const chips = [
+      ["🏆", hon.leagueTitles], ["🌍", hon.europeanCups], ["🦁", hon.intlTrophies],
+      ["🏅", hon.ballonDors], ["👟", hon.goldenBoots], ["🥇", hon.domesticCups],
     ].filter(([, v]) => v > 0);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 16px Arial, sans-serif";
-    ctx.textAlign = "left";
-    ctx.fillText("HONOURS", 55, 680);
-    if (hon.length) {
-      let x = 55;
-      const y = 710;
-      hon.forEach(([icon, val]) => {
-        const text = `${icon} ${val}×`;
-        const width = ctx.measureText(text).width + 16;
-        ctx.fillStyle = "#1a1d2b";
-        ctx.strokeStyle = "#3a4055";
+    if (chips.length) {
+      ctx.font = "bold 15px Arial, sans-serif";
+      const chipW = chips.map(([ic, v]) => ctx.measureText(`${ic} ${v}`).width + 22);
+      let x = cx - chipW.reduce((s, v) => s + v + 8, -8) / 2;
+      chips.forEach(([ic, v], i) => {
+        ctx.fillStyle = "#171b2a";
+        ctx.strokeStyle = "#2f3648";
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.roundRect(x, y - 18, width, 28, 12);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = "#f6c453";
-        ctx.font = "bold 16px Arial, sans-serif";
-        ctx.fillText(text, x + 8, y + 1);
-        x += width + 8;
+        ctx.roundRect(x, 596, chipW[i], 30, 15);
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = GOLD;
+        ctx.textAlign = "center";
+        ctx.fillText(`${ic} ${v}`, x + chipW[i] / 2, 616);
+        x += chipW[i] + 8;
       });
-    } else {
-      ctx.fillStyle = "#b8c0d0";
-      ctx.font = "14px Arial, sans-serif";
-      ctx.fillText("No major honours", 55, 710);
     }
 
-    // Branding + QR
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 22px Arial, sans-serif";
-    ctx.textAlign = "left";
-    ctx.fillText("1000GOALS.CO.UK", 55, h - 45);
-    ctx.fillStyle = "#b8c0d0";
-    ctx.font = "12px Arial, sans-serif";
-    ctx.fillText("Football DNA Simulator", 55, h - 22);
+    // The closing line of the biography, so the narrative payoff survives on
+    // the one thing the player actually keeps.
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#c8cee0";
+    ctx.font = "italic 14px Georgia, serif";
+    const tagline = cardTagline();
+    wrapCanvasText(ctx, tagline, w - 130, 3).forEach((line, i) => {
+      ctx.fillText(line, cx, 672 + i * 21);
+    });
 
-    // QR code image
-    const qr = new Image();
-    qr.crossOrigin = "anonymous";
-    qr.src = "https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://1000goals.co.uk";
-    qr.onload = () => {
-      ctx.drawImage(qr, w - 120, h - 130, 80, 80);
-    };
-
-    // Buttons
-    document.getElementById("btn-download-card").onclick = downloadShareCard;
-    document.getElementById("btn-share-card").onclick = shareShareCard;
+    // Footer
+    ctx.fillStyle = MUTED;
+    ctx.font = "bold 13px Arial, sans-serif";
+    ctx.fillText("1000GOALS.CO.UK", cx, h - 30);
   }
 
   function downloadShareCard() {
@@ -7222,6 +7204,62 @@
     const clubCount = state.clubsPlayed.size;
     const rarity = computeCareerRarity().label;
     return `My Football DNA player, ${state.player.name}, scored ${state.totalGoals} goals across ${clubCount} club${clubCount !== 1 ? "s" : ""} and is rated ${rarity}. Build yours and try to beat me → https://1000goals.co.uk`;
+  }
+
+  /* Opt-in leaderboard submission. Publishing a name to a public board is the
+   * player's choice, not a side effect of retiring, and one career can only be
+   * posted once — the flag is saved, so a refresh cannot double-post. */
+  function renderLeaderboardSubmit() {
+    const wrap = document.getElementById("lb-submit");
+    const note = document.getElementById("lb-submit-note");
+    const input = document.getElementById("lb-name");
+    const btn = document.getElementById("btn-submit-leaderboard");
+    if (!wrap || !note || !input || !btn) return;
+    const lb = getLeaderboard();
+
+    if (state.leaderboardSubmitted) {
+      wrap.classList.add("done");
+      note.textContent = "✅ This career is on the leaderboard.";
+      input.style.display = "none";
+      btn.style.display = "none";
+      return;
+    }
+    if (!lb || !lb.available()) {
+      note.textContent = "Leaderboard unavailable — you are offline or the service is unreachable.";
+      btn.disabled = true;
+      input.disabled = true;
+      return;
+    }
+
+    input.value = (state.player && state.player.name) || "";
+    const row = currentCareerRow();
+    lb.fetchTop(200).then((payload) => {
+      if (state.leaderboardSubmitted) return;
+      const rank = lb.projectedRank(row.goals, payload.entries);
+      note.textContent = `${row.goals} goals would enter the board at #${rank}.`;
+    });
+
+    btn.addEventListener("click", withFailsafe(() => {
+      const entry = Object.assign(currentCareerRow(), { name: input.value });
+      if (!lb.normalizeEntry(entry)) {
+        note.textContent = "Enter a display name (1-24 characters) before submitting.";
+        return;
+      }
+      btn.disabled = true;
+      note.textContent = "Submitting…";
+      lb.submit(entry).then((res) => {
+        if (res.ok) {
+          state.leaderboardSubmitted = true;
+          // Keep the chosen display name so the card and the board agree.
+          if (state.player) state.player.name = lb.cleanName(input.value);
+          saveState();
+          renderLeaderboardSubmit();
+        } else {
+          btn.disabled = false;
+          note.textContent = `Could not submit: ${res.error}`;
+        }
+      });
+    }));
   }
 
   function renderShareTagline() {
@@ -7483,10 +7521,6 @@
     if (el) el.innerHTML = buildBiographyHtml();
   }
 
-  function renderLegacyBiography() {
-    const el = document.getElementById("legacy-biography");
-    if (el) el.innerHTML = buildBiographyHtml();
-  }
   function ordinal(n) {
     const s = ["th", "st", "nd", "rd"], v = n % 100;
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
@@ -7751,6 +7785,8 @@
     startCreation, compilePlayer, simulateSeason, applySeasonalAttributeChanges, playSeason,
     recomputePlayerStats, simulateInternational, computeClubContractOffer, generateOffers, generateForcedDestinationOffers, determineNaturalRole,
     projectLeagueApps, computeAppearanceChance, computeGamesMissed, injurySeasonRisk, durabilityScore, injuryWear,
+    resolveBallonDor, ballonDorScore, simulateBallonDorField, computeCareerRarity,
+    capturePeak, peakSnapshot, endCareer,
     seasonYear, seasonLabel, eraStartYear, ERA_OPTIONS,
     isTournamentHeld, tournamentsInYear, tournamentContenders, simulateWorldTournaments,
     getCountryConfederation, CONFEDERATIONS, COUNTRY_ORIGINS,
@@ -7758,7 +7794,8 @@
     currentEuropeanEntry, makeKnockoutScorer, EURO_COMPETITIONS,
     TEAM_SQUADS, MANAGER_TENURE, initializeTeamSquad, simulateSquadTransfers, restoreWorldState,
     renderCareerStats, renderSeasonResult, renderContractOffer, renderCareerHeader, presentTransfer,
-    renderSquadInfo, renderCareerSummary, bodyLoadLabel,
+    renderSquadInfo, renderCareerSummary, generateCareerSummary, cardTagline, plural, bodyLoadLabel,
+    renderLeaderboard, renderLeaderboardSubmit, currentCareerRow, getLeaderboard,
     deriveInternationalTrait, intlArchetype, normalizeIntlTrait, getNationReputationTier,
     INTERNATIONAL_TOURNAMENTS, INTL_ARCHETYPES,
     getPillar, checkCareerMilestone, pickSeasonDecision, applyEffects, applyEffectsRaw,
