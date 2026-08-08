@@ -107,9 +107,12 @@
 
   // Initialize squad for a team (random generation for non-PL, snapshot for PL)
   function initializeTeamSquad(teamName, season) {
-    if (TEAM_SQUADS[teamName] && TEAM_SQUADS[teamName].lastUpdated === season) {
-      return TEAM_SQUADS[teamName];
-    }
+    // Build once, then let simulateSquadTransfers evolve it. This used to
+    // rebuild whenever lastUpdated !== season, which meant every squad was
+    // regenerated from scratch at the start of each campaign and the entire
+    // end-of-season transfer simulation was thrown away unused.
+    const existing = TEAM_SQUADS[teamName];
+    if (existing) { existing.lastUpdated = season; return existing; }
 
     const teamData = TEAM_DATABASE[teamName];
     if (!teamData) return null;
@@ -343,19 +346,21 @@
   const LEAGUE_WEIGHTS = {
     // shareCap: max fraction of team goals a player can claim per match
     // matchCap:  max Poisson lambda per match (prevents multi-goal haul every game)
-    Elite:         { goals: 1.0,  minutes: 1.0,  reputation: 1.0,  wages: 1.0,  compFactor: 0.18, europeWeight: 0.55, shareCap: 0.38, matchCap: 0.95 },
-    Europe:        { goals: 1.0,  minutes: 0.95, reputation: 0.85, wages: 0.85, compFactor: 0.15, europeWeight: 0.45, shareCap: 0.38, matchCap: 0.95 },
-    Mid:           { goals: 1.02, minutes: 1.0,  reputation: 0.70, wages: 0.70, compFactor: 0.08, europeWeight: 0.25, shareCap: 0.40, matchCap: 1.00 },
-    Lower:         { goals: 1.05, minutes: 1.0,  reputation: 0.55, wages: 0.55, compFactor: 0.04, europeWeight: 0.10, shareCap: 0.42, matchCap: 1.05 },
-    LaLiga:        { goals: 1.04, minutes: 0.95, reputation: 0.95, wages: 0.85, compFactor: 0.17, europeWeight: 0.50, shareCap: 0.50, matchCap: 1.25 },
-    SerieA:        { goals: 1.02, minutes: 0.95, reputation: 0.85, wages: 0.75, compFactor: 0.16, europeWeight: 0.50, shareCap: 0.46, matchCap: 1.15 },
-    Bundesliga:    { goals: 1.05, minutes: 1.0,  reputation: 0.88, wages: 0.75, compFactor: 0.16, europeWeight: 0.50, shareCap: 0.52, matchCap: 1.25 },
-    MLS:           { goals: 1.06, minutes: 1.05, reputation: 0.40, wages: 0.80, compFactor: 0.08, europeWeight: 0.05, shareCap: 0.48, matchCap: 1.20 },
-    Saudi:         { goals: 1.07, minutes: 1.05, reputation: 0.35, wages: 1.0,  compFactor: 0.08, europeWeight: 0.05, shareCap: 0.50, matchCap: 1.25 },
-    Championship:  { goals: 0.80, minutes: 1.05, reputation: 0.35, wages: 0.40, compFactor: 0.07, europeWeight: 0.05, shareCap: 0.38, matchCap: 0.95 },
-    League1:       { goals: 0.75, minutes: 1.05, reputation: 0.22, wages: 0.20, compFactor: 0.05, europeWeight: 0.00, shareCap: 0.38, matchCap: 0.95 },
-    League2:       { goals: 0.70, minutes: 1.05, reputation: 0.15, wages: 0.12, compFactor: 0.04, europeWeight: 0.00, shareCap: 0.38, matchCap: 0.95 },
-    NationalLeague:{ goals: 0.65, minutes: 1.05, reputation: 0.10, wages: 0.07, compFactor: 0.03, europeWeight: 0.00, shareCap: 0.38, matchCap: 0.95 },
+    // compFactor/europeWeight were removed: cup and European goals are now
+    // simulated per fixture from real qualification, not scaled off league goals.
+    Elite:         { goals: 1.0,  minutes: 1.0,  reputation: 1.0,  wages: 1.0, shareCap: 0.38, matchCap: 0.95 },
+    Europe:        { goals: 1.0,  minutes: 0.95, reputation: 0.85, wages: 0.85, shareCap: 0.38, matchCap: 0.95 },
+    Mid:           { goals: 1.02, minutes: 1.0,  reputation: 0.70, wages: 0.70, shareCap: 0.40, matchCap: 1.00 },
+    Lower:         { goals: 1.05, minutes: 1.0,  reputation: 0.55, wages: 0.55, shareCap: 0.42, matchCap: 1.05 },
+    LaLiga:        { goals: 1.04, minutes: 0.95, reputation: 0.95, wages: 0.85, shareCap: 0.50, matchCap: 1.25 },
+    SerieA:        { goals: 1.02, minutes: 0.95, reputation: 0.85, wages: 0.75, shareCap: 0.46, matchCap: 1.15 },
+    Bundesliga:    { goals: 1.05, minutes: 1.0,  reputation: 0.88, wages: 0.75, shareCap: 0.52, matchCap: 1.25 },
+    MLS:           { goals: 1.06, minutes: 1.05, reputation: 0.40, wages: 0.80, shareCap: 0.48, matchCap: 1.20 },
+    Saudi:         { goals: 1.07, minutes: 1.05, reputation: 0.35, wages: 1.0, shareCap: 0.50, matchCap: 1.25 },
+    Championship:  { goals: 0.80, minutes: 1.05, reputation: 0.35, wages: 0.40, shareCap: 0.38, matchCap: 0.95 },
+    League1:       { goals: 0.75, minutes: 1.05, reputation: 0.22, wages: 0.20, shareCap: 0.38, matchCap: 0.95 },
+    League2:       { goals: 0.70, minutes: 1.05, reputation: 0.15, wages: 0.12, shareCap: 0.38, matchCap: 0.95 },
+    NationalLeague:{ goals: 0.65, minutes: 1.05, reputation: 0.10, wages: 0.07, shareCap: 0.38, matchCap: 0.95 },
   };
 
   /* ---- SYNERGY SCORING: deep mathematical model ----
@@ -731,13 +736,33 @@
 
   // Active mode switches in the setup screen.
   const RATING_MODE = { PEAK: "peak", AT_TIME: "at-time" };
+  // `years` bounds which donor squads the draft can pull from. `startYear` is the
+  // calendar year the career itself kicks off in, which drives the season label
+  // and the whole international tournament calendar. Drafting across all thirty
+  // years means debuting in the present day, not in 1992.
   const ERA_OPTIONS = [
-    { key: "all", label: "All Eras (1992–2026)", years: [1992, 2026] },
-    { key: "classic", label: "Classic Era (1992–2004)", years: [1992, 2004] },
-    { key: "modern", label: "Modern Era (2005–2014)", years: [2005, 2014] },
-    { key: "recent", label: "Recent Era (2015–2024)", years: [2015, 2024] },
-    { key: "current", label: "Current Season (2025–26)", years: [2025, 2025] },
+    { key: "all", label: "All Eras (1992–2026)", years: [1992, 2026], startYear: 2025 },
+    { key: "classic", label: "Classic Era (1992–2004)", years: [1992, 2004], startYear: 1992 },
+    { key: "modern", label: "Modern Era (2005–2014)", years: [2005, 2014], startYear: 2005 },
+    { key: "recent", label: "Recent Era (2015–2024)", years: [2015, 2024], startYear: 2015 },
+    { key: "current", label: "Current Season (2025–26)", years: [2025, 2025], startYear: 2025 },
   ];
+  const DEFAULT_START_YEAR = 2025;
+  function eraStartYear(eraKey) {
+    const era = ERA_OPTIONS.find((e) => e.key === eraKey);
+    return (era && era.startYear) || DEFAULT_START_YEAR;
+  }
+  // The calendar year a given career season kicks off in. Seasons straddle two
+  // years (a 2027 season is 2027/28), which is what seasonLabel renders.
+  // Careers begin at season 1, so that season is startYear itself.
+  function seasonYear(season) {
+    const s = season == null ? (state ? state.season : 1) : season;
+    return ((state && state.startYear) || DEFAULT_START_YEAR) + s - 1;
+  }
+  function seasonLabel(season) {
+    const y = seasonYear(season);
+    return `${y}/${String((y + 1) % 100).padStart(2, "0")}`;
+  }
   const COUNTRY_ORIGINS = {
     "England": { flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", development: 1.0, bias: "balanced", story: "Homegrown under the English rain", intlDifficulty: 3, intlStrength: 84 },
     "Brazil": { flag: "🇧🇷", development: 1.08, bias: "flair", story: "Samba flair, raw street football", intlDifficulty: 8, intlStrength: 89 },
@@ -860,6 +885,13 @@
   for (const [conf, list] of Object.entries(CONFEDERATIONS)) {
     for (const c of list) COUNTRY_CONFEDERATION[c] = conf;
   }
+  // UEFA is the default confederation: any nation not claimed above belongs to
+  // it. The list has to exist rather than being left implicit, because building
+  // a tournament field reads CONFEDERATIONS[confederation] — with no UEFA key
+  // the Euro field fell back to every nation in the game and CONMEBOL sides
+  // turned up winning it.
+  CONFEDERATIONS.UEFA = Object.keys(COUNTRY_ORIGINS).filter((c) => !COUNTRY_CONFEDERATION[c]);
+  for (const c of CONFEDERATIONS.UEFA) COUNTRY_CONFEDERATION[c] = "UEFA";
   function getCountryConfederation(country) { return COUNTRY_CONFEDERATION[country] || "UEFA"; }
 
   function getEraSquadKeys(eraKey) {
@@ -927,6 +959,7 @@
     return {
       // setup
       era: "all",
+      startYear: DEFAULT_START_YEAR,
       ratingMode: RATING_MODE.PEAK,
       country: "England",
       seed: null,
@@ -958,6 +991,7 @@
       bioMoments: [], bioClosing: null,
       yearsAtClub: 0, injuryProneSeasons: 0, milestonesHit: {}, pillarMilestones: {}, pillars: null,
       intlCaps: 0, intlGoals: 0, intlDebut: false, intlCaptain: false, intlRetired: false, intlTrait: "balanced",
+      intlNarrated: {}, worldTournaments: [],
       injuryProneness: 50, retirementAge: 40, luck: 0, injuryCount: 0,
       seasonHistory: [], retired: false, bestRating: 0,
       clubsPlayed: new Set(), clubStats: {}, lastPerformanceTier: "Met Expectation",
@@ -968,6 +1002,9 @@
       competitionHistory: [],
       leagueTable: null,
       leagueStandings: null,
+      // { club, competition } — the European place a club earned last season.
+      europeanEntry: null,
+      lastCupWinner: null,
       pendingTransfer: false,
       endCareerReason: null,
       endOfCareerTriggered: false,
@@ -1069,8 +1106,18 @@
     s.careerLog = Array.isArray(s.careerLog) ? s.careerLog : [];
     s.bioMoments = Array.isArray(s.bioMoments) ? s.bioMoments : [];
     if (typeof s.injuryCount !== "number") s.injuryCount = 0;
+    // Careers saved before the calendar existed get their era's start year, so
+    // an in-flight season N lands on a plausible date instead of resetting.
+    // Test the raw save, not the merged state: freshState supplies a default, so
+    // checking the merged value could never distinguish absent from default.
+    const rawStartYear = raw && raw.startYear;
+    if (typeof rawStartYear !== "number" || !isFinite(rawStartYear)) s.startYear = eraStartYear(s.era);
     if (!s.derivedBonuses || typeof s.derivedBonuses !== "object") s.derivedBonuses = { agility: 0, balance: 0 };
-    if (!s.intlTrait || !["balanced", "nationalistic", "icon"].includes(s.intlTrait)) s.intlTrait = "balanced";
+    // Maps the pre-two-axis trait values onto the new archetypes.
+    s.intlTrait = normalizeIntlTrait(s.intlTrait);
+    s.intlNarrated = s.intlNarrated && typeof s.intlNarrated === "object" ? s.intlNarrated : {};
+    s.worldTournaments = Array.isArray(s.worldTournaments) ? s.worldTournaments : [];
+    if (!s.europeanEntry || typeof s.europeanEntry !== "object") s.europeanEntry = null;
     if (!s.leagueStandings || typeof s.leagueStandings !== "object") s.leagueStandings = null;
     if (s.intlRetired == null) s.intlRetired = false;
     s.clubsPlayed = s.clubsPlayed instanceof Set ? s.clubsPlayed : new Set(Array.isArray(s.clubsPlayed) ? s.clubsPlayed : []);
@@ -1080,15 +1127,36 @@
     if (!["country", "build", "attributes"].includes(s.phase)) s.phase = s.attrs ? "attributes" : "country";
     return normalizeContractState(s);
   }
+  // TEAM_SQUADS and MANAGER_TENURE live outside `state` but are part of the
+  // world the career happens in. Without them a reload regenerated every squad
+  // and reset every manager's tenure to zero, restarting the sacking cycle
+  // across the league and breaking the seeded-RNG guarantee across sessions.
+  function restoreWorldState(squads, tenure) {
+    for (const k of Object.keys(TEAM_SQUADS)) delete TEAM_SQUADS[k];
+    if (squads && typeof squads === "object") Object.assign(TEAM_SQUADS, squads);
+    for (const k of Object.keys(MANAGER_TENURE)) delete MANAGER_TENURE[k];
+    if (tenure && typeof tenure === "object") Object.assign(MANAGER_TENURE, tenure);
+  }
+
   function serializeState(s) {
     const copy = Object.assign({}, s);
     copy.clubsPlayed = [...(s.clubsPlayed || [])];
-    return JSON.stringify({ version: SAVE_VERSION, state: copy });
+    // Only the player's current division is simulated, so squads for leagues
+    // they have left are dead weight in the save. A career that moves around
+    // would otherwise accumulate every squad it ever touched.
+    let squads = TEAM_SQUADS;
+    if (s && s.club && TEAM_DATABASE[s.club]) {
+      const keep = new Set(getLeagueClubs(s.club).concat([s.club]));
+      squads = {};
+      for (const club of Object.keys(TEAM_SQUADS)) if (keep.has(club)) squads[club] = TEAM_SQUADS[club];
+    }
+    return JSON.stringify({ version: SAVE_VERSION, state: copy, squads, tenure: MANAGER_TENURE });
   }
 
   function deserializeState(json) {
     try {
       const wrapped = JSON.parse(json);
+      if (wrapped && (wrapped.squads || wrapped.tenure)) restoreWorldState(wrapped.squads, wrapped.tenure);
       return migrateState(wrapped && (wrapped.state || wrapped));
     } catch (e) {
       console.warn("Deserialize failed:", e);
@@ -1879,6 +1947,8 @@
   // Updated injury-proneness calculation now incorporates the new Injury Rating.
   function calculateInjuryProneness(a, academyTier, luck, injuryRating) {
     const base = calculateInjuryPronenessBase(a, academyTier, luck);
+    // Not durabilityScore(): that reads injuryProneness, which is what this
+    // function produces. Keep the neutral pillar value to avoid the cycle.
     const durability = getPillar("Durability");
     return Math.round(clamp((base + (injuryRating || 50)) / 2 - (durability - 50) / 8, 5, 95));
   }
@@ -2182,6 +2252,9 @@
     state.clubsPlayed.add(state.club);
     ensureClubStat(state.club);
     state.season = 1;
+    // Pin the career to a real calendar. Everything downstream that needs a date
+    // — the season label, the whole international tournament cycle — reads this.
+    state.startYear = eraStartYear(state.era);
     state.age = LEVERS.debutAge + (tier === "Strong" || tier === "World Class" ? 0 : randInt(0, 1));
     state.contractYears = 3;
     state.contractSignedAt = 1;
@@ -2328,21 +2401,9 @@
 
     const clubData = TEAM_DATABASE[club];
     const oppData = TEAM_DATABASE[opponent];
-    const threat = agedRating();
-    const posMod = getPositionModifiers();
-    const styleMod = (PLAYSTYLE_PROFILES[state.playstyle] || {}).goalMod || 1;
     const leagueWeights = LEAGUE_WEIGHTS[clubData.league] || LEAGUE_WEIGHTS.Championship;
-
-    // Player's share of his team's play-off goals, capped like a league match.
-    function playerGoalsFrom(teamGoals) {
-      if (teamGoals <= 0) return 0;
-      const teammateThreat = clubData.attack * 3.2;
-      let share = threat / (threat + teammateThreat);
-      share *= styleMod * getRoleMultiplier(state.role) * leagueWeights.goals;
-      share = clamp(share, 0.03, leagueWeights.shareCap || 0.38);
-      const lambda = Math.min(teamGoals * share * posMod.goal * LEVERS.conversionMultiplier, leagueWeights.matchCap || 0.95);
-      return poissonRandom(lambda);
-    }
+    // Same knockout attribution the cup and European runs use.
+    const playerGoalsFrom = makeKnockoutScorer(clubData, leagueWeights);
 
     // Semi-final, two legs.
     const leg1 = simulateMatch(clubData, oppData, 0, 0, false);
@@ -2406,8 +2467,135 @@
     if (p.central && (teamStyle === "Possession" || teamStyle === "Direct")) return 1.03;
     return 1.0;
   }
+  const ROLE_ORDER = ["Bench", "Rotation", "Starter", "Star"];
   function roleRank(role) {
     return { Star: 4, Starter: 3, Rotation: 2, Bench: 1 }[role] || 0;
+  }
+  function roleAtRank(rank) {
+    return ROLE_ORDER[clamp(rank, 1, ROLE_ORDER.length) - 1];
+  }
+
+  /* ---------------------- APPEARANCE AVAILABILITY -------------------------
+   * simulateSeason gates every appearance behind two independent terms: an
+   * availability roll (appearanceChance) and a contiguous spell of games lost
+   * to injury (gamesMissed). Both live here so the simulation and the contract
+   * and transfer screens run identical logic — the screens used to advertise a
+   * flat per-role constant that knew about neither, which is how a veteran
+   * could be sold a "Star · 34 apps" deal and then play eleven.
+   *
+   * Nothing in here may call rand(): the projection helpers run during
+   * rendering, and consuming the seeded stream there would let simply opening
+   * a screen change how the career plays out.
+   */
+  const ROLE_BASE_MINUTES = { Star: 0.97, Starter: 0.9, Rotation: 0.6, Bench: 0.3 };
+  // Cumulative injury mileage can never become the dominant term in gamesMissed.
+  // Uncapped, it fed back into itself every season (wear -> missed games -> more
+  // wear) and silently ended veteran careers regardless of physical condition.
+  // MAX_INJURY_MILEAGE bounds the counter itself so it stays a legible quantity
+  // to show the player; INJURY_WEAR_CAP bounds what it can cost them.
+  const MAX_INJURY_MILEAGE = 20;
+  const INJURY_WEAR_CAP = 6;
+
+  function injuryWear() {
+    return Math.min(INJURY_WEAR_CAP, Math.floor((state.injuryCount || 0) / 2));
+  }
+
+  // The Durability pillar is a stub that always returns 50 (pillars were pulled
+  // from gameplay), so every durability term in the availability model used to
+  // cancel out. Availability reads the attributes that do still exist instead,
+  // which is what makes staying physically sharp keep a veteran on the pitch.
+  // Centred on 50 so it drops into the same formulas the pillar fed.
+  // Plain-language read on accumulated injury mileage, shown wherever the player
+  // is being asked to commit to minutes.
+  function bodyLoadLabel() {
+    const m = state.injuryCount || 0;
+    return m >= 15 ? "heavy" : m >= 9 ? "worn" : m >= 4 ? "used" : "fresh";
+  }
+
+  function durabilityScore() {
+    const a = state.attrs || {};
+    const fitness = a.fitness == null ? 50 : a.fitness;
+    const strength = a.strength == null ? 50 : a.strength;
+    const longevity = state.longevity == null ? 50 : state.longevity;
+    const proneness = state.injuryProneness == null ? 50 : state.injuryProneness;
+    let d = fitness * 0.45 + strength * 0.2 + longevity * 0.2 + (100 - proneness) * 0.15;
+    if (hasTrait("Iron Man")) d += 8;
+    if (hasTrait("Injury Prone")) d -= 8;
+    return clamp(Math.round(d), 1, 99);
+  }
+
+  function computeAppearanceChance(role, league, age) {
+    const lw = LEAGUE_WEIGHTS[league] || LEAGUE_WEIGHTS.Elite;
+    const a = state.attrs || {};
+    const fitness = a.fitness == null ? 50 : a.fitness;
+    const speed = a.speed == null ? 50 : a.speed;
+    const strength = a.strength == null ? 50 : a.strength;
+    const durability = durabilityScore();
+    let chance = clamp((ROLE_BASE_MINUTES[role] || 0.7) * lw.minutes, 0.25, 1.0);
+    // Fitness and athleticism are the primary drivers of game time; age is a
+    // gentle modifier on top, not a hard cap.
+    chance *= 1 + (fitness - 50) / 500;
+    chance *= 1 + ((speed + strength) / 2 - 50) / 400;
+    chance *= 1 + (durability - 50) / 200;
+    let ageMult = 1.0;
+    if (age >= 32) ageMult *= 0.95;
+    if (age >= 34) ageMult *= 0.93;
+    if (age >= 36) ageMult *= 0.90;
+    if (age >= 38) ageMult *= 0.85;
+    if (age >= 40) ageMult *= 0.80;
+    return chance * ageMult;
+  }
+
+  // `pick(lo, hi)` is randInt when simulating and the range midpoint when
+  // projecting, so a contract screen and the season it describes agree.
+  function computeGamesMissed(age, leagueGames, pick) {
+    const fitness = (state.attrs || {}).fitness || 50;
+    const durability = durabilityScore();
+    const styleRisk = (PLAYSTYLE_PROFILES[state.playstyle] || {}).injuryRisk || 1;
+    let missed = Math.round((pick(LEVERS.injuryFreqMin, LEVERS.injuryFreqMax) + state.injuryProneness / 18) * styleRisk) +
+      (state.injuryProneSeasons > 0 ? pick(2, 6) : 0) + (age >= 32 ? pick(1, 4) : 0);
+    // Age 35+ injury risk climbs and accumulates with past mileage (capped).
+    if (age >= 35) {
+      missed += pick(2, 5) + Math.floor((age - 34) / 2) * pick(1, 3) + injuryWear();
+    }
+    missed = Math.max(0, missed - Math.round((durability - 50) / 10));
+    if (hasTrait("Iron Man")) missed = Math.max(0, missed - 6);
+    else if (fitness >= 90) missed = Math.max(0, missed - 3);
+    else if (fitness >= 80) missed = Math.max(0, missed - 1);
+    if (hasTrait("Injury Prone")) missed += pick(3, 7);
+    if (mentTag(state.mentality) === "workrate") missed = Math.max(0, missed - 1);
+    return clamp(Math.round(missed), 0, leagueGames);
+  }
+
+  // Chance that a season is written off entirely by fitness problems. This roll
+  // used to read nothing but age, so a 99-fitness Iron Man carried the same
+  // season-ending risk as a player with nothing left in the tank.
+  function injurySeasonRisk(age) {
+    if (age < 30) return 0;
+    const fitness = (state.attrs || {}).fitness || 50;
+    const durability = durabilityScore();
+    let risk = 0.1 + Math.min(0.35, (age - 30) * 0.025);
+    risk *= clamp(1 - (fitness - 60) / 120, 0.35, 1.5);
+    risk *= clamp(1 - (durability - 50) / 130, 0.4, 1.5);
+    risk *= 1 + (state.injuryProneness - 50) / 200;
+    if (hasTrait("Iron Man")) risk *= 0.45;
+    if (hasTrait("Injury Prone")) risk *= 1.5;
+    return clamp(risk, 0.02, 0.5);
+  }
+
+  function leagueGamesFor(club) {
+    return Math.max(1, (getLeagueClubs(club).length - 1) * 2);
+  }
+
+  // RNG-free league-appearance estimate for a role/club/age, used by every
+  // screen that quotes expected minutes.
+  function projectLeagueApps(role, club, age) {
+    const data = TEAM_DATABASE[club];
+    if (!data) return 0;
+    const leagueGames = leagueGamesFor(club);
+    const missed = computeGamesMissed(age, leagueGames, (lo, hi) => (lo + hi) / 2);
+    const chance = computeAppearanceChance(role, data.league, age);
+    return clamp(Math.round((leagueGames - missed) * chance), 0, leagueGames);
   }
 
   function determineNaturalRole(club) {
@@ -2555,6 +2743,188 @@
     }
   }
 
+  /* ------------------- CUP & EUROPEAN COMPETITIONS ------------------------
+   * Cup and European goals used to be derived from league goals:
+   *     cupEuroGoals = poisson(leagueGoals * compFactor)
+   *     cupApps      = round(cupEuroGoals * 1.3)
+   * which meant appearances were derived from goals, European qualification
+   * was never modelled (a 17th-place side carried the same europeWeight as the
+   * champion), and no amount of club reputation could add a single fixture.
+   *
+   * These run the other way round, the way football does: a finishing position
+   * earns a place, the place sets the competition, the run sets the number of
+   * fixtures, and goals come per fixture from the same attribution the league
+   * uses. A bigger club goes deeper, plays more, and scores more.
+   */
+  const EURO_COMPETITIONS = {
+    UCL:  { name: "Champions League", short: "UCL", emoji: "🌟", leaguePhase: 8, field: 82, prestige: 1.0 },
+    UEL:  { name: "Europa League", short: "UEL", emoji: "🌍", leaguePhase: 8, field: 72, prestige: 0.6 },
+    UECL: { name: "Conference League", short: "UECL", emoji: "🛡️", leaguePhase: 6, field: 63, prestige: 0.35 },
+  };
+  // Knockout ladder after the league phase. Two legs until the single-leg final.
+  const EURO_ROUNDS = [
+    { key: "R16", label: "round of 16", legs: 2, lift: 3 },
+    { key: "QF", label: "quarter-finals", legs: 2, lift: 6 },
+    { key: "SF", label: "semi-finals", legs: 2, lift: 9 },
+    { key: "F", label: "final", legs: 1, lift: 12 },
+  ];
+  // Domestic cup ladder. Early rounds are lower-division opposition.
+  const CUP_ROUNDS = [
+    { key: "R3", label: "third round", drop: 18 },
+    { key: "R4", label: "fourth round", drop: 14 },
+    { key: "R5", label: "fifth round", drop: 9 },
+    { key: "QF", label: "quarter-final", drop: 5 },
+    { key: "SF", label: "semi-final", drop: 1 },
+    { key: "F", label: "final", drop: 0 },
+  ];
+  const CONTINENTAL_LEAGUES = { LaLiga: true, SerieA: true, Bundesliga: true };
+  function playsInEurope(league) {
+    return PL_TIERS.includes(league) || !!CONTINENTAL_LEAGUES[league];
+  }
+
+  // A club's overall quality on the same 0-99 scale as its component ratings.
+  function clubStrengthOf(clubData) {
+    return (clubData.attack + clubData.midfield + clubData.defence + clubData.manager) / 4;
+  }
+
+  /* The player's cut of his team's goals in a knockout fixture. Identical
+   * attribution to a league match, so a cup goal is earned the same way — this
+   * is the function simulateChampionshipPlayoffs already proved out. */
+  function makeKnockoutScorer(clubData, leagueWeights) {
+    const threat = agedRating();
+    const posMod = getPositionModifiers();
+    const styleMod = (PLAYSTYLE_PROFILES[state.playstyle] || {}).goalMod || 1;
+    return function (teamGoals) {
+      if (teamGoals <= 0) return 0;
+      const teammateThreat = clubData.attack * 3.2;
+      let share = threat / (threat + teammateThreat);
+      share *= styleMod * getRoleMultiplier(state.role) * leagueWeights.goals;
+      share = clamp(share, 0.03, leagueWeights.shareCap || 0.38);
+      const lambda = Math.min(teamGoals * share * posMod.goal * LEVERS.conversionMultiplier, leagueWeights.matchCap || 0.95);
+      return poissonRandom(lambda);
+    };
+  }
+
+  // Build a plausible opponent around a target strength.
+  function makeCupOpponent(target) {
+    const t = clamp(Math.round(target), 30, 96);
+    return {
+      name: "opponent",
+      attack: clamp(t + randInt(-4, 4), 30, 96),
+      midfield: clamp(t + randInt(-4, 4), 30, 96),
+      defence: clamp(t + randInt(-4, 4), 30, 96),
+      manager: clamp(t + randInt(-4, 4), 30, 96),
+      tacticalStyle: choice(["Possession", "Counter", "High Press", "Direct", "Park the Bus"]),
+      homeAdvantage: 4,
+    };
+  }
+
+  /* Which European competition a finishing position earns for NEXT season.
+   * This is the piece that never existed: qualification was a per-league
+   * constant, so the club's actual season had no bearing on it. */
+  function europeanQualificationFor(league, pos, wonDomesticCup) {
+    if (!playsInEurope(league)) return null;
+    if (pos <= 4) return "UCL";
+    if (pos === 5) return "UEL";
+    if (wonDomesticCup) return "UEL";
+    if (pos === 6) return "UECL";
+    if (pos === 7 && wonDomesticCup) return "UECL";
+    return null;
+  }
+
+  /* This season's European entry for a club. Qualification belongs to the club,
+   * not the player, so a striker who moves from a Champions League side to a
+   * mid-table one does not carry the UCL place with him. When the player has
+   * just joined and no finish was recorded, infer from the club's standing
+   * among its rivals — the best available proxy for last season. */
+  function currentEuropeanEntry(club) {
+    const league = getClubLeague(club);
+    if (!playsInEurope(league)) return null;
+    const entry = state.europeanEntry;
+    if (entry && entry.club === club) return entry.competition;
+    const ranked = rankClubsByStrength(getLeagueClubs(club));
+    const pos = ranked.indexOf(club) + 1;
+    return pos > 0 ? europeanQualificationFor(league, pos, false) : null;
+  }
+
+  /* A European campaign: league phase, then as far through the knockouts as the
+   * club can get. Returns real fixtures, appearances and goals. */
+  function simulateEuropeanCampaign(compKey, clubData, leagueWeights, availability) {
+    const comp = EURO_COMPETITIONS[compKey];
+    if (!comp) return null;
+    const score = makeKnockoutScorer(clubData, leagueWeights);
+    const strength = clubStrengthOf(clubData);
+    let goals = 0, apps = 0, fixtures = 0;
+
+    const played = () => rand() < availability;
+
+    // League phase — everyone plays all of it.
+    let phasePoints = 0;
+    for (let i = 0; i < comp.leaguePhase; i++) {
+      const opp = makeCupOpponent(comp.field + randInt(-6, 6));
+      const res = simulateMatch(clubData, opp, 0, 0);
+      fixtures++;
+      if (played()) { apps++; goals += score(res.homeGoals); }
+      if (res.homeGoals > res.awayGoals) phasePoints += 3;
+      else if (res.homeGoals === res.awayGoals) phasePoints += 1;
+    }
+    // Roughly the top half of the league phase goes through.
+    const advanceThreshold = comp.leaguePhase * 1.35;
+    let alive = phasePoints >= advanceThreshold;
+    let roundReached = alive ? "R16" : "LP";
+    let won = false;
+
+    for (const round of EURO_ROUNDS) {
+      if (!alive) break;
+      roundReached = round.key;
+      // Opposition sharpens the deeper the run goes.
+      let agg = 0, oppAgg = 0;
+      for (let leg = 0; leg < round.legs; leg++) {
+        // Late rounds are contested against sides of the club's own calibre, not
+        // an average entrant — a superclub meets other superclubs in a semi.
+        const oppStrength = Math.max(comp.field + round.lift, strength + round.lift / 2 - 3);
+        const opp = makeCupOpponent(oppStrength + randInt(-4, 4));
+        const home = leg === 0 || round.legs === 1;
+        const res = home ? simulateMatch(clubData, opp, 0, 0) : simulateMatch(opp, clubData, 0, 0);
+        const mine = home ? res.homeGoals : res.awayGoals;
+        const theirs = home ? res.awayGoals : res.homeGoals;
+        agg += mine; oppAgg += theirs;
+        fixtures++;
+        if (played()) { apps++; goals += score(mine); }
+      }
+      // Ties level on aggregate are settled by the stronger side more often.
+      if (agg > oppAgg) alive = true;
+      else if (agg < oppAgg) alive = false;
+      // Level on aggregate: extra time and penalties are close to a coin flip.
+      else alive = rand() < clamp(0.5 + (strength - comp.field - round.lift) / 70, 0.3, 0.7);
+      if (alive && round.key === "F") won = true;
+    }
+
+    return { key: compKey, name: comp.name, short: comp.short, emoji: comp.emoji, goals, apps, fixtures, roundReached, won };
+  }
+
+  /* The domestic cup as an actual knockout run rather than a weighted raffle
+   * that discarded its own result 40% of the time. */
+  function simulateDomesticCupRun(clubData, leagueWeights, availability) {
+    const score = makeKnockoutScorer(clubData, leagueWeights);
+    const strength = clubStrengthOf(clubData);
+    let goals = 0, apps = 0, fixtures = 0, roundReached = "R3", won = false;
+    let alive = true;
+    for (const round of CUP_ROUNDS) {
+      if (!alive) break;
+      roundReached = round.key;
+      const opp = makeCupOpponent(strength - round.drop + randInt(-5, 5));
+      const res = simulateMatch(clubData, opp, 0, 0);
+      fixtures++;
+      if (rand() < availability) { apps++; goals += score(res.homeGoals); }
+      if (res.homeGoals > res.awayGoals) alive = true;
+      else if (res.homeGoals < res.awayGoals) alive = false;
+      else alive = rand() < clamp(0.5 + (strength - (strength - round.drop)) / 30, 0.2, 0.8);
+      if (alive && round.key === "F") won = true;
+    }
+    return { goals, apps, fixtures, roundReached, won };
+  }
+
   function simulateSeason() {
     const club = state.club;
     updateTeamStrengths();
@@ -2572,36 +2942,12 @@
     const fitMult = getTacticalFitMultiplier(state.playstyle, clubData.tacticalStyle);
     const roleMult = getRoleMultiplier(state.role);
     const leagueWeights = LEAGUE_WEIGHTS[clubData.league] || LEAGUE_WEIGHTS.Elite;
-    let appearanceChance = clamp(({ Star: 0.97, Starter: 0.9, Rotation: 0.6, Bench: 0.3 }[state.role] || 0.7) * leagueWeights.minutes, 0.25, 1.0);
-    
-    // Fitness and speed are the PRIMARY drivers of game time, not age
-    // High fitness/speed = more games. Low fitness/speed = fewer games.
-    const fitness = state.attrs.fitness;
+    // Fitness and athleticism are the primary drivers of game time, not age.
+    // Shared with the contract/transfer screens so the minutes a club promises
+    // are the minutes the simulation will actually produce.
+    const appearanceChance = computeAppearanceChance(state.role, clubData.league, state.age);
     const speed = state.attrs.speed;
-    const strength = state.attrs.strength;
-    const durability = getPillar("Durability");
-    
-    // Fitness multiplier: 90+ fitness = +10%, 50 fitness = 0%, <50 = -10%
-    const fitnessMult = 1 + (fitness - 50) / 500;
-    
-    // Speed/Strength multiplier: average of both, affects availability
-    const athleticAvg = (speed + strength) / 2;
-    const athleticMult = 1 + (athleticAvg - 50) / 400;
-    
-    // Durability pillar: high durability = more games available
-    const durabilityMult = 1 + (durability - 50) / 200;
-    
-    // Age is now a GENTLE modifier, not a hard cap
-    // Veterans (37+) decline slowly if they have good fitness/speed
-    let ageMult = 1.0;
-    if (state.age >= 32) ageMult *= 0.95;  // -5% (was -15%)
-    if (state.age >= 34) ageMult *= 0.93;  // -7% (was -25%)
-    if (state.age >= 36) ageMult *= 0.90;  // -10% (was -40%)
-    if (state.age >= 38) ageMult *= 0.85;  // -15% (was -60%)
-    if (state.age >= 40) ageMult *= 0.80;  // -20%
-    
-    // Apply all multipliers
-    appearanceChance *= fitnessMult * athleticMult * durabilityMult * ageMult;
+    const durability = durabilityScore();
     const mentClutch = mentTag(state.mentality);
     const clutchBonus = ["clutch", "winner", "talisman"].includes(mentClutch) ? state.mentalityRating / 100 : 0;
 
@@ -2609,23 +2955,13 @@
     const leagueGames = (seasonClubs.length - 1) * 2;
 
     // injuries — driven by hidden injury proneness, fitness, age, playstyle risk, and Durability pillar
-    const styleRisk = (PLAYSTYLE_PROFILES[state.playstyle] || {}).injuryRisk || 1;
-    let gamesMissed = Math.round((randInt(LEVERS.injuryFreqMin, LEVERS.injuryFreqMax) + state.injuryProneness / 18) * styleRisk) +
-      (state.injuryProneSeasons > 0 ? randInt(2, 6) : 0) + (state.age >= 32 ? randInt(1, 4) : 0);
-    // Age 35+ injury risk starts to climb and accumulate with past injuries.
-    if (state.age >= 35) {
-      gamesMissed += randInt(2, 5) + Math.floor((state.age - 34) / 2) * randInt(1, 3) + Math.floor(state.injuryCount / 2);
-    }
-    gamesMissed = Math.max(0, gamesMissed - Math.round((durability - 50) / 10));
-    if (hasTrait("Iron Man")) gamesMissed = Math.max(0, gamesMissed - 6);
-    else if (fitness >= 90) gamesMissed = Math.max(0, gamesMissed - 3);
-    else if (fitness >= 80) gamesMissed = Math.max(0, gamesMissed - 1);
-    if (hasTrait("Injury Prone")) gamesMissed += randInt(3, 7);
-    if (["workrate"].includes(mentClutch)) gamesMissed = Math.max(0, gamesMissed - 1);
+    let gamesMissed = computeGamesMissed(state.age, leagueGames, randInt);
 
-    // Injury season: an entire campaign derailed by fitness issues, more likely as players get older.
+    // Injury season: an entire campaign derailed by fitness issues. The risk now
+    // reads the player's actual physical condition, so staying in shape is a
+    // genuine defence against losing a season rather than a coin flip on age.
     let injurySeason = false;
-    if (state.age >= 30 && rand() < 0.1 + Math.min(0.35, (state.age - 30) * 0.025)) {
+    if (rand() < injurySeasonRisk(state.age)) {
       injurySeason = true;
       const missedShare = 0.5 + rand() * 0.5; // 50-100% of league games missed
       gamesMissed = Math.round(leagueGames * missedShare);
@@ -2633,13 +2969,21 @@
     }
 
     gamesMissed = clamp(gamesMissed, 0, leagueGames);
+    // The spell lands at a random point in the campaign rather than always on
+    // the opening fixtures — a front-loaded block meant an injured veteran
+    // systematically missed August and was always fit for the run-in.
+    const injuryStart = gamesMissed > 0 && gamesMissed < leagueGames ? randInt(1, leagueGames - gamesMissed + 1) : 1;
+    const injuryEnd = injuryStart + gamesMissed - 1;
     // 48+ players are stopped by a career-ending injury; log and flag retirement.
     if (state.age >= 48 && gamesMissed >= 1) {
       log(`   ↳ 🚑 ${state.player.name} suffers a career-ending injury. At ${state.age}, the body simply won't recover.`, "milestone");
       state.retireNow = true;
     }
-    // Track cumulative injury burden: severe games missed add to the count.
-    if (gamesMissed >= 4) state.injuryCount += Math.floor(gamesMissed / 4);
+    // Cumulative injury mileage. A heavy season adds wear; a clean one works it
+    // off, faster for durable players. Without this recovery path the counter
+    // only ever climbed and fed straight back into next season's missed games.
+    if (gamesMissed >= 4) state.injuryCount = Math.min(MAX_INJURY_MILEAGE, state.injuryCount + Math.floor(gamesMissed / 4));
+    else if (state.injuryCount > 0) state.injuryCount = Math.max(0, state.injuryCount - (durability >= 65 ? 2 : 1));
 
     let leagueGoals = 0, assists = 0, apps = 0, cleanSheets = 0, playerMatch = 0;
     let momentum = 0; // shifts with recent results, from -3 to +3
@@ -2676,7 +3020,8 @@
         }
         if (lastResults.length > 5) lastResults.shift();
 
-        const playing = playerMatch > gamesMissed && rand() < appearanceChance;
+        const sidelined = gamesMissed > 0 && playerMatch >= injuryStart && playerMatch <= injuryEnd;
+        const playing = !sidelined && rand() < appearanceChance;
         if (!playing) continue;
         apps++;
         if (oppGoals === 0) cleanSheets++;
@@ -2727,19 +3072,24 @@
       }
     }
 
-    // cup + european goals (all comps count toward 1000)
-    // Boost cup/Europe goals for high reputation or strength teams.
-    // TEAM_DATABASE has no single "strength" field, so derive it from the four core ratings.
-    const clubStrength = (clubData.attack + clubData.midfield + clubData.defence + clubData.manager) / 4;
-    const reputationBoost = 1 + (state.reputation - 50) / 200;
-    const strengthBoost = 1 + (clubStrength - 70) / 100;
-    const cupEuroBoost = Math.max(1, reputationBoost * strengthBoost);
-    const compFactor = leagueWeights.compFactor * cupEuroBoost;
-    const cupEuroGoals = poissonRandom(leagueGoals * compFactor);
-    const cupApps = Math.round(cupEuroGoals * 1.3) + (apps > 0 ? randInt(2, 6) : 0);
-    // Split cup/European goals proportionally by league prestige
-    const europeGoals = Math.round(cupEuroGoals * leagueWeights.europeWeight);
-    const cupGoals = cupEuroGoals - europeGoals;
+    // Cup and European goals are earned per fixture (all comps count toward 1000).
+    // Availability in the cups tracks availability in the league: a player who
+    // missed a third of the season misses roughly a third of the cup run too.
+    const cupAvailability = clamp(appearanceChance * (1 - gamesMissed / Math.max(1, leagueGames)), 0.05, 0.98);
+
+    // Europe is entered on the strength of LAST season's finish, which is what
+    // makes a big club's reputation actually pay: a deeper run is more games,
+    // and more games are more goals.
+    const euroEntry = currentEuropeanEntry(club);
+    const euroCampaign = euroEntry
+      ? simulateEuropeanCampaign(euroEntry, clubData, leagueWeights, cupAvailability)
+      : null;
+    const europeGoals = euroCampaign ? euroCampaign.goals : 0;
+
+    const cupRun = simulateDomesticCupRun(clubData, leagueWeights, cupAvailability);
+    const cupGoals = cupRun.goals;
+
+    const cupApps = (euroCampaign ? euroCampaign.apps : 0) + cupRun.apps;
     const seasonGoals = leagueGoals + cupGoals + europeGoals;
     apps += cupApps;
 
@@ -2783,26 +3133,41 @@
       honoursThisSeason.push("League Title");
       state.competitionHistory.push({ season: state.season, club, text: `🏆 League champions with ${club}` });
     }
-    // domestic cup (weighted by strength)
-    const cupWinner = weightedRandomPick(seasonClubs.map((c) => {
-      const t = TEAM_DATABASE[c];
-      return { item: c, weight: t.attack + t.defence + t.midfield + t.manager };
-    }));
-    if (cupWinner === club && rand() < 0.6) {
+    // Domestic cup: decided by the run the club actually had. If the player's
+    // club went out, the trophy still goes to somebody — it used to be drawn by
+    // weight and then thrown away 40% of the time, leaving seasons with no winner.
+    if (cupRun.won) {
       state.honours.domesticCups++;
       honoursThisSeason.push("Domestic Cup");
       state.competitionHistory.push({ season: state.season, club, text: `🥇 Won the domestic cup with ${club}` });
+      log(`   ↳ 🥇 ${club} win the domestic cup.`, "milestone");
+    } else {
+      const rivals = seasonClubs.filter((c) => c !== club);
+      const cupWinner = weightedRandomPick(rivals.map((c) => {
+        const t = TEAM_DATABASE[c];
+        return { item: c, weight: t.attack + t.defence + t.midfield + t.manager };
+      }));
+      if (cupWinner) state.lastCupWinner = cupWinner;
     }
-    // european trophy (only for top-4 qualifiers, strong teams)
-    if (pos <= 4 && clubData.league === "Elite") {
-      const euroField = sorted.slice(0, 6).map((r) => ({ item: r.team, weight: TEAM_DATABASE[r.team].attack + TEAM_DATABASE[r.team].defence }));
-      const euroWinner = weightedRandomPick(euroField);
-      if (euroWinner === club && rand() < 0.5) {
+    // European trophy: won by getting through the rounds, in any league that
+    // plays in Europe — the old gate was `pos <= 4 && league === "Elite"`, so a
+    // La Liga or Serie A club could never win one despite scoring European goals.
+    if (euroCampaign) {
+      const comp = EURO_COMPETITIONS[euroCampaign.key];
+      if (euroCampaign.won) {
         state.honours.europeanCups++;
-        honoursThisSeason.push("European Cup");
-        state.competitionHistory.push({ season: state.season, club, text: `🌍 European champions with ${club}!` });
+        honoursThisSeason.push(comp.name);
+        state.competitionHistory.push({ season: state.season, club, text: `${comp.emoji} Won the ${comp.name} with ${club}!` });
+        log(`   ↳ ${comp.emoji} ${club} are ${comp.name} winners!`, "milestone");
+      } else if (euroCampaign.roundReached !== "LP") {
+        const r = EURO_ROUNDS.find((x) => x.key === euroCampaign.roundReached);
+        log(`   ↳ ${comp.emoji} ${club} go out of the ${comp.name} in the ${r ? r.label : "knockouts"}.`, "info");
       }
     }
+    // Next season's European place, earned by this season's finish. This is the
+    // link that never existed: qualification was a per-league constant.
+    state.europeanEntry = { club, competition: europeanQualificationFor(clubData.league, pos, cupRun.won) };
+
     // individual awards
     const awards = [];
     const bestAttack = Math.max(...seasonClubs.map((c) => TEAM_DATABASE[c].attack));
@@ -2818,7 +3183,10 @@
     // AND either:
     //   A) Top-tier performance: rating 8.0+, 25+ goals, reputation 70+, Sensational/Overperformed
     //   B) International success: won international trophy, 20+ goals, reputation 70+
-    const isEliteLeague = ["Elite", "LaLiga", "SerieA", "Bundesliga", "League1"].includes(clubData.league);
+    // NB "League1" here is English League One (see ENGLISH_PYRAMID), not Ligue 1
+    // — including it let a third-tier striker qualify for the Ballon d'Or.
+    // French Ligue 1 is not modelled in TEAM_DATABASE at all.
+    const isEliteLeague = ["Elite", "LaLiga", "SerieA", "Bundesliga"].includes(clubData.league);
     const hasHighRating = seasonRating >= 8.0;
     const hasHighGoals = seasonGoals >= 25;
     const hasHighReputation = state.reputation >= 70;
@@ -2908,8 +3276,9 @@
     } else if (clubData.league === "Championship" && pos >= 3 && pos <= 6 && wasPromotedThisSeason) {
       log(`   ↳ 🎯 ${club} win the Championship play-offs while ${state.player.name} watches on from the treatment table.`, "milestone");
     }
-    // Play-off goals are knockout goals: fold them into the cup column so the
-    // invariant totalGoals === leagueGoals + cupGoals + europeGoals still holds.
+    // Play-off goals are knockout goals, so they belong in the cup column.
+    // The full ledger is totalGoals === leagueGoals + cupGoals + europeGoals +
+    // intlGoals; internationals are added separately in simulateInternational.
     if (playoffGoals > 0 || playoffApps > 0) {
       state.totalGoals += playoffGoals;
       state.cupGoals += playoffGoals;
@@ -2922,8 +3291,9 @@
       season: state.season, age: state.age, club, role: state.role,
       goals: seasonGoals + playoffGoals, leagueGoals, cupGoals: cupGoals + playoffGoals, europeGoals,
       assists, apps: apps + playoffApps, rating: seasonRating,
-      yellow, red, cleanSheets, pos, trajectory, perfTier, gamesMissed,
+      yellow, red, cleanSheets, pos, trajectory, perfTier, gamesMissed, injurySeason, injuryStart,
       champion, honours: honoursThisSeason, awards, isTopScorer, promotionRelegation, playoffGoals, playoffApps,
+      euroCampaign, cupRun,
     };
     state.seasonHistory.push(seasonData);
     
@@ -3343,174 +3713,276 @@
     state.reputationTier = reputationTier(state.reputation);
   }
 
-  /* ---------------------- INTERNATIONAL CAREER -------------------------- */
+  /* ---------------------- INTERNATIONAL CAREER --------------------------
+   * The international game runs on a real calendar (see seasonYear), not on the
+   * player's career index. Each tournament declares the cycle it runs on and a
+   * real year it was held, so isTournamentHeld can place it correctly for any
+   * career start year — a Classic career debuting in 1992 meets USA '94, a
+   * present-day career meets 2026.
+   *
+   * Tournaments are also decided independently of the player. The field is
+   * simulated from nation strength and pedigree, the winner is recorded in a
+   * world ledger, and the player lifts the trophy only if their nation actually
+   * won it. Previously a striker who scored three at a World Cup won it
+   * outright, which is why England won every World Cup and never a Euro.
+   */
+
+  // Nation names differ between the display tables and the logic tables
+  // ("Côte d'Ivoire" vs "Ivory Coast"). Everything funnels through here so the
+  // two can never silently disagree again.
+  const NATION_ALIASES = {
+    "Germany (incl. West Germany)": "Germany",
+    "West Germany": "Germany",
+    "Côte d'Ivoire": "Ivory Coast",
+    "United States": "USA",
+    "Republic of Korea": "South Korea",
+    "IR Iran": "Iran",
+    "Korea Republic": "South Korea",
+  };
+  function normalizeNation(name) {
+    return NATION_ALIASES[name] || name;
+  }
+
+  /* ---- Hidden international archetype ------------------------------------
+   * Two axes, not one: how often a player is picked (capRate) and how ruthless
+   * they are when they play (goalRate). The old single "goal share" nudge of
+   * ~15% could not tell a 200-cap servant apart from a 60-cap penalty-box
+   * assassin, so every career converged on the same international shape.
+   */
+  const INTL_ARCHETYPES = {
+    icon:       { label: "Icon",       capRate: 1.35, goalRate: 1.30, selection: 0.97, blurb: "a fixture of the national side for a generation" },
+    talisman:   { label: "Talisman",   capRate: 0.95, goalRate: 1.60, selection: 0.90, blurb: "ruthless in front of goal whenever called upon" },
+    servant:    { label: "Servant",    capRate: 1.40, goalRate: 0.55, selection: 0.96, blurb: "someone who gave the shirt everything, year after year" },
+    balanced:   { label: "Balanced",   capRate: 1.00, goalRate: 1.00, selection: 0.90, blurb: "a dependable international" },
+    peripheral: { label: "Peripheral", capRate: 0.62, goalRate: 0.90, selection: 0.70, blurb: "always in and out of the squad" },
+  };
+  const INTL_TRAIT_KEYS = Object.keys(INTL_ARCHETYPES);
+  // Saves written before the two-axis model carried three values.
+  const LEGACY_INTL_TRAITS = { nationalistic: "talisman" };
+  function normalizeIntlTrait(t) {
+    if (LEGACY_INTL_TRAITS[t]) return LEGACY_INTL_TRAITS[t];
+    return INTL_ARCHETYPES[t] ? t : "balanced";
+  }
+  function intlArchetype() {
+    return INTL_ARCHETYPES[normalizeIntlTrait(state.intlTrait)] || INTL_ARCHETYPES.balanced;
+  }
+
   function deriveInternationalTrait() {
     const origin = state.player.origin || COUNTRY_ORIGINS["England"];
     const tag = mentTag(state.mentality);
     const strength = origin.intlStrength || 80;
     const difficulty = origin.intlDifficulty || 5;
-    const chances = { icon: 0.2, nationalistic: 0.2, balanced: 0.6 };
-    // Elite football nations and clutch/winner mentalities lean toward "icon".
-    if (strength >= 85 && difficulty >= 6) {
-      chances.icon += 0.12;
-      chances.balanced -= 0.12;
-    }
-    if (["clutch", "winner", "talisman"].includes(tag)) {
-      chances.icon += 0.1;
-      chances.balanced -= 0.1;
-    }
-    // Nations with passionate or hard paths and leader/workrate mentalities lean toward "nationalistic".
-    if (difficulty >= 4) {
-      chances.nationalistic += 0.08;
-      chances.balanced -= 0.08;
-    }
-    if (["leader", "workrate", "consistency"].includes(tag)) {
-      chances.nationalistic += 0.08;
-      chances.balanced -= 0.08;
-    }
-    const r = rand();
-    let c = 0;
-    if (r < (c += chances.icon)) return "icon";
-    if (r < (c += chances.nationalistic)) return "nationalistic";
-    return "balanced";
+    const w = { icon: 10, talisman: 16, servant: 16, balanced: 38, peripheral: 20 };
+    // Deep, elite nations breed icons but also leave more players peripheral —
+    // there is more competition for the shirt.
+    if (strength >= 85) { w.icon += 8; w.peripheral += 6; w.balanced -= 10; }
+    // A shallow pool means whoever is good gets picked, every time.
+    if (strength < 78) { w.servant += 12; w.peripheral -= 10; }
+    if (difficulty >= 7) { w.talisman += 6; }
+    if (["clutch", "winner", "talisman"].includes(tag)) { w.talisman += 14; w.icon += 6; w.peripheral -= 8; }
+    if (["leader", "workrate", "consistency"].includes(tag)) { w.servant += 14; w.icon += 4; w.peripheral -= 6; }
+    if (["volatile", "negative"].includes(tag)) { w.peripheral += 12; w.icon -= 6; }
+    const pool = INTL_TRAIT_KEYS.map((k) => ({ item: k, weight: Math.max(1, w[k]) }));
+    return weightedRandomPick(pool) || "balanced";
   }
 
+  /* ---- The tournament calendar -------------------------------------------
+   * `frequency` is the cycle in years and `anchor` is a real year the
+   * tournament was held, so (year - anchor) % frequency === 0 places it
+   * correctly forwards and backwards across the whole 1992-2050 range. The
+   * frequency field already existed on every entry and was never read.
+   */
   const INTERNATIONAL_TOURNAMENTS = {
     WorldCup: {
-      name: "FIFA World Cup",
-      emoji: "🌍",
-      governing: "FIFA",
-      frequency: 4,
-      firstHeld: 1930,
+      name: "FIFA World Cup", short: "World Cup", emoji: "🌍", governing: "FIFA",
+      frequency: 4, anchor: 2026, firstHeld: 1930, global: true, games: 7, prestige: 1.0,
       context: "The most prestigious tournament in international football. Only eight nations have ever won it.",
       topCountries: { Brazil: 5, "Germany (incl. West Germany)": 4, Italy: 4, Argentina: 3, France: 2, Uruguay: 2, England: 1, Spain: 1 },
       recentWinners: ["2022: Argentina", "2018: France", "2014: Germany", "2010: Spain", "2006: Italy", "2002: Brazil", "1998: France", "1994: Brazil"]
     },
     Euro: {
-      name: "UEFA European Championship",
-      emoji: "🇪🇺",
-      governing: "UEFA",
-      frequency: 4,
-      firstHeld: 1960,
+      name: "UEFA European Championship", short: "Euros", emoji: "🇪🇺", governing: "UEFA",
+      frequency: 4, anchor: 2024, firstHeld: 1960, confederation: "UEFA", games: 6, prestige: 0.9,
       context: "The premier continental tournament for European nations. Ten different countries have won it.",
       topCountries: { Spain: 4, "Germany (incl. West Germany)": 3, France: 2, Italy: 2 },
       recentWinners: ["2024: Spain", "2020 (21): Italy", "2016: Portugal", "2012: Spain", "2008: Spain", "2004: Greece", "2000: France", "1996: Germany"]
     },
     AFCON: {
-      name: "Africa Cup of Nations",
-      emoji: "🇿🇦",
-      governing: "CAF",
-      frequency: 2,
-      firstHeld: 1957,
+      name: "Africa Cup of Nations", short: "AFCON", emoji: "🌍", governing: "CAF",
+      frequency: 2, anchor: 2025, firstHeld: 1957, confederation: "CAF", games: 6, prestige: 0.7,
       context: "Africa's most prestigious national team tournament, known for passionate crowds and unpredictable outcomes.",
       topCountries: { Egypt: 7, Cameroon: 5, Ghana: 4, "Côte d'Ivoire": 3, Nigeria: 3 },
       recentWinners: ["2025: Senegal", "2023: Côte d'Ivoire", "2021: Senegal", "2019: Algeria", "2017: Cameroon", "2015: Côte d'Ivoire", "2013: Nigeria", "2012: Zambia"]
     },
     CopaAmerica: {
-      name: "Copa América",
-      emoji: "🌎",
-      governing: "CONMEBOL",
-      frequency: 2,
-      firstHeld: 1916,
+      // Modern Copa settled onto a four-year cycle (2016 centenary aside).
+      name: "Copa América", short: "Copa América", emoji: "🌎", governing: "CONMEBOL",
+      frequency: 4, anchor: 2024, firstHeld: 1916, confederation: "CONMEBOL", games: 6, prestige: 0.85,
       context: "The oldest international continental football tournament. Eight of the ten CONMEBOL members have won it at least once.",
       topCountries: { Argentina: 16, Uruguay: 15, Brazil: 9 },
       recentWinners: ["2024: Argentina", "2021: Argentina", "2019: Brazil", "2016: Chile", "2015: Chile", "2011: Uruguay", "2007: Brazil", "2004: Brazil"]
     },
     AsianCup: {
-      name: "AFC Asian Cup",
-      emoji: "🌏",
-      governing: "AFC",
-      frequency: 4,
-      firstHeld: 1956,
+      name: "AFC Asian Cup", short: "Asian Cup", emoji: "🌏", governing: "AFC",
+      frequency: 4, anchor: 2027, firstHeld: 1956, confederation: "AFC", games: 6, prestige: 0.6,
       context: "The premier continental competition for Asian nations. Australia has competed since joining the AFC.",
       topCountries: { Japan: 4, Iran: 3, "Saudi Arabia": 3, "South Korea": 2 },
       recentWinners: ["2023: Qatar", "2019: Qatar", "2015: Australia", "2011: Japan", "2007: Iraq", "2004: Japan", "2000: Japan", "1996: Saudi Arabia"]
     },
     GoldCup: {
-      name: "CONCACAF Gold Cup",
-      emoji: "🇺🇸",
-      governing: "CONCACAF",
-      frequency: 2,
-      firstHeld: 1963,
+      name: "CONCACAF Gold Cup", short: "Gold Cup", emoji: "🌎", governing: "CONCACAF",
+      frequency: 2, anchor: 2025, firstHeld: 1963, confederation: "CONCACAF", games: 5, prestige: 0.55,
       context: "The premier tournament for North, Central America and the Caribbean.",
       topCountries: { Mexico: 12, "United States": 7, "Costa Rica": 3 },
       recentWinners: ["2025: Mexico", "2023: Mexico", "2021: USA", "2019: Mexico", "2017: USA", "2015: Mexico", "2013: USA", "2011: Mexico"]
     },
     OFCNationsCup: {
-      name: "OFC Nations Cup",
-      emoji: "🇳🇿",
-      governing: "OFC",
-      frequency: 4,
-      firstHeld: 1973,
+      name: "OFC Nations Cup", short: "OFC Nations Cup", emoji: "🌏", governing: "OFC",
+      frequency: 4, anchor: 2024, firstHeld: 1973, confederation: "OFC", games: 5, prestige: 0.4,
       context: "Oceania's premier national team tournament. Australia left the OFC to join the AFC in 2006.",
       topCountries: { "New Zealand": 6, Australia: 4, Tahiti: 1 },
       recentWinners: ["2024: New Zealand", "2016: New Zealand", "2012: Tahiti", "2008: New Zealand", "2004: Australia", "2002: New Zealand", "2000: Australia", "1998: Australia"]
-    }
+    },
+    NationsLeague: {
+      // Finals are contested in odd years; the group stage fills the autumn of
+      // the year before, which is why it reads as an every-other-summer event.
+      name: "UEFA Nations League", short: "Nations League", emoji: "🏅", governing: "UEFA",
+      frequency: 2, anchor: 2025, firstHeld: 2019, confederation: "UEFA", games: 6, prestige: 0.45, minor: true,
+      context: "A competitive replacement for meaningless friendlies, played across the autumn with a summer finals.",
+      topCountries: { Portugal: 2, France: 1, Spain: 1 },
+      recentWinners: ["2025: Portugal", "2023: Spain", "2021: France", "2019: Portugal"]
+    },
   };
+  const TOURNAMENT_KEYS = Object.keys(INTERNATIONAL_TOURNAMENTS);
   const TOURNAMENT_BY_CONFEDERATION = {
-    UEFA: "Euro",
-    CONMEBOL: "CopaAmerica",
-    CAF: "AFCON",
-    AFC: "AsianCup",
-    CONCACAF: "GoldCup",
-    OFC: "OFCNationsCup"
+    UEFA: "Euro", CONMEBOL: "CopaAmerica", CAF: "AFCON",
+    AFC: "AsianCup", CONCACAF: "GoldCup", OFC: "OFCNationsCup",
   };
+  // Confederations with a Nations League style competition filling the gaps.
+  const NATIONS_LEAGUE_CONFEDERATIONS = { UEFA: true, CONCACAF: true };
+
   const TOURNAMENT_WINNERS = {
     WorldCup: ["Brazil", "Germany", "Italy", "France", "Argentina", "Uruguay", "England", "Spain"],
     Euro: ["Spain", "Germany", "France", "Italy", "Netherlands", "Denmark", "Portugal", "Greece"],
     CopaAmerica: ["Argentina", "Uruguay", "Brazil", "Paraguay", "Peru", "Colombia"],
-    AFCON: ["Egypt", "Cameroon", "Ghana", "Ivory Coast", "Nigeria", "Senegal", "Algeria"],
+    AFCON: ["Egypt", "Cameroon", "Ghana", "Ivory Coast", "Nigeria", "Senegal", "Algeria", "Morocco", "Tunisia", "Zambia"],
     AsianCup: ["Japan", "South Korea", "Saudi Arabia", "Australia", "Iraq", "Iran"],
-    GoldCup: ["Mexico", "United States", "Costa Rica"],
-    OFCNationsCup: ["New Zealand", "Australia", "Tahiti"]
+    GoldCup: ["Mexico", "USA", "Costa Rica", "Canada"],
+    OFCNationsCup: ["New Zealand", "Australia", "Tahiti"],
+    NationsLeague: ["Portugal", "France", "Spain"],
   };
-  
-  // Nation reputation tiers: higher tier = more established/stronger nations
+
+  // Nation reputation tiers: higher tier = more established/stronger nations.
+  // Anything absent falls back to a strength-derived tier rather than a flat 3,
+  // so the many nations in COUNTRY_ORIGINS that were never listed here stop
+  // being treated as interchangeable.
   const NATION_REPUTATION_TIER = {
-    // Tier 1: Elite football nations (World Cup/Euro winners)
-    "Brazil": 1, "Germany": 1, "Italy": 1, "France": 1, "Argentina": 1, "Spain": 1, "England": 1,
-    // Tier 2: Strong nations (frequent tournament contenders)
-    "Netherlands": 2, "Belgium": 2, "Portugal": 2, "Denmark": 2, "Uruguay": 2, "Mexico": 2,
-    // Tier 3: Moderate nations (occasional tournament success)
-    "Japan": 3, "South Korea": 3, "Australia": 3, "Egypt": 3, "Cameroon": 3, "Ghana": 3,
-    "Ivory Coast": 3, "Nigeria": 3, "Senegal": 3, "Algeria": 3, "Paraguay": 3, "Peru": 3,
-    "Colombia": 3, "Costa Rica": 3, "Saudi Arabia": 3, "Iraq": 3, "Iran": 3,
-    // Tier 4: Lesser-known nations (rare tournament success)
-    "Greece": 4, "New Zealand": 4, "Tahiti": 4,
+    Brazil: 1, Germany: 1, Italy: 1, France: 1, Argentina: 1, Spain: 1, England: 1,
+    Netherlands: 2, Belgium: 2, Portugal: 2, Denmark: 2, Uruguay: 2, Mexico: 2, Croatia: 2,
+    Japan: 3, "South Korea": 3, Australia: 3, Egypt: 3, Cameroon: 3, Ghana: 3,
+    "Ivory Coast": 3, Nigeria: 3, Senegal: 3, Algeria: 3, Paraguay: 3, Peru: 3, Morocco: 3,
+    Colombia: 3, "Costa Rica": 3, "Saudi Arabia": 3, Iraq: 3, Iran: 3, Sweden: 3,
+    Poland: 3, Serbia: 3, Switzerland: 3, Turkey: 3, Ukraine: 3, Austria: 3, USA: 3, Norway: 3,
+    Greece: 4, "New Zealand": 4, Tahiti: 4, Scotland: 4, Wales: 4, Iceland: 4,
+    "Republic of Ireland": 4, "Northern Ireland": 4, Tunisia: 4, "Czech Republic": 4, "San Marino": 4,
   };
-  
+
+  function nationStrength(country) {
+    const o = COUNTRY_ORIGINS[country];
+    return (o && o.intlStrength) || 70;
+  }
   function getNationReputationTier(country) {
-    return NATION_REPUTATION_TIER[country] || 3; // Default to tier 3 for unknown nations
-  }
-  
-  function canWinTournament(country, tournamentKey) {
-    const winners = TOURNAMENT_WINNERS[tournamentKey] || [];
-    const isHistoricalWinner = winners.includes(country);
-    const tier = getNationReputationTier(country);
-    
-    // Historical winners can always win (with high probability)
-    if (isHistoricalWinner) return true;
-    
-    // Lesser-known nations (tier 4) have a small chance to win (upset)
-    if (tier === 4) return rand() < 0.05; // 5% chance for tier 4 nations
-    
-    // Tier 3 nations have a very small chance
-    if (tier === 3) return rand() < 0.02; // 2% chance for tier 3 nations
-    
-    return false;
-  }
-  
-  function getTournamentForSeason() {
-    const cycle = state.season % 4;
-    if (cycle === 0) return INTERNATIONAL_TOURNAMENTS.WorldCup;
-    if (cycle === 2) {
-      const conf = getCountryConfederation(state.country);
-      const key = TOURNAMENT_BY_CONFEDERATION[conf] || "WorldCup";
-      return INTERNATIONAL_TOURNAMENTS[key];
-    }
-    return null;
+    const listed = NATION_REPUTATION_TIER[normalizeNation(country)];
+    if (listed) return listed;
+    // Fall back to strength rather than a flat default.
+    const s = nationStrength(country);
+    if (s >= 86) return 1;
+    if (s >= 81) return 2;
+    if (s >= 75) return 3;
+    return 4;
   }
 
+  /* ---- Calendar placement ------------------------------------------------ */
+  function isTournamentHeld(key, year) {
+    const t = INTERNATIONAL_TOURNAMENTS[key];
+    if (!t) return false;
+    if (year < t.firstHeld) return false;
+    const delta = year - t.anchor;
+    return ((delta % t.frequency) + t.frequency) % t.frequency === 0;
+  }
+
+  // Every competition a nation could be involved in this summer, most
+  // prestigious first. A World Cup outranks a continental championship, which
+  // outranks a Nations League finals.
+  function tournamentsInYear(year, country) {
+    const conf = getCountryConfederation(country);
+    const out = [];
+    for (const key of TOURNAMENT_KEYS) {
+      const t = INTERNATIONAL_TOURNAMENTS[key];
+      if (!isTournamentHeld(key, year)) continue;
+      if (t.confederation && t.confederation !== conf) continue;
+      if (t.global || t.confederation === conf) out.push(key);
+    }
+    return out.sort((a, b) => INTERNATIONAL_TOURNAMENTS[b].prestige - INTERNATIONAL_TOURNAMENTS[a].prestige);
+  }
+
+  // Reaching a World Cup or continental championship is not automatic. Strong
+  // nations nearly always qualify; minnows rarely do.
+  function nationQualifies(country, key) {
+    const t = INTERNATIONAL_TOURNAMENTS[key];
+    if (!t) return false;
+    if (t.minor) return true;                       // Nations League: everyone plays
+    const tier = getNationReputationTier(country);
+    if (!t.global) {
+      // Continental championships have far more places than a World Cup.
+      return rand() < [0, 0.99, 0.95, 0.85, 0.62][tier];
+    }
+    return rand() < [0, 0.94, 0.85, 0.60, 0.28][tier];
+  }
+
+  /* ---- The world's own results ------------------------------------------- */
+  // A realistic field for a tournament: historical winners weigh heaviest, then
+  // the rest of the confederation by strength.
+  function tournamentContenders(key, boostNation) {
+    const t = INTERNATIONAL_TOURNAMENTS[key];
+    const weights = new Map();
+    const bump = (rawName, w) => {
+      const name = normalizeNation(rawName);
+      if (!name) return;
+      weights.set(name, Math.max(weights.get(name) || 0, 0) + w);
+    };
+    Object.entries(t.topCountries || {}).forEach(([n, wins]) => bump(n, 26 + wins * 7));
+    (TOURNAMENT_WINNERS[key] || []).forEach((n) => bump(n, 22));
+    // Fill out the field from the confederation (or the whole world for a World Cup).
+    const members = t.global ? Object.keys(COUNTRY_ORIGINS) : (CONFEDERATIONS[t.confederation] || []);
+    for (const raw of members) {
+      const n = normalizeNation(raw);
+      if (!COUNTRY_ORIGINS[n] && !weights.has(n)) continue;
+      const s = nationStrength(n);
+      // Steep curve: an 88-strength side is far more than 20% likelier than a 73.
+      // The floor is deliberately tiny — UEFA alone has 55 entrants, and a
+      // generous floor let their combined tail produce a Faroe Islands Euro win.
+      // Shocks stay possible (Denmark '92, Greece '04), just genuinely rare.
+      bump(n, Math.max(0.05, Math.pow(Math.max(0, s - 62) / 10, 2.6)));
+    }
+    // A generational striker genuinely lifts his nation's chances, but he no
+    // longer decides the tournament on his own goal tally.
+    if (boostNation && weights.has(normalizeNation(boostNation))) {
+      const n = normalizeNation(boostNation);
+      const lift = 1 + clamp((state.baseRating - 70) / 100, 0, 0.35) + clamp((state.reputation - 50) / 250, 0, 0.2);
+      weights.set(n, weights.get(n) * lift);
+    }
+    return [...weights.entries()].map(([item, weight]) => ({ item, weight }));
+  }
+
+  function recordWorldTournament(key, year, winner) {
+    if (!state.worldTournaments) state.worldTournaments = [];
+    const t = INTERNATIONAL_TOURNAMENTS[key];
+    state.worldTournaments.push({ year, key, name: t.name, short: t.short, emoji: t.emoji, winner });
+    if (state.worldTournaments.length > 80) state.worldTournaments.shift();
+  }
+
+  /* ---- Squad and opposition ---------------------------------------------- */
   function getNationalTeam() {
     const origin = state.player.origin || COUNTRY_ORIGINS["England"];
     const strength = origin.intlStrength || 80;
@@ -3525,81 +3997,175 @@
     };
   }
 
-  function getOpponentDifficulty() {
+  // Opposition scales with the occasion: a World Cup knockout is not a June
+  // friendly, and a qualifying group is softer than either.
+  function getOpponentDifficulty(fixtureKind) {
     const origin = state.player.origin || COUNTRY_ORIGINS["England"];
     const d = origin.intlDifficulty || 5;
-    // Easy groups (1-3) = weaker opponents, hard (8-10) = stronger opponents, plus fewer caps
-    const baseMin = 55 + d * 2; // 57-75
-    const baseMax = 70 + d * 2; // 72-90
-    return { min: baseMin, max: baseMax, difficulty: d };
+    const shift = { tournament: 6, nationsleague: 2, qualifier: -4, friendly: -2 }[fixtureKind] || 0;
+    return { min: 55 + d * 2 + shift, max: 70 + d * 2 + shift, difficulty: d };
+  }
+
+  /* ---- The international summer ------------------------------------------ */
+  // How many fixtures a nation plays in a given kind of year. A real senior
+  // international plays 8-14 times a season across qualifiers, friendlies,
+  // Nations League and tournaments — the old model capped out at 4-7, which is
+  // why the 221-cap record was unreachable by a factor of nearly two.
+  function scheduledInternationals(kind, tournamentKey) {
+    // Tuned so an elite "icon" career lands just under the 221-cap record on an
+    // average run and can beat it on an exceptional one — the record should be
+    // the top of the distribution, not the middle of it.
+    const base = { tournament: 4, nationsleague: 4, qualifier: 6, friendly: 4 }[kind] || 4;
+    const t = tournamentKey ? INTERNATIONAL_TOURNAMENTS[tournamentKey] : null;
+    const tournamentGames = t && kind === "tournament" ? t.games : 0;
+    // Tournament years still carry a qualifying/warm-up programme around them.
+    return base + tournamentGames;
+  }
+
+  function internationalSelectionChance(arch) {
+    let c = arch.selection;
+    c *= 1 + clamp((state.reputation - 55) / 200, -0.25, 0.2);
+    if (state.age >= 34) c *= 0.92;
+    if (state.age >= 37) c *= 0.85;
+    if (state.intlCaptain) c *= 1.05;
+    if (state.flags && state.flags.inForm) c *= 1.05;
+    if (state.flags && state.flags.coldStreak) c *= 0.88;
+    return clamp(c, 0.15, 0.99);
   }
 
   function simulateInternational() {
-    if (state.intlRetired) return null;
-    const origin = state.player.origin || COUNTRY_ORIGINS["England"];
+    const year = seasonYear();
     const nat = getNationalTeam();
+    const arch = intlArchetype();
+
+    // World football carries on whether or not the player is part of it, so the
+    // ledger keeps filling after an international retirement or before a debut.
+    if (state.intlRetired) { simulateWorldTournaments(year); return null; }
+
     if (!state.intlDebut && state.reputation >= 45) {
       state.intlDebut = true;
       log(`🦁 ${state.player.name} earns a first ${state.country} call-up!`, "intl");
     }
-    if (!state.intlDebut) return null;
-    const tournament = getTournamentForSeason();
-    const isTournament = !!tournament;
-    const tournamentName = tournament ? tournament.name : null;
-    const oppDiff = getOpponentDifficulty();
-    // Hard confederations have fewer caps and fewer easy games
-    let games = isTournament ? randInt(5, 7) : randInt(4, 6);
-    if (oppDiff.difficulty >= 8) games = Math.max(2, games - 1);
-    if (oppDiff.difficulty <= 2) games += 1;
-    // "Icon" players get selected for more big international summers.
-    if (state.intlTrait === "icon" && isTournament) games += 1;
-    let g = 0;
-    let caps = 0;
-    const trait = state.intlTrait || "balanced";
-    for (let i = 0; i < games; i++) {
-      const opp = { attack: randInt(oppDiff.min, oppDiff.max), midfield: randInt(oppDiff.min, oppDiff.max), defence: randInt(oppDiff.min, oppDiff.max), manager: randInt(oppDiff.min, oppDiff.max), tacticalStyle: choice(["Possession", "Counter", "High Press", "Direct"]), homeAdvantage: 4 };
-      const res = simulateMatch(nat, opp, 0, 0);
-      const teammateThreat = nat.attack * 4;
-      let share = clamp(agedRating() / (agedRating() + teammateThreat), 0.03, 0.42);
-      // Hard groups: team scores fewer, individual share is higher, but raw chances are scarce
-      if (oppDiff.difficulty >= 8) share *= 0.85;
-      // Hidden international trait: icons are more decisive, nationalists score more.
-      if (trait === "icon") share *= 1.15;
-      if (trait === "nationalistic") share *= 1.2;
-      g += poissonRandom(res.homeGoals * share * 0.85);
-      caps++;
+    if (!state.intlDebut) { simulateWorldTournaments(year); return null; }
+
+    // What kind of summer is this?
+    const candidates = tournamentsInYear(year, state.country);
+    let tournamentKey = null;
+    let kind = "friendly";
+    for (const key of candidates) {
+      if (!nationQualifies(state.country, key)) continue;
+      tournamentKey = key;
+      kind = INTERNATIONAL_TOURNAMENTS[key].minor ? "nationsleague" : "tournament";
+      break;
     }
+    if (!tournamentKey) {
+      // No tournament: a qualifying campaign in the run-up to the next major,
+      // otherwise a friendly programme.
+      const nextMajorSoon = isTournamentHeld("WorldCup", year + 1) ||
+        isTournamentHeld(TOURNAMENT_BY_CONFEDERATION[getCountryConfederation(state.country)] || "WorldCup", year + 1);
+      kind = nextMajorSoon ? "qualifier" : "friendly";
+      // A nation that missed a tournament it was eligible for still plays.
+      if (candidates.length) kind = "qualifier";
+    }
+
+    const tournament = tournamentKey ? INTERNATIONAL_TOURNAMENTS[tournamentKey] : null;
+    const isTournament = kind === "tournament";
+    const label = tournament ? tournament.name : kind === "qualifier" ? "qualifying" : "friendlies";
+
+    // Fixtures scheduled, then caps actually won — a player is not automatically
+    // picked for every game. This is the axis the old model had no notion of.
+    const scheduled = Math.round(scheduledInternationals(kind, tournamentKey) * arch.capRate);
+    const selectionChance = internationalSelectionChance(arch);
+    const oppDiff = getOpponentDifficulty(kind);
+
+    let caps = 0, g = 0;
+    for (let i = 0; i < scheduled; i++) {
+      if (rand() >= selectionChance) continue;
+      caps++;
+      const opp = {
+        attack: randInt(oppDiff.min, oppDiff.max), midfield: randInt(oppDiff.min, oppDiff.max),
+        defence: randInt(oppDiff.min, oppDiff.max), manager: randInt(oppDiff.min, oppDiff.max),
+        tacticalStyle: choice(["Possession", "Counter", "High Press", "Direct"]), homeAdvantage: 4,
+      };
+      const res = simulateMatch(nat, opp, 0, 0);
+      // Teammate threat matches the club model (attack * 3.2). The old 4.0 held
+      // the best strikers to roughly a third of a goal a game, which capped a
+      // full career around 55 international goals against a 143 record.
+      const teammateThreat = nat.attack * 3.2;
+      let share = clamp(agedRating() / (agedRating() + teammateThreat), 0.03, 0.45);
+      share *= arch.goalRate;
+      if (oppDiff.difficulty >= 8) share *= 0.9;
+      g += poissonRandom(res.homeGoals * share);
+    }
+
     state.intlCaps += caps;
     state.intlGoals += g;
     state.totalGoals += g;
+
+    // The tournament is decided by the field, not by the player's goal tally.
+    const winners = simulateWorldTournaments(year, tournamentKey);
     let wonTrophy = false;
-    let trophyChance = 0.15;
-    if (trait === "icon") trophyChance += 0.1;
-    if (trait === "nationalistic") trophyChance += 0.05;
-    if (isTournament && (g >= 3 || rand() < trophyChance) && state.reputation >= 60) {
-      const tournamentKey = tournament ? Object.keys(INTERNATIONAL_TOURNAMENTS).find((k) => INTERNATIONAL_TOURNAMENTS[k] === tournament) : null;
-      const canWin = !tournamentKey || canWinTournament(state.country, tournamentKey) || rand() < 0.01;
-      if (canWin) {
-        wonTrophy = true;
-        state.honours.intlTrophies++;
-        const trophyLabel = tournament ? tournament.name : "an international tournament";
-        state.competitionHistory.push({ season: state.season, club: state.country, text: `🦁 Won ${trophyLabel} with ${state.country} (${g} goals)` });
-        
-        // Reputation boost: all nations get +8
-        adjustReputation(8);
-        
-        // Fame boost: higher for lesser-known nations (upset bonus)
-        // Tier 1 (elite): +3 fame, Tier 2: +5 fame, Tier 3: +8 fame, Tier 4: +12 fame
-        const nationTier = getNationReputationTier(state.country);
-        const fameBoost = [0, 3, 5, 8, 12][nationTier] || 8;
-        state.fame = Math.min(100, (state.fame || 0) + fameBoost);
-        
-        log(`🏆 Tournament glory! ${state.player.name} lifts ${trophyLabel} silverware with ${state.country} (${g} goals).`, "intl");
-      }
+    if (isTournament && tournamentKey && caps > 0 && winners[tournamentKey] === normalizeNation(state.country)) {
+      wonTrophy = true;
+      state.honours.intlTrophies++;
+      state.competitionHistory.push({ season: state.season, club: state.country, text: `🦁 Won ${tournament.name} with ${state.country} (${g} goals)` });
+      adjustReputation(8);
+      const fameBoost = [0, 3, 5, 8, 12][getNationReputationTier(state.country)] || 8;
+      state.fame = Math.min(100, (state.fame || 0) + fameBoost);
+      log(`🏆 Tournament glory! ${state.player.name} lifts the ${tournament.name} with ${state.country} (${g} goals).`, "intl");
     }
-    return { caps, games: caps, goals: g, isTournament, tournamentName, wonTrophy };
+
+    maybeNarrateIntlArchetype(arch);
+    return { caps, games: scheduled, goals: g, isTournament, kind, tournamentName: tournament ? tournament.name : null, label, wonTrophy };
   }
 
+  // Runs every tournament held this year, including ones the player's nation is
+  // not in, so the world has results of its own. `playerKey` is reported back so
+  // the caller can check whether the player's nation won their competition.
+  function simulateWorldTournaments(year, playerKey) {
+    const winners = {};
+    const playerNation = normalizeNation(state.country);
+    for (const key of TOURNAMENT_KEYS) {
+      if (!isTournamentHeld(key, year)) continue;
+      const field = tournamentContenders(key, key === playerKey ? state.country : null);
+      if (!field.length) continue;
+      const winner = weightedRandomPick(field);
+      if (!winner) continue;
+      winners[key] = winner;
+      recordWorldTournament(key, year, winner);
+      // One line a summer for the rest of the world. Skip the player's own
+      // triumph — that gets its own headline above.
+      const t = INTERNATIONAL_TOURNAMENTS[key];
+      if (!t.minor && !(key === playerKey && winner === playerNation)) {
+        log(`   ${t.emoji} ${year} ${t.short}: ${winner} lift the trophy.`, "intl");
+      }
+    }
+    return winners;
+  }
+
+  // The hidden archetype is never labelled. It surfaces as commentary once a
+  // career has produced enough evidence for the shape to be recognisable.
+  function maybeNarrateIntlArchetype(arch) {
+    if (!state.intlDebut || state.intlCaps < 25) return;
+    state.intlNarrated = state.intlNarrated || {};
+    const perCap = state.intlCaps > 0 ? state.intlGoals / state.intlCaps : 0;
+    let key = null, line = null;
+    const n = state.player.name;
+    if (state.intlCaps >= 100 && !state.intlNarrated.century) {
+      key = "century";
+      line = `${n} wins a 100th cap for ${state.country} — ${arch.blurb}.`;
+    } else if (perCap >= 0.6 && state.intlCaps >= 40 && !state.intlNarrated.deadly) {
+      key = "deadly";
+      line = `${state.country} have come to rely on ${n}: ${state.intlGoals} goals in ${state.intlCaps} caps is a ratio few internationals ever touch.`;
+    } else if (perCap <= 0.22 && state.intlCaps >= 50 && !state.intlNarrated.servant) {
+      key = "servant";
+      line = `${n} passes ${state.intlCaps} caps for ${state.country} — adored at home, though the goals have never quite followed.`;
+    } else if (state.intlCaps >= 60 && state.honours.intlTrophies === 0 && !state.intlNarrated.nearly) {
+      key = "nearly";
+      line = `${state.intlCaps} caps and still chasing a first major summer with ${state.country}.`;
+    }
+    if (key && line) { state.intlNarrated[key] = true; log(`   🦁 ${line}`, "intl"); }
+  }
   /* ------------------------- DECISION ENGINE ---------------------------- */
   /*
   const EVENTS = [
@@ -4263,7 +4829,7 @@
 
     // Personality nudges
     if (ev.tag === "Injury") {
-      const durability = getPillar("Durability");
+      const durability = durabilityScore();
       w += (state.injuryRating || 50) / 30 - durability / 30;
       if (ctx.age >= 32) w += 2;
       if (ctx.age >= 35) w += 3;
@@ -4490,7 +5056,7 @@
       used.add(c);
       const offer = computeClubContractOffer(sd, c);
       if (offer.refused) continue; // team declines to offer a contract
-      offers.push({ club: c, years: offer.years, playtime: offer.playtime, injuryRisk: offer.injuryRisk });
+      offers.push({ club: c, years: offer.years, playtime: offer.playtime, injuryRisk: offer.injuryRisk, projectedApps: offer.projectedApps });
     }
     return offers;
   }
@@ -4527,7 +5093,7 @@
       used.add(pick.c);
       const offer = computeClubContractOffer(sd, pick.c);
       if (offer.refused) continue;
-      offers.push({ club: pick.c, years: offer.years, playtime: offer.playtime, injuryRisk: offer.injuryRisk, wage: offer.wage });
+      offers.push({ club: pick.c, years: offer.years, playtime: offer.playtime, injuryRisk: offer.injuryRisk, projectedApps: offer.projectedApps, wage: offer.wage });
     }
     return offers;
   }
@@ -4547,7 +5113,7 @@
       const pool = getForeignLeagueClubs().filter((t) => ["MLS", "Saudi"].includes(TEAM_DATABASE[t].league));
       const c = choice(pool);
       const offer = computeClubContractOffer(sd, c);
-      if (!offer.refused) offers.push({ club: c, years: offer.years, playtime: offer.playtime, injuryRisk: offer.injuryRisk, wage: offer.wage, forced: true, foreign: true });
+      if (!offer.refused) offers.push({ club: c, years: offer.years, playtime: offer.playtime, injuryRisk: offer.injuryRisk, projectedApps: offer.projectedApps, wage: offer.wage, forced: true, foreign: true });
     }
     // Championship for players who drop off the elite ladder
     if (age >= 33 && rep >= 25 && !offers.length) {
@@ -4555,7 +5121,7 @@
       if (pool.length) {
         const c = choice(pool);
         const offer = computeClubContractOffer(sd, c);
-        if (!offer.refused) offers.push({ club: c, years: offer.years, playtime: offer.playtime, injuryRisk: offer.injuryRisk, wage: offer.wage, forced: true });
+        if (!offer.refused) offers.push({ club: c, years: offer.years, playtime: offer.playtime, injuryRisk: offer.injuryRisk, projectedApps: offer.projectedApps, wage: offer.wage, forced: true });
       }
     }
     return offers;
@@ -4634,6 +5200,18 @@
         </table>`
       : `<div class="cs-empty">No clubs yet</div>`;
 
+    // Body load. injuryCount was an invisible accumulator that quietly ended
+    // careers; shown as mileage it becomes a resource the player can manage, and
+    // makes chasing a Golden Boot against lasting to forty a real decision.
+    const mileage = clamp(state.injuryCount || 0, 0, 20);
+    const mileagePct = Math.round((mileage / 20) * 100);
+    const mileageLabel = mileage >= 15 ? "Heavy" : mileage >= 9 ? "Worn" : mileage >= 4 ? "Used" : "Fresh";
+    const mileageColor = mileage >= 15 ? "var(--bad)" : mileage >= 9 ? "var(--gold)" : "var(--accent)";
+    const condition = durabilityScore();
+    const conditionColor = condition >= 70 ? "var(--accent)" : condition >= 45 ? "var(--gold)" : "var(--bad)";
+    const projApps = state.club && TEAM_DATABASE[state.club]
+      ? projectLeagueApps(state.role, state.club, state.age + 1) : null;
+
     el.innerHTML = `
       <div class="career-stats-grid">
         <div class="cs-box"><div class="cs-num">${g}</div><div class="cs-lab">Career Goals</div></div>
@@ -4642,7 +5220,20 @@
         <div class="cs-box"><div class="cs-num">${leagueG}</div><div class="cs-lab">League</div></div>
         <div class="cs-box"><div class="cs-num">${cupG}</div><div class="cs-lab">Cups</div></div>
         <div class="cs-box"><div class="cs-num">${euroG}</div><div class="cs-lab">Europe</div></div>
+        <div class="cs-box"><div class="cs-num">${intlG}</div><div class="cs-lab">${esc(state.country)}</div></div>
       </div>
+      <div class="cs-section-title">Body Load</div>
+      <div class="pillar-row" title="Cumulative wear from seasons lost to injury. Clean seasons work it back off.">
+        <span class="pillar-k">Mileage</span>
+        <div class="pillar-bar"><div class="pillar-fill" style="width:${mileagePct}%;background:${mileageColor}"></div></div>
+        <span class="pillar-v">${mileageLabel}</span>
+      </div>
+      <div class="pillar-row" title="Physical condition — fitness, strength, longevity and injury proneness. Drives how many games you are available for.">
+        <span class="pillar-k">Condition</span>
+        <div class="pillar-bar"><div class="pillar-fill" style="width:${condition}%;background:${conditionColor}"></div></div>
+        <span class="pillar-v">${condition}</span>
+      </div>
+      ${projApps != null ? `<div class="pillar-row" title="Projected league appearances next season at your current squad role."><span class="pillar-k">Next season</span><div class="pillar-bar"></div><span class="pillar-v" style="width:auto">~${projApps} apps</span></div>` : ""}
       <div class="cs-section-title">Averages</div>
       <div class="career-stats-grid">
         <div class="cs-box"><div class="cs-num">${avgGoals}</div><div class="cs-lab">Goals / Season</div></div>
@@ -5048,7 +5639,7 @@
   }
 
   function renderCareerHeader() {
-    document.getElementById("career-season").textContent = `SEASON ${state.season}`;
+    document.getElementById("career-season").textContent = seasonLabel();
     document.getElementById("hdr-age").textContent = state.age;
     document.getElementById("hdr-goals").textContent = state.totalGoals;
     document.getElementById("hdr-club").textContent = state.club;
@@ -5066,12 +5657,12 @@
     const pos = POSITIONS[state.position] || POSITIONS.ST;
     box.innerHTML = `
       <div class="season-prompt">Age ${state.age} · ${esc(state.club)} · ${pos.label} · projected role: <strong>${determineRole()}</strong> · ${ageBracket(state.age)}</div>
-      <button class="btn primary big" id="btn-play-season">▶ PLAY SEASON ${state.season}</button>`;
+      <button class="btn primary big" id="btn-play-season">▶ PLAY ${seasonLabel()}</button>`;
     document.getElementById("btn-play-season").addEventListener("click", playSeason);
   }
 
   function playSeason() {
-    document.getElementById("season-action").innerHTML = `<div class="simming">Simulating season ${state.season}…</div>`;
+    document.getElementById("season-action").innerHTML = `<div class="simming">Simulating ${seasonLabel()}…</div>`;
     // Snapshot before simulating so a mid-simulation crash can be rolled back cleanly
     // instead of leaving partially-applied mutations behind on retry.
     const preSeasonSnapshot = serializeState(state);
@@ -5084,10 +5675,10 @@
         const intl = simulateInternational();
         renderSeasonResult(sd, intl);
         renderCareerHeader();
-        let line = `S${state.season} (age ${state.age}) — ${state.club}: ${sd.goals}g ${sd.assists}a in ${sd.apps} apps (${sd.rating}). ${ordinal(sd.pos)} [${sd.trajectory}]. ${sd.role}.`;
+        let line = `${seasonLabel()} (age ${state.age}) — ${state.club}: ${sd.goals}g ${sd.assists}a in ${sd.apps} apps (${sd.rating}). ${ordinal(sd.pos)} [${sd.trajectory}]. ${sd.role}.`;
         if (sd.honours.length) line += ` 🏆 ${sd.honours.join(", ")}.`;
         if (sd.awards.length) line += ` 🎖 ${sd.awards.join(", ")}.`;
-        if (intl && intl.goals) line += ` 🦁 +${intl.goals} for ${state.country}${intl.tournamentName ? ` at ${intl.tournamentName}` : ""}.`;
+        if (intl && intl.goals) line += ` 🦁 +${intl.goals} for ${state.country}${intl.label ? ` in ${intl.label}` : ""}.`;
         log(line, perfClass(sd.perfTier));
         const bioLine = narrateSeasonForBio(sd, intl);
         if (bioLine) addBioMoment(bioLine);
@@ -5175,7 +5766,7 @@
     const ballonDorWon = sd.awards.includes("Ballon d'Or");
     const highlightHtml = [
       isInjurySeason ? `<div class="highlight-badge injury">⚠️ Injury Season</div>` : "",
-      intl && intl.tournamentName ? `<div class="highlight-badge trophy">🏆 International Trophy</div>` : "",
+      intl && intl.wonTrophy ? `<div class="highlight-badge trophy">🏆 ${esc(intl.tournamentName || "International Trophy")}</div>` : "",
       ballonDorWon ? `<div class="highlight-badge ballon">⭐ Ballon d'Or</div>` : "",
     ].filter(Boolean).join("");
     
@@ -5189,7 +5780,7 @@
           <span class="summary-label">Goal breakdown</span>
           <span class="summary-val">League ${sd.leagueGoals || sd.goals} · Cup ${sd.cupGoals || 0} · Europe ${sd.europeGoals || 0}</span>
         </div>
-        ${intl ? `<div class="summary-row"><span class="summary-label">International</span><span class="summary-val">${intl.caps} caps · ${intl.goals} goals${intl.tournamentName ? ` · ${intl.tournamentName}` : ""}</span></div>` : ""}
+        ${intl ? `<div class="summary-row"><span class="summary-label">International</span><span class="summary-val">${intl.caps} caps · ${intl.goals} goals${intl.label ? ` · ${esc(intl.label)}` : ""}</span></div>` : ""}
         <div class="summary-row">
           <span class="summary-label">Career total</span>
           <span class="summary-val">${state.totalGoals} goals · ${state.totalAssists} assists · ${state.totalApps} apps</span>
@@ -5378,7 +5969,7 @@
       const roleEmoji = { Star: "⭐", Starter: "▶️", Rotation: "🔄", Bench: "🪑" }[o.playtime] || "";
       const riskLabel = o.injuryRisk >= 60 ? "high" : o.injuryRisk >= 35 ? "moderate" : "low";
       const riskColor = o.injuryRisk >= 60 ? "var(--bad)" : o.injuryRisk >= 35 ? "var(--gold)" : "var(--accent)";
-      const estApps = Math.round({ Star: 34, Starter: 28, Rotation: 17, Bench: 8 }[o.playtime]);
+      const estApps = o.projectedApps != null ? o.projectedApps : projectLeagueApps(o.playtime, o.club, state.age + 1);
       return `<button class="btn offer" data-i="${i}">
         <div class="offer-club">${esc(o.club)}</div>
         <div class="offer-meta">${t.league} · ATK ${t.attack} MID ${t.midfield} DEF ${t.defence} · ${t.tacticalStyle}</div>
@@ -5717,11 +6308,10 @@
     return 1.0;
   }
 
-  function getContractOptions() {
-    if (state.age <= 36) return [1, 2, 3, 4, 5];
-    if (state.age <= 40) return [1, 2, 3, 4];
-    return [1, 2];
-  }
+  // Contract lengths are decided by computeClubContractOffer (offerYears/maxYears),
+  // which hard-caps veterans at a single year from age 34. A second, unreferenced
+  // table here disagreed with it — offering four-year deals at 37-40 — so it is
+  // gone rather than left as a contradiction waiting to be wired up.
 
   function signContract(years, wage) {
     state.contractYears = years;
@@ -5784,15 +6374,25 @@
 
     // Expected playtime at this club — bigger clubs offer lower squad status for similar players
     let playtime = determineNaturalRole(club);
-    if (club === state.club && state.role && roleRank(state.role) > roleRank(playtime)) playtime = state.role;
+    // An incumbent keeps their standing, but only by one rung. This used to
+    // ratchet upward with no ceiling, so a declining veteran was re-signed as a
+    // Star every year and then never played like one.
+    if (club === state.club && state.role && roleRank(state.role) > roleRank(playtime)) {
+      playtime = roleAtRank(Math.min(roleRank(state.role), roleRank(playtime) + 1));
+    }
     // Agent can negotiate a better squad role
     if (agentInfluence >= 0.18 && roleRank(playtime) < 3) playtime = roleRank(playtime) === 2 ? "Starter" : "Rotation";
     if (agentInfluence >= 0.30 && roleRank(playtime) < 4) playtime = "Star";
 
+    // Minutes the club is actually good for next season, projected from the same
+    // availability model the simulation uses. The contract covers the seasons
+    // after this one, so it is quoted at age + 1.
+    const projectedApps = projectLeagueApps(playtime, club, age + 1);
+
     // Injury risk estimate: more minutes + older age + existing proneness = more risk
-    const leagueGames = 38;
+    const leagueGames = leagueGamesFor(club);
     const estApps = Math.round({ Star: 0.9, Starter: 0.75, Rotation: 0.45, Bench: 0.2 }[playtime] * leagueGames);
-    let injuryRisk = clamp(Math.round((estApps / 38) * 40 + (age - 30) * 2 + state.injuryProneness * 0.25 + (injuryProne ? 15 : 0)), 5, 95);
+    let injuryRisk = clamp(Math.round((estApps / Math.max(1, leagueGames)) * 40 + (age - 30) * 2 + state.injuryProneness * 0.25 + (injuryProne ? 15 : 0) + injurySeasonRisk(age + 1) * 40), 5, 95);
     if (hasTrait("Iron Man")) injuryRisk = Math.max(5, injuryRisk - 25);
     if (hasTrait("Injury Prone")) injuryRisk = Math.min(95, injuryRisk + 20);
 
@@ -5835,8 +6435,8 @@
     else if (age >= 30) wage = Math.round(wage * 0.85);
     wage = Math.max(5, wage);
 
-    if (refused) return { years: 0, maxYears: 0, playtime, injuryRisk, wage: 0, refused: true };
-    return { years: offerYears, maxYears, playtime, injuryRisk, wage, refused: false };
+    if (refused) return { years: 0, maxYears: 0, playtime, injuryRisk, projectedApps, wage: 0, refused: true };
+    return { years: offerYears, maxYears, playtime, injuryRisk, projectedApps, wage, refused: false };
   }
 
   function clubWillAcceptYears(requestedYears, maxYears, sd) {
@@ -5895,7 +6495,7 @@
           <div class="contract-club">${esc(state.club)}</div>
           <div class="contract-terms">${offer.years}-year contract · ${roleEmoji} ${offer.playtime} · £${offer.wage}k/week</div>
           <div class="contract-meta">Age ${state.age} · Rating ${state.baseRating} · Rep ${state.reputation} · ${sd.perfTier} season</div>
-          <div class="contract-risk">Expected apps ${Math.round({ Star: 34, Starter: 28, Rotation: 17, Bench: 8 }[offer.playtime])} · Injury risk <span style="color:${riskColor}">${riskLabel}</span></div>
+          <div class="contract-risk">Projected ${offer.projectedApps != null ? offer.projectedApps : projectLeagueApps(offer.playtime, state.club, state.age + 1)} apps · Injury risk <span style="color:${riskColor}">${riskLabel}</span> · Body load ${bodyLoadLabel()}</div>
         </div>
         <div class="decision-choices">
           <button class="btn primary choice" id="btn-accept-offer">Accept ${offer.years}-year deal</button>
@@ -6244,7 +6844,7 @@
     const el = document.getElementById("legacy-history");
     if (!state.competitionHistory.length) { el.innerHTML = ""; return; }
     const items = state.competitionHistory.slice().reverse().map((c) =>
-      `<li><span class="hist-season">S${c.season}</span> ${esc(c.text)}</li>`).join("");
+      `<li><span class="hist-season">${seasonLabel(c.season)}</span> ${esc(c.text)}</li>`).join("");
     el.innerHTML = `<h3>Trophy Cabinet Timeline</h3><ul class="history-list">${items}</ul>`;
   }
 
@@ -6869,7 +7469,7 @@
     const moments = state.bioMoments || [];
     const intro = moments[0]?.text || generateBioIntro();
     const momentsHtml = moments.slice(1).map((m) =>
-      `<div class="bio-entry"><span class="bio-tag">Season ${m.season} · Age ${m.age}</span><p>${esc(m.text)}</p></div>`
+      `<div class="bio-entry"><span class="bio-tag">${seasonLabel(m.season)} · Age ${m.age}</span><p>${esc(m.text)}</p></div>`
     ).join("");
     const closingHtml = state.bioClosing
       ? `<div class="bio-entry bio-closing"><span class="bio-tag">Retirement</span><p>${esc(state.bioClosing)}</p></div>`
@@ -7150,6 +7750,17 @@
   window.__STRESS_TEST__ = {
     startCreation, compilePlayer, simulateSeason, applySeasonalAttributeChanges, playSeason,
     recomputePlayerStats, simulateInternational, computeClubContractOffer, generateOffers, generateForcedDestinationOffers, determineNaturalRole,
+    projectLeagueApps, computeAppearanceChance, computeGamesMissed, injurySeasonRisk, durabilityScore, injuryWear,
+    seasonYear, seasonLabel, eraStartYear, ERA_OPTIONS,
+    isTournamentHeld, tournamentsInYear, tournamentContenders, simulateWorldTournaments,
+    getCountryConfederation, CONFEDERATIONS, COUNTRY_ORIGINS,
+    simulateEuropeanCampaign, simulateDomesticCupRun, europeanQualificationFor, playsInEurope,
+    currentEuropeanEntry, makeKnockoutScorer, EURO_COMPETITIONS,
+    TEAM_SQUADS, MANAGER_TENURE, initializeTeamSquad, simulateSquadTransfers, restoreWorldState,
+    renderCareerStats, renderSeasonResult, renderContractOffer, renderCareerHeader, presentTransfer,
+    renderSquadInfo, renderCareerSummary, bodyLoadLabel,
+    deriveInternationalTrait, intlArchetype, normalizeIntlTrait, getNationReputationTier,
+    INTERNATIONAL_TOURNAMENTS, INTL_ARCHETYPES,
     getPillar, checkCareerMilestone, pickSeasonDecision, applyEffects, applyEffectsRaw,
     getEventWeight, pickSeasonEvent, pickSeasonEvents, determineEventCount, getCareerSection, getCareerOutcomeScore, resolveEndOfCareerEvent,
     getState: () => state, setState: (s) => { state = migrateState(s); }, setSeed, serializeState, deserializeState, normalizeContractState,
