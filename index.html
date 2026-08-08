@@ -335,6 +335,18 @@
   #goal-progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--gold)); transition: width .6s ease; }
   #goal-progress-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
 
+  /* ---- Leaderboard on the landing page ---- */
+  .welcome-lb { margin: 22px auto 4px; max-width: 460px; text-align: left; }
+  .welcome-lb-title { font-size: 14px; font-weight: 700; color: var(--accent); text-align: center; margin-bottom: 8px; }
+  .welcome-lb .lb-head { display: none; }          /* the section already has a heading */
+  .welcome-lb-more { margin-top: 10px; }
+  .welcome-lb-more summary { cursor: pointer; font-size: 12px; color: var(--muted); text-align: center; }
+  .welcome-lb-more summary:hover { color: var(--accent); }
+  .welcome-lb-more > div { margin-top: 8px; }
+  .welcome-lb > .footer-link { display: block; text-align: center; margin-top: 10px; font-size: 12px; }
+  /* Compact variant: rank, name, goals only. */
+  .lb-table.lb-compact .lb-row { grid-template-columns: 32px 1fr 56px; }
+
   /* ---- Leaderboard ---- */
   .lb-head { margin-bottom: 10px; }
   .lb-title { font-size: 15px; font-weight: 700; color: var(--accent); }
@@ -877,8 +889,19 @@
           <li>Reach <strong>1000 career goals</strong> before you retire.</li>
         </ol>
       </details>
-     
- 
+
+      <!-- The leaderboard, visible before you have played anything. It sits
+           below START CREATION so the primary action still leads. -->
+      <section class="welcome-lb">
+        <div class="welcome-lb-title">🏆 All-Time Leaderboard</div>
+        <div id="welcome-leaderboard"></div>
+        <details class="welcome-lb-more">
+          <summary>See the full top 25</summary>
+          <div id="welcome-leaderboard-full"></div>
+        </details>
+        <a class="footer-link" href="hall-of-fame.html">Hall of Fame →</a>
+      </section>
+
       <footer class="welcome-footer">
         <a href="https://x.com/1000goalsgame" target="_blank" rel="noopener" class="footer-link">Feedback on X</a>
         <span style="color: var(--line);">·</span>
@@ -1078,7 +1101,6 @@
      plays fine without it and the board falls back to the seed benchmarks. -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="src/firebase-config.js"></script>
 <script src="src/leaderboard.js"></script>
 <script src="src/game.js"></script>
 </body>
