@@ -1147,6 +1147,7 @@
   }
 
   function serializeState(s) {
+    if (!s) return null;   // no career yet — callers must not assume one
     const copy = Object.assign({}, s);
     copy.clubsPlayed = [...(s.clubsPlayed || [])];
     // Only the player's current division is simulated, so squads for leagues
@@ -5621,7 +5622,7 @@
       if (!startBtn) return;
       startBtn.style.display = "";
       startBtn.textContent = "PLAY WITHOUT A CHALLENGE \u25b6";
-      startBtn.onclick = withFailsafe(() => { showScreen("screen-genesis"); beginTurn(); });
+      startBtn.onclick = guardUi(() => { showScreen("screen-genesis"); beginTurn(); }, "starting your career");
     };
 
     const spec = { era: state.era, ratingMode: state.ratingMode, difficulty: state.difficulty,
@@ -5648,7 +5649,7 @@
       if (startBtn) {
         startBtn.style.display = "";
         startBtn.textContent = "START MY CAREER \u25b6";
-        startBtn.onclick = withFailsafe(() => startChallengeCareer(challenge));
+        startBtn.onclick = guardUi(() => startChallengeCareer(challenge), "starting the challenge");
       }
     });
   }
@@ -5754,7 +5755,7 @@
       note.textContent = `${c.createdBy ? who + " challenged you" : "Challenge " + code}: ${rules}, up to ${plural(c.maxPlayers, "player", "players")}. ${plural(res.slotsLeft, "place", "places")} left. ${played}`;
       btn.style.display = "";
       btn.textContent = saved ? "ACCEPT \u2014 REPLACES YOUR SAVED CAREER \u25b6" : "ACCEPT THE CHALLENGE \u25b6";
-      btn.onclick = withFailsafe(() => startChallengeCareer(c));
+      btn.onclick = guardUi(() => startChallengeCareer(c), "starting the challenge");
     });
   }
 
@@ -5873,6 +5874,31 @@
 
   /* `compact` drops the apps and goals-per-app columns. The landing page hero is
    * a narrow column and those two numbers are not what sells the game there. */
+  /* The era a career was played in, as a short tag. Derived from ERA_OPTIONS
+   * rather than a second hard-coded list, so a new era cannot appear on the
+   * setup screen and go untagged on the board. Unknown or absent eras return
+   * null and render nothing — the real-world benchmarks have no era at all.
+   *
+   * Year ranges rather than the era's name: "classic" next to "impossible"
+   * overflowed the name column on a phone and truncated to "CLASSI…", and the
+   * years say more in less room anyway. The full label is in the title. */
+  function eraTagFor(era) {
+    const key = String(era == null ? "" : era).toLowerCase().trim();
+    if (!key) return null;
+    const opt = ERA_OPTIONS.find((e) => e.key === key);
+    if (!opt) return null;
+    return { short: eraShortLabel(opt), full: opt.label };
+  }
+  function eraShortLabel(opt) {
+    if (opt.key === "all") return "all";
+    const yy = (y) => String(y % 100).padStart(2, "0");
+    const from = opt.years && opt.years[0];
+    const to = opt.years && opt.years[1];
+    if (!from) return opt.key;
+    // A single-year era is one season, and a season straddles two calendar years.
+    return from === to ? `${yy(from)}/${yy(from + 1)}` : `${yy(from)}–${yy(to)}`;
+  }
+
   function leaderboardRowsHtml(entries, compact) {
     const rows = entries.map((e) => {
       const medal = e.rank === 1 ? " gold" : e.rank === 2 ? " silver" : e.rank === 3 ? " bronze" : "";
@@ -5881,9 +5907,16 @@
       const diff = String(e.difficulty || "").toLowerCase();
       const diffTag = !e.seed && diff
         ? `<span class="lb-tag diff ${esc(diff)}" title="Played on ${esc(diff)}">${esc(diff)}</span>` : "";
+      // Era sits beside difficulty because it changes what a career could have
+      // scored just as much: a Classic-era striker and a Current-season one were
+      // drafting from different pools. Short word here, full label with its year
+      // range in the title.
+      const era = eraTagFor(e.seed ? null : e.era);
+      const eraTag = era
+        ? `<span class="lb-tag era" title="${esc(era.full)}">${esc(era.short)}</span>` : "";
       const tag = (e.seed
         ? `<span class="lb-tag" title="Real-world benchmark">real</span>`
-        : e.you ? `<span class="lb-tag you">you</span>` : "") + diffTag;
+        : e.you ? `<span class="lb-tag you">you</span>` : "") + diffTag + eraTag;
       const ratio = e.apps > 0 ? (e.goals / e.apps).toFixed(2) : "—";
       const mid = compact ? "" : `<span class="lb-apps">${e.apps || "—"}</span><span class="lb-ratio">${ratio}</span>`;
       return `<div class="lb-row${e.you ? " mine" : ""}">
@@ -6336,13 +6369,39 @@
   // error below age 35 rolls back to the pre-action state and offers a retry instead
   // of leaving the game stuck on a frozen screen or forcing an incorrect retirement.
   // 35+ is treated as a real career-ending injury, matching the playSeason failsafe.
+  /* Wrapper for handlers that run BEFORE a career exists — the welcome screen,
+   * the challenge hub, anything wired at page load.
+   *
+   * withFailsafe below is for mid-career actions and is the wrong tool here on
+   * two counts: it snapshots `state` on entry, outside its own try, so a null
+   * state throws straight through the handler; and its recovery path can retire
+   * the player. Wrapping the challenge accept and join buttons in it meant both
+   * did nothing at all on a fresh page load, silently, for everyone — `state`
+   * is null on the landing page until a career actually starts.
+   *
+   * A handler reaching this catch is a bug, so it says so out loud rather than
+   * leaving another dead button. */
+  function guardUi(fn, label) {
+    return function (...args) {
+      try {
+        return fn.apply(this, args);
+      } catch (err) {
+        console.error(`${label || "Action"} failed`, err);
+        alert(`Something went wrong${label ? ` with ${label}` : ""}. Please refresh the page and try again.`);
+      }
+    };
+  }
+
   function withFailsafe(fn) {
     const wrapped = function (...args) {
-      const snapshot = serializeState(state);
+      // Null-safe: nothing to snapshot and nothing to restore before a career
+      // exists, and throwing here would take the handler with it.
+      const snapshot = state ? serializeState(state) : null;
       try {
         return fn.apply(this, args);
       } catch (err) {
         console.error("Career action failed", err);
+        if (!snapshot) { alert("Something went wrong. Please refresh the page and try again."); return; }
         if (state.age < 35) {
           state = deserializeState(snapshot);
           renderCareerFlowError(() => wrapped.apply(this, args));
@@ -8276,19 +8335,19 @@
       showScreen("screen-difficulty");
     });
     const btnChallengeJoin = document.getElementById("btn-challenge-join");
-    if (btnChallengeJoin) btnChallengeJoin.addEventListener("click", withFailsafe(joinChallengeByCode));
+    if (btnChallengeJoin) btnChallengeJoin.addEventListener("click", guardUi(joinChallengeByCode, "finding that challenge"));
     const codeInput = document.getElementById("challenge-code");
     if (codeInput) codeInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); withFailsafe(joinChallengeByCode)(); }
+      if (e.key === "Enter") { e.preventDefault(); guardUi(joinChallengeByCode, "finding that challenge")(); }
     });
     const btnChallengeBack = document.getElementById("btn-challenge-back");
     if (btnChallengeBack) btnChallengeBack.addEventListener("click", () => showScreen("screen-welcome"));
     const btnChallengeCopy = document.getElementById("btn-challenge-copy");
-    if (btnChallengeCopy) btnChallengeCopy.addEventListener("click", withFailsafe(() => {
+    if (btnChallengeCopy) btnChallengeCopy.addEventListener("click", guardUi(() => {
       const box = document.getElementById("challenge-link");
       if (!box || !box.value) return;
       copyText(box.value, btnChallengeCopy, "Copied ✓");
-    }));
+    }, "copying the link"));
     document.querySelectorAll(".btn-difficulty").forEach((b) =>
       b.addEventListener("click", () => startCreation(b.dataset.difficulty)));
     const btnSetupContinue = document.getElementById("btn-setup-continue");
@@ -8380,7 +8439,7 @@
     TEAM_SQUADS, MANAGER_TENURE, initializeTeamSquad, simulateSquadTransfers, restoreWorldState,
     renderCareerStats, renderSeasonResult, renderContractOffer, renderCareerHeader, presentTransfer,
     renderSquadInfo, renderCareerSummary, generateCareerSummary, cardTagline, plural, bodyLoadLabel,
-    renderLeaderboard, renderLeaderboardSubmit, currentCareerRow, getLeaderboard,
+    renderLeaderboard, renderLeaderboardSubmit, currentCareerRow, getLeaderboard, eraTagFor,
     renderWelcomeLeaderboard, leaderboardRowsHtml, init, newCareerId, ensureCareerId,
     resetWorldState, resetTeamDatabase,
     landCountry, landBuild, landSquad, draftStepKey, seedDraftStream, rand,

@@ -949,6 +949,54 @@ if (require.main === module) {
     return "real / easy / medium / hard / impossible all render";
   });
 
+  check("every submitted career shows the era it was played in", () => {
+    // Era changes what a career could have scored as much as difficulty does —
+    // a Classic-era striker drafted from a different pool to a Current-season
+    // one — so a total on the board means little without both.
+    const board = [
+      { rank: 1, name: "Cristiano Ronaldo", goals: 976, apps: 0, seed: true },
+      { rank: 2, name: "All Eras", goals: 900, apps: 1200, difficulty: "hard", era: "all" },
+      { rank: 3, name: "Classic", goals: 880, apps: 1100, difficulty: "easy", era: "classic" },
+      { rank: 4, name: "Modern", goals: 870, apps: 1100, difficulty: "medium", era: "modern" },
+      { rank: 5, name: "Recent", goals: 860, apps: 1100, difficulty: "hard", era: "recent" },
+      { rank: 6, name: "Current", goals: 850, apps: 1100, difficulty: "impossible", era: "current" },
+      { rank: 7, name: "No era", goals: 840, apps: 1100, difficulty: "easy" },
+      { rank: 8, name: "Junk era", goals: 830, apps: 1100, difficulty: "easy", era: "__proto__" },
+    ];
+    const html = api.leaderboardRowsHtml(board, false);
+    for (const opt of api.ERA_OPTIONS) {
+      const tag = api.eraTagFor(opt.key);
+      assert(tag, `the ${opt.key} era produced no tag`);
+      assert(tag.full === opt.label, `${opt.key} lost its full label: ${tag.full}`);
+      // The name column is narrow on a phone and "impossible" already sits
+      // beside it, so a long era word truncated to "CLASSI…".
+      assert(tag.short.length <= 5, `${opt.key} renders as "${tag.short}" — too wide for the name column`);
+      assert(html.includes(`>${tag.short}</span>`), `the ${opt.key} tag never reached the row`);
+    }
+    // The years must be the era's own, not a guess.
+    assert(api.eraTagFor("classic").short === "92–04", `classic reads ${api.eraTagFor("classic").short}`);
+    assert(api.eraTagFor("recent").short === "15–24", `recent reads ${api.eraTagFor("recent").short}`);
+    // A one-year era is a single season, which straddles two calendar years.
+    assert(api.eraTagFor("current").short === "25/26", `current reads ${api.eraTagFor("current").short}`);
+    assert(api.eraTagFor("all").short === "all", `all-eras reads ${api.eraTagFor("all").short}`);
+    // A real-world benchmark has no era, and neither junk nor absence invents one.
+    const rows = html.split('<div class="lb-row').slice(1);
+    const rowFor = (name) => {
+      const row = rows.find((r) => r.includes(`>${name}<`));
+      assert(row, `no row rendered for ${name}`);
+      return row;
+    };
+    const eraTags = (row) => (row.match(/lb-tag era/g) || []).length;
+    assert(eraTags(rowFor("Cristiano Ronaldo")) === 0, "the real-player row was given an era");
+    assert(eraTags(rowFor("No era")) === 0, "a career with no era was given one anyway");
+    assert(eraTags(rowFor("Junk era")) === 0, "an unrecognised era key was rendered");
+    assert(!/__proto__/.test(html), "an unrecognised era key reached the page");
+    // Difficulty and era must both survive together, not replace each other.
+    assert(/lb-tag diff hard[^>]*>hard<\/span><span class="lb-tag era"[^>]*>all</.test(html),
+      "difficulty and era do not sit side by side");
+    return "all 5 eras tagged, benchmarks and unknown keys left bare";
+  });
+
   check("hostile display names are defanged", () => {
     const nasty = lb.cleanName('<img src=x onerror=alert(1)>');
     assert(!/[\u0000-\u001F]/.test(nasty), "control characters survived");
@@ -1348,6 +1396,37 @@ if (require.main === module) {
     assert(lb.normalizeChallengeEntry(entry), `challenge rejected a real career: ${JSON.stringify(entry)}`);
     assert(entry.goals === 180 && entry.club === "Arsenal", `entry was ${JSON.stringify(entry)}`);
     return `${entry.goals} goals, ${entry.apps} apps — into the challenge, not onto the board`;
+  });
+
+  check("nothing that runs before a career exists uses the mid-career failsafe", () => {
+    /* The bug this encodes: the challenge accept and join handlers were wrapped
+     * in withFailsafe, which snapshots `state` on entry and does so OUTSIDE its
+     * own try block. On the landing page `state` is null until a career starts,
+     * so every click threw inside the wrapper before the handler ran — both
+     * buttons did nothing at all, silently, for every visitor.
+     *
+     * A source-level check because the defect is which wrapper was used, and
+     * that is invisible to any assertion about behaviour with a state loaded. */
+    const src = fs.readFileSync(path.join(here, "game.js"), "utf8");
+    const wrong = src.split("\n")
+      .map((line, i) => ({ line: line.trim(), n: i + 1 }))
+      .filter((l) => /withFailsafe\(/.test(l.line) && /hallenge/.test(l.line));
+    assert(wrong.length === 0,
+      `pre-career handlers wrapped in withFailsafe:\n      ${wrong.map((l) => `game.js:${l.n} ${l.line}`).join("\n      ")}`);
+    assert(/function guardUi\(/.test(src), "guardUi is gone; pre-career handlers have no wrapper of their own");
+    const guarded = (src.match(/guardUi\(/g) || []).length - 1;  // minus the definition
+    assert(guarded >= 5, `only ${guarded} handlers use guardUi — expected the challenge UI to be covered`);
+    return `${guarded} pre-career handlers guarded, 0 using the career failsafe`;
+  });
+
+  check("serializing before a career exists does not throw", () => {
+    // withFailsafe called this with a null state, which is what actually threw.
+    let threw = null;
+    let out;
+    try { out = api.serializeState(null); } catch (e) { threw = e; }
+    assert(!threw, `serializeState(null) threw: ${threw && threw.message}`);
+    assert(out === null, `expected null, got ${typeof out}`);
+    return "null in, null out";
   });
 
   check("the standalone summary page loads the scripts it needs", () => {
