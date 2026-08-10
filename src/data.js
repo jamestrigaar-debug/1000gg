@@ -25450,7 +25450,7 @@ const PLAYER_DATABASE_2025_26 = {
     p("Kiernan Dewsbury-Hall","CM",60,85,75,187,80,65,72,67,"Diligent",65,72),
     p("Cole Palmer","AM",70,86,67,189,82,74,87,82,"Ice Cold",92,82,"G"),
     p("Christopher Nkunku","AM",77,74,72,178,75,70,83,79,"Mercurial",67,81),
-    p("Pedro Neto","WG",52,75,67,173,68,69,89,94,"Measured",57,80),
+    p("Pedro Neto","WG",52,75,67,173,68,69,89,92,"Measured",57,80),
     p("Mykhaylo Mudryk","WG",57,87,60,175,71,58,80,97,"Understated",50,75),
     p("Noni Madueke","WG",62,80,70,182,75,65,85,89,"Temperamental",58,76),
     p("Jadon Sancho","WG",64,79,56,180,73,74,87,83,"Maverick",70,75),
@@ -25645,7 +25645,7 @@ const PLAYER_DATABASE_2025_26 = {
     p("Ibrahim Sangaré","DM",68,82,84,191,82,50,79,76,"Quiet",48,78),
     p("Ryan Yates","CM",74,73,80,190,80,54,80,67,"Leader",85,78),
     p("Morgan Gibbs-White","AM",62,88,73,178,70,75,80,85,"Relentless",83,82,"G"),
-    p("Anthony Elanga","WG",55,80,68,178,70,74,81,96,"Measured",58,76),
+    p("Anthony Elanga","WG",55,80,68,178,70,74,81,93,"Measured",58,76),
     p("Callum Hudson-Odoi","WG",62,80,68,178,70,78,80,88,"Winner",79,76),
     p("Eric da Silva Moreira","WG",40,68,54,180,76,44,69,87,"Fearless",51,68),
     p("Taiwo Awoniyi","FW",80,74,88,183,80,64,81,80,"Fearless",80,82),
@@ -25728,7 +25728,6 @@ const PLAYER_DATABASE_2025_26 = {
     p("Matheus Cunha","FW",70,84,75,183,75,76,86,79,"Grounded",46,80),
     p("Jørgen Strand Larsen","FW",77,86,88,193,86,59,78,77,"Consistent",65,80),
     p("Hee-chan Hwang","FW",65,86,66,177,74,52,83,82,"Maverick",72,78),
-    p("Jackson Tchatchoua","FB",65,80,78,186,80,61,70,80,Balanced",46,72))
   ],
 };
 
