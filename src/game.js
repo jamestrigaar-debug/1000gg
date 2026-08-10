@@ -33,6 +33,23 @@
   // playthrough in the same browser session.
   const PRISTINE_TEAM_DATABASE = JSON.parse(JSON.stringify(TEAM_DATABASE));
   const TEAM_STRENGTH_BASELINES = JSON.parse(JSON.stringify(TEAM_DATABASE));
+  /* Reset every piece of mutable world state a career can touch.
+   *
+   * resetTeamDatabase alone was not enough: TEAM_SQUADS, MANAGER_TENURE and
+   * PL_CLUB_TENURE are module-level, mutate all career long, and were never
+   * cleared — so a second career in the same tab inherited the previous one's
+   * squads, manager tenures and TV-money tenure bonuses, and squad strength
+   * feeds simulateMatch directly. Two players on the same seed got different
+   * worlds depending on how many careers they had already played. Seeded
+   * challenges are impossible without this.
+   *
+   * If you add another module-level `{}` that a season mutates, clear it here. */
+  function resetWorldState() {
+    resetTeamDatabase();
+    restoreWorldState({}, {});
+    for (const k of Object.keys(PL_CLUB_TENURE)) delete PL_CLUB_TENURE[k];
+  }
+
   function resetTeamDatabase() {
     for (const club of Object.keys(TEAM_DATABASE)) {
       if (!PRISTINE_TEAM_DATABASE[club]) { delete TEAM_DATABASE[club]; continue; }
@@ -925,8 +942,21 @@
       seasonHistory: [], retired: false, bestRating: 0,
       // Snapshot of the player at their highest overall rating; drives the card.
       peak: null,
-      // Set once this career has been posted to the global leaderboard.
+      // Set once this career has been posted to the global leaderboard. This is
+      // only a UX shortcut — the real guard is the database keying entries by
+      // careerId, since anything in localStorage is the player's to edit.
       leaderboardSubmitted: false,
+      // Stable per-career identity, used as the leaderboard row key.
+      careerId: null,
+      // Set when this career was started from a shared challenge link. The
+      // challenge owns the seed, era, rating mode and difficulty.
+      challengeId: null,
+      challengeSubmitted: false,
+      // Chosen on the setup screen when creating a challenge (2-6).
+      challengeMaxPlayers: 2,
+      // How many times the current draft slot has been spun. Feeds the draft
+      // stream so a reroll changes this slot's offer and nothing downstream.
+      draftSpin: 0,
       clubsPlayed: new Set(), clubStats: {}, lastPerformanceTier: "Met Expectation",
       honours: {
         leagueTitles: 0, domesticCups: 0, europeanCups: 0, intlTrophies: 0,
@@ -975,6 +1005,44 @@
   function randomBetween(min, max) { return rand() * (max - min) + min; }
   function randBetween(min, max) { return randomBetween(min, max); }
   function choice(arr) { if (!arr || !arr.length) return undefined; return arr[Math.floor(rand() * arr.length)]; }
+
+  /* ---------------------- THE DRAFT'S OWN RNG STREAM -----------------------
+   * The draft must not draw from the career stream, and two players on one seed
+   * must see the same options at the same point in the draft.
+   *
+   * Under a single sequential stream neither held. Every spin's flicker
+   * animation burned 16 draws, and a reroll spun again — so one player using a
+   * reroll pushed every later draw, including the whole career simulation, onto
+   * a different part of the stream. "Same seed" then meant nothing past the
+   * first reroll.
+   *
+   * So: each landing reseeds from (seed, which slot, how many times this slot
+   * has been spun). Spending a reroll changes what THAT slot offers and nothing
+   * else, the flicker is pure decoration on Math.random, and the career stream
+   * is left untouched — startCareer then reseeds it from the seed alone, so the
+   * world both players inherit is identical however they drafted. */
+  let draftRngState = 1;
+  function seedDraftStream() {
+    const step = draftStepKey();
+    const spin = (state && state.draftSpin) || 0;
+    draftRngState = hashSeed(`${(state && state.seed) || ""}|draft|${step}|${spin}`) || 1;
+  }
+  function draftStepKey() {
+    if (!state) return "country";
+    if (state.phase === "country") return "country";
+    if (state.phase === "build") return "build";
+    return `attr${DRAFT_ATTRS.length - remainingAttrs().length}`;
+  }
+  function draftRand() {
+    let x = draftRngState >>> 0;
+    x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
+    draftRngState = x >>> 0;
+    return (draftRngState || 1) / 4294967296;
+  }
+  function draftInt(min, max) { return Math.floor(draftRand() * (max - min + 1)) + min; }
+  function draftChoice(arr) { if (!arr || !arr.length) return undefined; return arr[Math.floor(draftRand() * arr.length)]; }
+  /** Reel flicker only — the value is thrown away when the reel lands. */
+  function flickerChoice(arr) { if (!arr || !arr.length) return undefined; return arr[Math.floor(Math.random() * arr.length)]; }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
   function round1(v) { return Math.round(v * 10) / 10; }
   function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
@@ -1053,6 +1121,11 @@
     if (!s.europeanEntry || typeof s.europeanEntry !== "object") s.europeanEntry = null;
     if (!s.peak || typeof s.peak !== "object" || !s.peak.attrs) s.peak = null;
     s.leaderboardSubmitted = !!s.leaderboardSubmitted;
+    if (typeof s.careerId !== "string" || !s.careerId) s.careerId = null;
+    if (typeof s.challengeId !== "string" || !s.challengeId) s.challengeId = null;
+    s.challengeSubmitted = !!s.challengeSubmitted;
+    s.challengeMaxPlayers = clamp(Number(s.challengeMaxPlayers) || 2, 2, 6);
+    s.draftSpin = Number.isFinite(Number(s.draftSpin)) ? Number(s.draftSpin) : 0;
     if (!s.leagueStandings || typeof s.leagueStandings !== "object") s.leagueStandings = null;
     if (s.intlRetired == null) s.intlRetired = false;
     s.clubsPlayed = s.clubsPlayed instanceof Set ? s.clubsPlayed : new Set(Array.isArray(s.clubsPlayed) ? s.clubsPlayed : []);
@@ -1091,6 +1164,10 @@
   function deserializeState(json) {
     try {
       const wrapped = JSON.parse(json);
+      // Clear the world first. Only squads and manager tenure are saved, so
+      // without this a career resumed in a tab that has already played one
+      // inherits that career's team-strength drift and promotions.
+      resetWorldState();
       if (wrapped && (wrapped.squads || wrapped.tenure)) restoreWorldState(wrapped.squads, wrapped.tenure);
       return migrateState(wrapped && (wrapped.state || wrapped));
     } catch (e) {
@@ -1141,7 +1218,8 @@
     setRatingMode(state.ratingMode || RATING_MODE.PEAK);
     renderCareerLog();
     if (state.retired) {
-      endCareer(state.totalGoals >= LEVERS.goalTarget);
+      // `resumed` closes leaderboard submission: this career already ended.
+      endCareer(state.totalGoals >= LEVERS.goalTarget, true);
     } else if (state.endCareerReason) {
       showScreen("screen-career");
       renderCareerHeader();
@@ -1169,12 +1247,16 @@
   /* ============================ SETUP ================================= */
   function startCreation(difficulty) {
     clearSave();
-    resetTeamDatabase();
+    resetWorldState();
     state = freshState();
     setSeed();
     state.difficulty = difficulty || "easy";
     const cfg = DIFFICULTIES[state.difficulty];
     state.rerolls = cfg.rerolls;
+    // An ordinary career has no other players to cap, so the picker only
+    // appears on the way to creating a challenge.
+    const players = document.getElementById("setup-players");
+    if (players) players.style.display = creatingChallenge ? "block" : "none";
     showScreen("screen-setup");
   }
 
@@ -1186,6 +1268,14 @@
     state.country = null;
     state.player.origin = null;
     setRatingMode(mode);
+    // Creating a challenge diverts here: the seed and the locked ruleset have to
+    // exist in the database before the code can be shared.
+    if (creatingChallenge) {
+      const picked = parseInt(document.querySelector('input[name="setup-players"]:checked')?.value, 10);
+      state.challengeMaxPlayers = clamp(Number.isFinite(picked) ? picked : 2, 2, 6);
+      createChallengeFromSetup();
+      return;
+    }
     showScreen("screen-genesis");
     beginTurn();
   }
@@ -1209,6 +1299,7 @@
     state.currentSpin = null;
     state.chosenAttr = null;
     state.selectedDonorIdx = null;
+    state.draftSpin = 0;  // a fresh slot, so back to this slot's first offer
     const phase = state.phase;
     const phaseLabels = {
       country: ["Country of Origin", "Roll where your striker was born."],
@@ -1248,14 +1339,14 @@
     const totalTicks = 16;
     const iv = setInterval(() => {
       if (phase === "country") {
-        const c = choice(COUNTRY_KEYS);
+        const c = flickerChoice(COUNTRY_KEYS);
         const o = COUNTRY_ORIGINS[c];
         target.innerHTML = spinBoard("Country", `${o.flag} ${c}`, "Origin", o.bias || "rolled", true);
       } else if (phase === "build") {
-        const c = choice(CLUB_KEYS);
+        const c = flickerChoice(CLUB_KEYS);
         target.innerHTML = spinBoard("Club", c, "Academy", CLUB_ACADEMY[c], true);
       } else {
-        const { team, year } = parseSquadKey(choice(getEraSquadKeys(state.era)));
+        const { team, year } = parseSquadKey(flickerChoice(getEraSquadKeys(state.era)));
         target.innerHTML = spinBoard("Club", team, "Season", year, true);
       }
       if (++ticks >= totalTicks) {
@@ -1269,7 +1360,8 @@
 
   /* ---- country roll ---- */
   function landCountry() {
-    const country = choice(COUNTRY_KEYS);
+    seedDraftStream();
+    const country = draftChoice(COUNTRY_KEYS);
     const origin = COUNTRY_ORIGINS[country];
     state.currentSpin = { country, origin };
     document.getElementById("roll-result").innerHTML = `
@@ -1285,14 +1377,15 @@
   }
 
   /* ---- merged build roll: academy + position + build ---- */
-  function rollPosition() { return choice(POSITION_KEYS); }
+  function rollPosition() { return draftChoice(POSITION_KEYS); }
   function rollBuild() {
-    const height = randInt(168, 196);
-    const weight = clamp(Math.round((height - 100) * 0.9 + randInt(-6, 10)), 64, 98);
+    const height = draftInt(168, 196);
+    const weight = clamp(Math.round((height - 100) * 0.9 + draftInt(-6, 10)), 64, 98);
     return { height, weight };
   }
   function landBuild() {
-    const club = choice(CLUB_KEYS);
+    seedDraftStream();
+    const club = draftChoice(CLUB_KEYS);
     const tier = CLUB_ACADEMY[club];
     const position = rollPosition();
     const build = rollBuild();
@@ -1316,7 +1409,8 @@
 
   /* ---- attribute squad roll ---- */
   function landSquad() {
-    const squadKey = choice(getEraSquadKeys(state.era));
+    seedDraftStream();
+    const squadKey = draftChoice(getEraSquadKeys(state.era));
     const { team, year } = parseSquadKey(squadKey);
     state.currentSpin = { squadKey, team, year, awaitingContinue: true };
     document.getElementById("roll-result").innerHTML = `
@@ -1525,6 +1619,9 @@
   function reroll() {
     if (state.rerolls <= 0) return;
     state.rerolls--;
+    // Advance THIS slot's offer only. Under the old single stream a reroll
+    // shifted every draw that followed it, career included.
+    state.draftSpin = (state.draftSpin || 0) + 1;
     document.getElementById("reroll-count").textContent = state.rerolls;
     setBtn("btn-accept", false);
     setBtn("btn-reroll", false);
@@ -2186,6 +2283,12 @@
     }
     state.clubsPlayed.add(state.club);
     ensureClubStat(state.club);
+    state.careerId = newCareerId();
+    // Hand the career a stream that depends on the seed and nothing else. The
+    // draft no longer draws from it, but compilePlayer does, and how many draws
+    // that costs depends on which donors were picked — so without this reseed
+    // two players on one seed would still meet different worlds.
+    state.rngState = hashSeed(`${state.seed}|world`) || 1;
     state.season = 1;
     // Pin the career to a real calendar. Everything downstream that needs a date
     // — the season label, the whole international tournament cycle — reads this.
@@ -5382,6 +5485,25 @@
    * Reads never block the UI: the board renders from the seed immediately and
    * upgrades in place if the database answers.
    */
+  /* A career's identity on the leaderboard. Entries are written to
+   * players/<careerId>, so the create-only database rule refuses a second
+   * submission of the same career — which is the only guard that actually
+   * holds, given the save file belongs to the player. Older saves have no id;
+   * one is minted on demand. */
+  function newCareerId() {
+    const rnd = Math.random().toString(36).slice(2, 10);
+    return `${Date.now().toString(36)}${rnd}`;
+  }
+  function ensureCareerId() {
+    if (!state.careerId) { state.careerId = newCareerId(); saveState(); }
+    return state.careerId;
+  }
+
+  /* True only when the career ended during THIS page load. Deliberately not
+   * part of `state`, so it cannot be restored from a save: resuming a finished
+   * career must not reopen its leaderboard submission. */
+  let careerEndedThisSession = false;
+
   let leaderboardClient = null;
   function getLeaderboard() {
     if (leaderboardClient) return leaderboardClient;
@@ -5389,6 +5511,346 @@
     leaderboardClient = window.createLeaderboard(window.FIREBASE_CONFIG || null);
     window.LEADERBOARD = leaderboardClient;
     return leaderboardClient;
+  }
+
+  /* ---------------------------- CHALLENGES --------------------------------
+   * Two players, one seed, one shared result.
+   *
+   * The engine is deterministic from (seed + a pristine world), which is what
+   * resetWorldState and the separate draft stream at the top of this file are
+   * for — without them "same seed" would have been a slogan rather than a fact.
+   * Everything else is bookkeeping: the challenge row holds the seed and the
+   * locked ruleset, both careers post one result each, and the link is the only
+   * thing controlling who can join.
+   *
+   * Deliberately no 500-goal floor and no accounts. */
+
+  // Set when this page load arrived on a #challenge= link, before any state
+  // exists. Cleared once the challenge is accepted or dismissed.
+  let pendingChallenge = null;
+  // Set when the player chose "challenge a friend" and is walking through the
+  // difficulty and era screens in order to create one.
+  let creatingChallenge = false;
+
+  const CHALLENGE_HOME = "https://1000goals.co.uk/";
+  function challengeLink(id) {
+    try {
+      const loc = window.location;
+      // Built from origin + pathname so the link never carries an existing
+      // #challenge= or #career= fragment along with it.
+      const base = loc && loc.origin && loc.pathname ? `${loc.origin}${loc.pathname}` : CHALLENGE_HOME;
+      return `${base}#challenge=${id}`;
+    } catch (e) {
+      return `${CHALLENGE_HOME}#challenge=${id}`;
+    }
+  }
+
+  /** The current career as a challenge result. No goals floor, unlike the board. */
+  function currentChallengeEntry() {
+    const row = currentCareerRow();
+    return Object.assign({}, row, {
+      club: state.club || "",
+      peakRating: state.peak && state.peak.rating ? Math.round(state.peak.rating) : 0,
+    });
+  }
+
+  /* Start a career bound to a challenge. Seed, era, rating mode and difficulty
+   * all come from the challenge row rather than from the player, because all
+   * four change what a career can score — letting each side pick its own would
+   * not be a contest. */
+  function startChallengeCareer(challenge) {
+    clearSave();
+    resetWorldState();
+    state = freshState();
+    setSeed(challenge.seed);
+    state.challengeId = challenge.id;
+    state.difficulty = challenge.difficulty || "medium";
+    state.rerolls = (DIFFICULTIES[state.difficulty] || DIFFICULTIES.medium).rerolls;
+    state.era = challenge.era || "all";
+    state.ratingMode = challenge.ratingMode || RATING_MODE.PEAK;
+    setRatingMode(state.ratingMode);
+    state.country = null;
+    state.player.origin = null;
+    pendingChallenge = null;
+    showScreen("screen-genesis");
+    beginTurn();
+  }
+
+  /* The hub: how it works, create, and join by code. Returning here resets the
+   * screen, so a second visit never shows the previous challenge's code. */
+  function showChallengeHub() {
+    creatingChallenge = false;
+    const hub = document.getElementById("challenge-hub");
+    const created = document.getElementById("challenge-create");
+    const startBtn = document.getElementById("btn-challenge-start");
+    const joinNote = document.getElementById("challenge-join-note");
+    const joinAccept = document.getElementById("btn-challenge-join-accept");
+    const codeInput = document.getElementById("challenge-code");
+    if (hub) hub.style.display = "block";
+    if (created) created.style.display = "none";
+    if (startBtn) startBtn.style.display = "none";
+    if (joinNote) joinNote.textContent = "";
+    if (joinAccept) joinAccept.style.display = "none";
+    if (codeInput) codeInput.value = "";
+    showScreen("screen-challenge");
+  }
+
+  /* Create a challenge from the settings the player just chose, then show them
+   * the code. Their own career starts from the same row, so the creator is just
+   * the first entrant. */
+  function createChallengeFromSetup() {
+    const lb = getLeaderboard();
+    const hub = document.getElementById("challenge-hub");
+    const panel = document.getElementById("challenge-create");
+    const note = document.getElementById("challenge-create-note");
+    const codeEl = document.getElementById("challenge-code-display");
+    const linkBox = document.getElementById("challenge-link");
+    const startBtn = document.getElementById("btn-challenge-start");
+    creatingChallenge = false;
+    showScreen("screen-challenge");
+    if (hub) hub.style.display = "none";
+    if (panel) panel.style.display = "block";
+    if (startBtn) startBtn.style.display = "none";
+    if (linkBox) linkBox.value = "";
+    if (codeEl) codeEl.textContent = "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7";
+    if (note) note.textContent = "Creating your challenge\u2026";
+
+    // Falling back to an ordinary career keeps a failed create from being a
+    // dead end \u2014 the player still chose a difficulty and era to get here.
+    const offerPlainCareer = () => {
+      if (!startBtn) return;
+      startBtn.style.display = "";
+      startBtn.textContent = "PLAY WITHOUT A CHALLENGE \u25b6";
+      startBtn.onclick = withFailsafe(() => { showScreen("screen-genesis"); beginTurn(); });
+    };
+
+    const spec = { era: state.era, ratingMode: state.ratingMode, difficulty: state.difficulty,
+                   maxPlayers: state.challengeMaxPlayers || 2 };
+    if (!lb || !lb.available()) {
+      // A challenge lives in the database \u2014 there is no honest offline version,
+      // because the settings have to be somewhere the code cannot edit.
+      if (note) note.textContent = `Challenges need the leaderboard connection \u2014 ${lb ? lb.initError() : "module not loaded"}. You can still play a normal career.`;
+      offerPlainCareer();
+      return;
+    }
+    lb.createChallenge(spec).then((res) => {
+      if (!res.ok) {
+        if (note) note.textContent = `Could not create the challenge: ${res.error}`;
+        offerPlainCareer();
+        return;
+      }
+      const challenge = Object.assign({}, res.challenge, { id: res.id });
+      if (codeEl) codeEl.textContent = lb.formatChallengeCode(res.id);
+      if (linkBox) linkBox.value = challengeLink(res.id);
+      if (note) {
+        note.textContent = `Send this code to ${plural(challenge.maxPlayers - 1, "friend", "friends")}. Everyone drafts from the same seed on ${challenge.difficulty}, ${eraLabel(challenge.era)} \u2014 most career goals wins.`;
+      }
+      if (startBtn) {
+        startBtn.style.display = "";
+        startBtn.textContent = "START MY CAREER \u25b6";
+        startBtn.onclick = withFailsafe(() => startChallengeCareer(challenge));
+      }
+    });
+  }
+
+  /** Look up whatever the player typed into the join box. */
+  function joinChallengeByCode() {
+    const lb = getLeaderboard();
+    const input = document.getElementById("challenge-code");
+    const note = document.getElementById("challenge-join-note");
+    const btn = document.getElementById("btn-challenge-join-accept");
+    if (!input || !note || !btn) return;
+    const id = lb ? lb.cleanChallengeId(input.value) : "";
+    if (!id) {
+      note.textContent = "Enter the code your friend sent you.";
+      btn.style.display = "none";
+      return;
+    }
+    renderChallengeOffer(id, note, btn);
+  }
+
+
+  function eraLabel(era) {
+    const opt = (ERA_OPTIONS || []).find((e) => e.key === era);
+    return (opt && opt.label) || "All eras";
+  }
+
+  /* Copy with inline feedback on the button. navigator.clipboard is unavailable
+   * on insecure origins and rejects when the page is not focused, so the input
+   * is selected as a fallback — the link is then one Ctrl+C away rather than
+   * lost behind a failed promise. */
+  function copyText(text, btn, okLabel) {
+    const original = btn ? btn.textContent : "";
+    const done = (label) => {
+      if (!btn) return;
+      btn.textContent = label;
+      setTimeout(() => { btn.textContent = original; }, 2000);
+    };
+    const fallback = () => {
+      const box = document.getElementById("challenge-link");
+      if (box && box.select) { box.select(); done("Press Ctrl+C"); }
+      else done("Copy failed");
+    };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => done(okLabel || "Copied"), fallback);
+        return;
+      }
+    } catch (e) { /* falls through */ }
+    fallback();
+  }
+
+  /* One renderer for both ways of arriving at a challenge: a #challenge= link
+   * on the welcome screen, and a code typed into the hub. The challenge is
+   * fetched before anything is offered, so a dead or mistyped code says so
+   * instead of silently starting a normal career.
+   *
+   * Other players' totals are deliberately absent \u2014 seeing the number you have
+   * to beat before you start turns a career into a calculator. They land the
+   * moment you retire. */
+  function renderChallengeOffer(id, note, btn) {
+    if (!note || !btn) return;
+    btn.style.display = "none";
+    note.textContent = "Loading the challenge\u2026";
+    const lb = getLeaderboard();
+    if (!lb) { note.textContent = "The challenge could not be loaded \u2014 the leaderboard module is missing."; return; }
+
+    /* Accepting wipes the save, and a link stays in the address bar for the
+     * whole run \u2014 so a reload mid-challenge would otherwise offer a button
+     * that deletes the career it is describing. If this challenge is already
+     * in progress, point at Continue instead. */
+    const saved = loadSavedState();
+    const inProgress = saved && saved.challengeId === id && !saved.retired;
+    const alreadyPlayed = saved && saved.challengeId === id && saved.retired;
+
+    lb.fetchChallenge(id, saved && saved.careerId).then((res) => {
+      if (!res.found) {
+        note.textContent = res.error || "No challenge found with that code.";
+        return;
+      }
+      pendingChallenge = res.challenge;
+      const c = res.challenge;
+      const rules = `the same seed on ${c.difficulty}, ${eraLabel(c.era)}`;
+      const code = lb.formatChallengeCode(id);
+      if (inProgress) {
+        note.textContent = `You are ${plural(saved.season || 1, "season", "seasons")} into challenge ${code} \u2014 ${rules}. Continue that career rather than starting again.`;
+        return;
+      }
+      if (alreadyPlayed) {
+        note.textContent = `You have already played challenge ${code}. See how it finished on the summary page.`;
+        return;
+      }
+      const done = res.standings.length;
+      /* The cap is checked here because this is the only place refusing costs
+       * nobody anything. Blocking at submit would throw away a whole career. */
+      if (res.full) {
+        note.textContent = `Challenge ${code} is full \u2014 all ${plural(c.maxPlayers, "place has", "places have")} been taken. Ask for a new code.`;
+        return;
+      }
+      const who = c.createdBy ? `${c.createdBy} has` : "You have been";
+      const played = done === 0
+        ? "Nobody has finished it yet."
+        : `${plural(done, "career has", "careers have")} been posted \u2014 you will see the totals when yours ends.`;
+      note.textContent = `${c.createdBy ? who + " challenged you" : "Challenge " + code}: ${rules}, up to ${plural(c.maxPlayers, "player", "players")}. ${plural(res.slotsLeft, "place", "places")} left. ${played}`;
+      btn.style.display = "";
+      btn.textContent = saved ? "ACCEPT \u2014 REPLACES YOUR SAVED CAREER \u25b6" : "ACCEPT THE CHALLENGE \u25b6";
+      btn.onclick = withFailsafe(() => startChallengeCareer(c));
+    });
+  }
+
+  /** The welcome-screen panel shown when the page was opened on a link. */
+  function renderChallengeInvite(id) {
+    const panel = document.getElementById("challenge-invite");
+    const note = document.getElementById("challenge-invite-note");
+    const btn = document.getElementById("btn-challenge-accept");
+    if (!panel || !note || !btn) return;
+    panel.style.display = "block";
+    renderChallengeOffer(id, note, btn);
+  }
+
+
+  function checkUrlHashChallenge() {
+    try {
+      if (!window.location) return false;
+      const hash = window.location.hash || "";
+      if (!hash.startsWith("#challenge=")) return false;
+      const lb = getLeaderboard();
+      const id = lb ? lb.cleanChallengeId(hash.slice(11)) : "";
+      if (!id) return false;
+      renderChallengeInvite(id);
+      return true;
+    } catch (e) {
+      console.error("Challenge link check failed", e);
+      return false;
+    }
+  }
+
+  /* The head-to-head, shown once the career is over. Posts this career's result
+   * first (once — the database keys entries by career id and refuses a second),
+   * then renders every result posted to the challenge so far. */
+  function renderChallengeResult() {
+    const panel = document.getElementById("challenge-result");
+    const note = document.getElementById("challenge-result-note");
+    const board = document.getElementById("challenge-standings");
+    if (!panel || !note || !board) return;
+    if (!state.challengeId) { panel.style.display = "none"; return; }
+    panel.style.display = "block";
+    const lb = getLeaderboard();
+    if (!lb || !lb.available()) {
+      note.textContent = `Challenge results need a connection — ${lb ? lb.initError() : "module not loaded"}.`;
+      board.innerHTML = "";
+      return;
+    }
+
+    const codeEl = document.getElementById("challenge-result-code");
+    if (codeEl) {
+      const code = lb.formatChallengeCode(state.challengeId);
+      codeEl.innerHTML = `Challenge <strong>${esc(code)}</strong> · <a href="challenge.html#${esc(state.challengeId)}" class="footer-link">full summary →</a>`;
+    }
+
+    const show = (payload) => {
+      const rows = payload.standings || [];
+      board.innerHTML = challengeStandingsHtml(rows);
+      const you = rows.find((r) => r.you);
+      const others = rows.filter((r) => !r.you);
+      const waiting = payload.challenge ? Math.max(0, payload.challenge.maxPlayers - rows.length) : 0;
+      const outstanding = waiting
+        ? ` ${plural(waiting, "player has", "players have")} yet to finish.` : "";
+      if (!you) { note.textContent = "Waiting for this career to post…"; return; }
+      if (!others.length) {
+        note.textContent = `You are first to finish on ${you.goals} goals.${outstanding || " The others see your total when they retire."}`;
+      } else {
+        const best = others[0];
+        note.textContent = (you.rank === 1
+          ? `You lead — ${you.goals} goals to ${best.goals}.`
+          : `${best.name} leads on ${best.goals} goals. You finished on ${you.goals}.`) + outstanding;
+      }
+    };
+
+    const refresh = () => lb.fetchChallenge(state.challengeId, state.careerId).then(show);
+
+    // Resuming a finished career must not repost it; the flag saves the round
+    // trip and the create-only rule is what actually enforces it.
+    if (state.challengeSubmitted) {
+      note.textContent = "Loading the head-to-head…";
+      refresh();
+    } else {
+      note.textContent = "Posting your result…";
+      lb.submitChallengeEntry(state.challengeId, currentChallengeEntry(), ensureCareerId()).then((res) => {
+        if (res.ok || res.reason === "already-submitted") {
+          state.challengeSubmitted = true;
+          saveState();
+        }
+        refresh();
+      });
+    }
+  }
+
+  /* Rendered through the leaderboard's own row builder so a challenge table
+   * reads exactly like the board a player has already learned. */
+  function challengeStandingsHtml(rows) {
+    if (!rows.length) return `<div class="lb-foot">No results posted yet.</div>`;
+    return leaderboardRowsHtml(rows, true);
   }
 
   // The player's current career as a leaderboard row, so they can see where
@@ -5414,9 +5876,14 @@
   function leaderboardRowsHtml(entries, compact) {
     const rows = entries.map((e) => {
       const medal = e.rank === 1 ? " gold" : e.rank === 2 ? " silver" : e.rank === 3 ? " bronze" : "";
-      const tag = e.seed
+      // Real players carry "real"; every submitted career carries the difficulty
+      // it was played on, so a hard-mode total is not read as an easy-mode one.
+      const diff = String(e.difficulty || "").toLowerCase();
+      const diffTag = !e.seed && diff
+        ? `<span class="lb-tag diff ${esc(diff)}" title="Played on ${esc(diff)}">${esc(diff)}</span>` : "";
+      const tag = (e.seed
         ? `<span class="lb-tag" title="Real-world benchmark">real</span>`
-        : e.you ? `<span class="lb-tag you">you</span>` : "";
+        : e.you ? `<span class="lb-tag you">you</span>` : "") + diffTag;
       const ratio = e.apps > 0 ? (e.goals / e.apps).toFixed(2) : "—";
       const mid = compact ? "" : `<span class="lb-apps">${e.apps || "—"}</span><span class="lb-ratio">${ratio}</span>`;
       return `<div class="lb-row${e.you ? " mine" : ""}">
@@ -6867,7 +7334,8 @@
   }
 
   /* ----------------------------- LEGACY --------------------------------- */
-  function endCareer(reachedGoal) {
+  function endCareer(reachedGoal, resumed) {
+    careerEndedThisSession = !resumed;
     state.retired = true;
     state.bioClosing = generateBioClosing();
     showScreen("screen-legacy");
@@ -6885,8 +7353,27 @@
     // and a scrolling log; it now ends on one shareable artefact, a paragraph
     // that sums the career up, and the share controls. Everything the deleted
     // sections showed — attributes, honours, totals — lives on the card itself.
+    // Games and goals stay front and centre. Stripping the screen to the card
+    // buried them in the artwork and in one line of prose; these are the
+    // numbers the whole career was about.
+    const goalsEl = document.getElementById("legacy-goals");
+    if (goalsEl) goalsEl.textContent = state.totalGoals;
+    const totalsEl = document.getElementById("legacy-totals");
+    if (totalsEl) {
+      const h = state.honours;
+      const trophies = h.leagueTitles + h.domesticCups + h.europeanCups + h.intlTrophies;
+      totalsEl.innerHTML = [
+        ["Seasons", state.season],
+        ["Games", state.totalApps],
+        ["Goals", state.totalGoals],
+        ["Assists", state.totalAssists],
+        ["Trophies", trophies],
+      ].map(([k, v]) => `<div class="lt-box"><div class="lt-num">${v}</div><div class="lt-lab">${k}</div></div>`).join("");
+    }
+
     renderShareCard();
     renderCareerSummary();
+    renderChallengeResult();
     renderLeaderboardSubmit();
     renderShareTagline();
     saveState();
@@ -7256,12 +7743,30 @@
     const btn = document.getElementById("btn-submit-leaderboard");
     if (!wrap || !note || !input || !btn) return;
     const lb = getLeaderboard();
+    const row = currentCareerRow();
+    const minGoals = (lb && lb.LIMITS && lb.LIMITS.goalsMin) || 500;
 
-    if (state.leaderboardSubmitted) {
-      wrap.classList.add("done");
-      note.textContent = "✅ This career is on the leaderboard.";
+    const close = (message, cls) => {
+      if (cls) wrap.classList.add(cls);
+      note.textContent = message;
       input.style.display = "none";
       btn.style.display = "none";
+    };
+
+    if (state.leaderboardSubmitted) {
+      close("✅ This career is on the leaderboard.", "done");
+      return;
+    }
+    // Arriving here via Continue Career means the career is over and was
+    // already offered its one submission. Reloading into the end screen is not
+    // a second chance — and the database would refuse the duplicate anyway,
+    // since the row is keyed by career id.
+    if (!careerEndedThisSession) {
+      close("This career has already finished — submissions close when it ends.");
+      return;
+    }
+    if (row.goals < minGoals) {
+      close(`Reach ${minGoals} career goals to enter the leaderboard — you finished on ${row.goals}.`);
       return;
     }
     if (!lb || !lb.available()) {
@@ -7273,15 +7778,20 @@
       return;
     }
 
+    input.style.display = "";
+    btn.style.display = "";
+    btn.disabled = false;
     input.value = (state.player && state.player.name) || "";
-    const row = currentCareerRow();
     lb.fetchTop(200).then((payload) => {
       if (state.leaderboardSubmitted) return;
       const rank = lb.projectedRank(row.goals, payload.entries);
       note.textContent = `${row.goals} goals would enter the board at #${rank}.`;
     });
 
-    btn.addEventListener("click", withFailsafe(() => {
+    // Assigned, not added: endCareer runs again whenever a retired career is
+    // resumed, and addEventListener stacked a fresh handler on this static
+    // button each time — so one click fired several submissions.
+    btn.onclick = withFailsafe(() => {
       const entry = Object.assign(currentCareerRow(), { name: input.value });
       if (!lb.normalizeEntry(entry)) {
         note.textContent = "Enter a display name (1-24 characters) before submitting.";
@@ -7289,11 +7799,11 @@
       }
       btn.disabled = true;
       note.textContent = "Submitting…";
-      lb.submit(entry).then((res) => {
-        if (res.ok) {
+      lb.submit(entry, ensureCareerId()).then((res) => {
+        if (res.ok || res.reason === "already-submitted") {
           state.leaderboardSubmitted = true;
           // Keep the chosen display name so the card and the board agree.
-          if (state.player) state.player.name = lb.cleanName(input.value);
+          if (res.ok && state.player) state.player.name = lb.cleanName(input.value);
           saveState();
           renderLeaderboardSubmit();
         } else {
@@ -7301,7 +7811,7 @@
           note.textContent = `Could not submit: ${res.error}`;
         }
       });
-    }));
+    });
   }
 
   function renderShareTagline() {
@@ -7362,7 +7872,9 @@
       state = loaded;
       resetTeamDatabase();
       setRatingMode(state.ratingMode || RATING_MODE.PEAK);
-      endCareer(true);
+      // `resumed` — this is somebody else's career being viewed from a link, so
+      // it must not open a leaderboard submission or post itself to a challenge.
+      endCareer(true, true);
       return true;
     } catch (e) {
       console.error("Career code failed", e);
@@ -7390,13 +7902,16 @@
     const now = new Date();
     const dateSeed = `daily-${now.getUTCFullYear()}-${now.getUTCMonth() + 1}-${now.getUTCDate()}`;
     clearSave();
-    resetTeamDatabase();
+    resetWorldState();
     state = freshState();
     setSeed(dateSeed);
     state.difficulty = "medium";
     state.rerolls = DIFFICULTIES.medium.rerolls;
     state.era = "all";
     state.ratingMode = RATING_MODE.PEAK;
+    // Without this the donor pool is whatever the last career selected —
+    // beginSetup is the only other caller, and the daily skips it.
+    setRatingMode(state.ratingMode);
     log(`🔥 Daily Challenge: ${dateSeed}`, "milestone");
     showScreen("screen-genesis");
     beginTurn();
@@ -7746,7 +8261,34 @@
   /* ----------------------------- WIRING --------------------------------- */
   function init() {
     checkUrlHashCareer();
-    document.getElementById("btn-start").addEventListener("click", () => showScreen("screen-difficulty"));
+    checkUrlHashChallenge();
+    document.getElementById("btn-start").addEventListener("click", () => {
+      creatingChallenge = false;
+      showScreen("screen-difficulty");
+    });
+    const btnChallenge = document.getElementById("btn-challenge-friend");
+    if (btnChallenge) btnChallenge.addEventListener("click", showChallengeHub);
+    const btnChallengeCreate = document.getElementById("btn-challenge-create");
+    if (btnChallengeCreate) btnChallengeCreate.addEventListener("click", () => {
+      // The creator still picks difficulty, era and player count on the normal
+      // screens; the challenge is written once those are known, in beginSetup.
+      creatingChallenge = true;
+      showScreen("screen-difficulty");
+    });
+    const btnChallengeJoin = document.getElementById("btn-challenge-join");
+    if (btnChallengeJoin) btnChallengeJoin.addEventListener("click", withFailsafe(joinChallengeByCode));
+    const codeInput = document.getElementById("challenge-code");
+    if (codeInput) codeInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); withFailsafe(joinChallengeByCode)(); }
+    });
+    const btnChallengeBack = document.getElementById("btn-challenge-back");
+    if (btnChallengeBack) btnChallengeBack.addEventListener("click", () => showScreen("screen-welcome"));
+    const btnChallengeCopy = document.getElementById("btn-challenge-copy");
+    if (btnChallengeCopy) btnChallengeCopy.addEventListener("click", withFailsafe(() => {
+      const box = document.getElementById("challenge-link");
+      if (!box || !box.value) return;
+      copyText(box.value, btnChallengeCopy, "Copied ✓");
+    }));
     document.querySelectorAll(".btn-difficulty").forEach((b) =>
       b.addEventListener("click", () => startCreation(b.dataset.difficulty)));
     const btnSetupContinue = document.getElementById("btn-setup-continue");
@@ -7839,7 +8381,13 @@
     renderCareerStats, renderSeasonResult, renderContractOffer, renderCareerHeader, presentTransfer,
     renderSquadInfo, renderCareerSummary, generateCareerSummary, cardTagline, plural, bodyLoadLabel,
     renderLeaderboard, renderLeaderboardSubmit, currentCareerRow, getLeaderboard,
-    renderWelcomeLeaderboard, leaderboardRowsHtml, init,
+    renderWelcomeLeaderboard, leaderboardRowsHtml, init, newCareerId, ensureCareerId,
+    resetWorldState, resetTeamDatabase,
+    landCountry, landBuild, landSquad, draftStepKey, seedDraftStream, rand,
+    challengeLink, currentChallengeEntry, challengeStandingsHtml, renderChallengeResult, saveState,
+    startChallengeCareer, checkUrlHashChallenge, renderChallengeInvite, renderChallengeOffer,
+    showChallengeHub, joinChallengeByCode, createChallengeFromSetup, eraLabel,
+    careerEndedThisSession: () => careerEndedThisSession,
     deriveInternationalTrait, intlArchetype, normalizeIntlTrait, getNationReputationTier,
     INTERNATIONAL_TOURNAMENTS, INTL_ARCHETYPES,
     getPillar, checkCareerMilestone, pickSeasonDecision, applyEffects, applyEffectsRaw,

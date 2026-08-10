@@ -80,7 +80,7 @@ const sandbox = {
     documentElement: makeElement(),
   },
   navigator: { userAgent: "node", clipboard: { writeText: async () => {} } },
-  location: { href: "http://localhost/", search: "", hash: "" },
+  location: { href: "http://localhost/", origin: "http://localhost", pathname: "/", search: "", hash: "" },
   history: { pushState() {}, replaceState() {} },
   scrollTo() {}, scrollBy() {}, alert() {}, matchMedia: () => ({ matches: false, addListener() {}, removeListener() {} }),
 };
@@ -726,6 +726,67 @@ if (require.main === module) {
     return `${wins}/${N} elite seasons won it`;
   });
 
+  group("Leaderboard anti-spam and anti-resubmit");
+
+  check("a career under 500 goals cannot be submitted", () => {
+    const client = api.getLeaderboard();
+    assert(client.LIMITS.goalsMin === 500, `entry bar is ${client.LIMITS.goalsMin}`);
+    return client.submit({ name: "Spammer", goals: 412, apps: 700, seasons: 18 }, "abc123").then((res) => {
+      assert(res.ok === false, "a 412-goal career was accepted");
+      assert(res.reason === "below-minimum", `rejected for the wrong reason: ${res.reason}`);
+      assert(/500/.test(res.error), `the message does not state the bar: ${res.error}`);
+      return res.error;
+    });
+  });
+
+  check("the 500 floor is in the database rules, not just the client", () => {
+    // A client-side gate on a public write is a courtesy. The rule is the control.
+    const validate = lb.LEADERBOARD_RULES.rules.players.$entry[".validate"];
+    assert(/goals'\)\.val\(\) >= 500/.test(validate), "no server-side minimum on goals");
+    return "goals >= 500 enforced in .validate";
+  });
+
+  check("entries are keyed by career id so a resubmission hits an existing path", () => {
+    // push() gave every submission a fresh key, so the create-only rule could
+    // never recognise a duplicate. set() at players/<careerId> makes the
+    // database itself refuse the second write.
+    const rule = lb.LEADERBOARD_RULES.rules.players.$entry[".write"];
+    assert(/!data\.exists\(\)/.test(rule), "the write rule permits overwriting an existing entry");
+    assert(typeof api.newCareerId === "function", "no career id generator");
+    const a = api.newCareerId(), b = api.newCareerId();
+    assert(a && b && a !== b, `ids are not unique: ${a} / ${b}`);
+    assert(lb.cleanCareerId(a) === a, `a generated id is not a legal Firebase key: ${a}`);
+    return `ids like ${a}`;
+  });
+
+  check("a career id is a legal Firebase key even when tampered with", () => {
+    // . # $ [ ] / are forbidden in keys; a bad id must invalidate the write
+    // rather than write to some other path.
+    assert(lb.cleanCareerId("../../players") === "players", "path traversal survived");
+    assert(lb.cleanCareerId("a.b#c$d[e]f/g") === "abcdefg", "forbidden key characters survived");
+    assert(lb.cleanCareerId("") === "", "empty id should stay empty");
+    assert(lb.cleanCareerId("x".repeat(500)).length <= lb.LIMITS.careerIdMax, "id length not capped");
+    return "traversal and forbidden characters stripped";
+  });
+
+  check("submitting without a career id is refused", () => {
+    const client = api.getLeaderboard();
+    return client.submit({ name: "NoId", goals: 700, apps: 900, seasons: 20 }, "").then((res) => {
+      assert(res.ok === false && res.reason === "no-career-id", `unexpected: ${JSON.stringify(res)}`);
+      return res.error;
+    });
+  });
+
+  check("a career started fresh gets an id that persists through a save", () => {
+    makeState({ totalGoals: 700, careerId: null });
+    const st = api.getState();
+    const id = api.ensureCareerId();
+    assert(id && st.careerId === id, "ensureCareerId did not stick");
+    const round = api.deserializeState(api.serializeState(st));
+    assert(round.careerId === id, `careerId lost across save/load: ${round.careerId}`);
+    return `id ${id} survives a save`;
+  });
+
   group("The prime career card");
 
   check("the peak snapshot lands in the prime window, not the first season", () => {
@@ -866,6 +927,26 @@ if (require.main === module) {
     const good = lb.normalizeEntry({ name: "  Real Player  ", goals: "412", apps: 700, seasons: 18 });
     assert(good && good.goals === 412 && good.name === "Real Player", "a valid entry was rejected or mangled");
     return `${bad.length} invalid shapes rejected, valid entry coerced`;
+  });
+
+  check("every submitted career shows the difficulty it was played on", () => {
+    const rows = [
+      { name: "Impossible Run", goals: 812, apps: 1010, difficulty: "impossible", rank: 1 },
+      { name: "Easy Run", goals: 540, apps: 800, difficulty: "easy", rank: 2 },
+      { name: "Cristiano Ronaldo", goals: 976, seed: true, rank: 3 },
+      { name: "Mine", goals: 600, apps: 850, difficulty: "medium", you: true, rank: 4 },
+    ];
+    const html = api.leaderboardRowsHtml(rows, false);
+    assert(/lb-tag diff impossible[^>]*>impossible</.test(html), "impossible difficulty not tagged");
+    assert(/lb-tag diff easy[^>]*>easy</.test(html), "easy difficulty not tagged");
+    assert(/>real</.test(html), "the real-player tag was lost");
+    // A benchmark has no difficulty and must not be given one.
+    const seedChunk = html.slice(html.indexOf("Cristiano"), html.indexOf("Cristiano") + 260);
+    assert(!/lb-tag diff/.test(seedChunk), "a real-world benchmark was tagged with a difficulty");
+    // The player's own row keeps both markers.
+    const mineChunk = html.slice(html.indexOf("Mine"));
+    assert(/lb-tag you/.test(mineChunk) && /lb-tag diff medium/.test(mineChunk), "the you row lost a tag");
+    return "real / easy / medium / hard / impossible all render";
   });
 
   check("hostile display names are defanged", () => {
@@ -1009,6 +1090,309 @@ if (require.main === module) {
     assert(lb.normalizeEntry(row), "a real career failed its own validation");
     assert(row.goals === 512 && row.trophies === 6, `row was ${row.goals} goals / ${row.trophies} trophies`);
     return `${row.goals} goals, ${row.apps} apps, ${row.trophies} trophies`;
+  });
+
+  /* This group runs LAST on purpose: resetWorldState wipes TEAM_SQUADS and the
+   * team database, which earlier checks assert against. */
+  group("Challenge mode — seeded determinism");
+
+  /** Six seasons from a fixed starting point, as a comparable fingerprint. */
+  function careerFingerprint(seed) {
+    api.resetWorldState();
+    makeState({ club: "Arsenal", age: 24, season: 8, baseRating: 85, reputation: 75,
+                role: "Star", contractRole: "Star", intlDebut: true, seed });
+    const st = api.getState();
+    const out = [];
+    for (let i = 0; i < 6; i++) {
+      const sd = api.simulateSeason();
+      out.push(`${sd.goals}/${sd.apps}/${sd.pos}`);
+      st.season++; st.age++;
+    }
+    return out.join(" ");
+  }
+
+  check("the same seed produces the same career, career after career", () => {
+    // The whole feature rests on this. Before resetWorldState, run 1 differed
+    // from runs 2 and 3 because TEAM_SQUADS, MANAGER_TENURE and PL_CLUB_TENURE
+    // are module-level and survived startCreation — squad strength feeds
+    // simulateMatch, so the second career on a seed inherited the first one's
+    // world. Two friends on the same link got different games.
+    const a = careerFingerprint("chal-xyz");
+    const b = careerFingerprint("chal-xyz");
+    const c = careerFingerprint("chal-xyz");
+    assert(a === b && b === c, `runs diverged:\n      ${a}\n      ${b}\n      ${c}`);
+    return a;
+  });
+
+  check("an unrelated career in between does not leak into the next one", () => {
+    // The realistic failure: you play your own career, then open your friend's
+    // challenge link in the same tab.
+    const before = careerFingerprint("chal-xyz");
+    careerFingerprint("chal-abc");
+    careerFingerprint("some-other-seed");
+    const after = careerFingerprint("chal-xyz");
+    assert(before === after, `seed drifted after other careers:\n      ${before}\n      ${after}`);
+    return "identical across intervening careers";
+  });
+
+  check("different seeds still produce different careers", () => {
+    // Guards against the trivial way to pass the two checks above.
+    const a = careerFingerprint("chal-xyz");
+    const b = careerFingerprint("chal-abc");
+    assert(a !== b, `two seeds produced identical careers: ${a}`);
+    return "seeds are actually load-bearing";
+  });
+
+  check("resetWorldState clears every module-level world container", () => {
+    // A new mutable `{}` added later and not cleared here reintroduces the bug
+    // silently, so assert on the containers themselves rather than on outcomes.
+    careerFingerprint("chal-xyz");
+    assert(Object.keys(api.TEAM_SQUADS).length > 0, "the probe never populated any squads");
+    api.resetWorldState();
+    assert(Object.keys(api.TEAM_SQUADS).length === 0, "TEAM_SQUADS survived the reset");
+    assert(Object.keys(api.MANAGER_TENURE).length === 0, "MANAGER_TENURE survived the reset");
+    return "squads and tenure both empty after reset";
+  });
+
+  check("the draft draws from its own stream, not the career's", () => {
+    // A spin used to cost 16 draws for the flicker animation plus one for the
+    // landing, all off the career stream — so the world a player inherited
+    // depended on how many times they had spun the reels.
+    makeState({ seed: "draft-seed", phase: "country" });
+    const st = api.getState();
+    const before = st.rngState;
+    st.draftSpin = 0;
+    api.landCountry();
+    st.phase = "build"; api.landBuild();
+    st.phase = "attributes"; api.landSquad();
+    assert(st.rngState === before, `three landings moved the career stream ${before} → ${st.rngState}`);
+    return "career stream untouched by country, build and squad landings";
+  });
+
+  check("the same slot offers the same thing to both players", () => {
+    const land = (seed, spin) => {
+      makeState({ seed, phase: "country" });
+      const st = api.getState();
+      st.draftSpin = spin;
+      api.landCountry();
+      return st.currentSpin.country;
+    };
+    assert(land("draft-seed", 0) === land("draft-seed", 0), "one seed, one slot, two answers");
+    // And the slot is actually seed-dependent rather than constant.
+    const spread = new Set(["a", "b", "c", "d", "e", "f"].map((s) => land(`draft-${s}`, 0)));
+    assert(spread.size > 1, `six seeds all landed on ${[...spread][0]}`);
+    return `stable per seed, ${spread.size} distinct across six seeds`;
+  });
+
+  check("a reroll advances that slot only", () => {
+    // The point of the counter: spending a reroll must not hand the player a
+    // different career from the friend who kept theirs.
+    const land = (spin) => {
+      makeState({ seed: "draft-seed", phase: "country" });
+      const st = api.getState();
+      st.draftSpin = spin;
+      api.landCountry();
+      return st.currentSpin.country;
+    };
+    const offers = new Set([0, 1, 2, 3, 4, 5].map(land));
+    assert(offers.size > 1, "every reroll returned the same country — the counter is not feeding the stream");
+
+    // Land the build slot cleanly, then again after four country rerolls.
+    makeState({ seed: "draft-seed", phase: "build" });
+    const a = api.getState();
+    a.draftSpin = 0; api.landBuild();
+    const clean = JSON.stringify(a.currentSpin);
+
+    makeState({ seed: "draft-seed", phase: "country" });
+    const b = api.getState();
+    for (let i = 0; i < 4; i++) { b.draftSpin = i; api.landCountry(); }
+    b.phase = "build"; b.draftSpin = 0; api.landBuild();
+    assert(JSON.stringify(b.currentSpin) === clean,
+      `rerolling the country slot changed the build slot:\n      ${clean}\n      ${JSON.stringify(b.currentSpin)}`);
+    return `${offers.size} distinct offers across 6 rerolls, later slots unmoved`;
+  });
+
+  group("Challenge a friend");
+
+  check("a challenge locks the four settings that change what a career can score", () => {
+    const c = lb.normalizeChallenge({ id: "abc123", seed: "chal-abc123", era: "modern",
+                                      ratingMode: "at-time", difficulty: "hard" });
+    assert(c && c.era === "modern" && c.ratingMode === "at-time" && c.difficulty === "hard",
+      `settings did not survive: ${JSON.stringify(c)}`);
+    // Anything outside the known values falls back rather than reaching the
+    // engine, which would index DIFFICULTIES/ERA_OPTIONS with it.
+    const junk = lb.normalizeChallenge({ seed: "s", era: "__proto__", ratingMode: "x", difficulty: "trivial" });
+    assert(junk.era === "all" && junk.ratingMode === "peak" && junk.difficulty === "medium",
+      `junk settings were let through: ${JSON.stringify(junk)}`);
+    assert(lb.normalizeChallenge({ era: "all" }) === null, "a challenge with no seed was accepted");
+    return "era/mode/difficulty locked, seedless challenge rejected";
+  });
+
+  check("every era the setup screen offers is a legal challenge era", () => {
+    // The setup screen and the validator drifted once already: "current" was
+    // selectable in the UI and silently rewritten to "all" on the way in.
+    const eras = api.ERA_OPTIONS.map((e) => e.key);
+    const rejected = eras.filter((era) => lb.normalizeChallenge({ seed: "s", era }).era !== era);
+    assert(rejected.length === 0, `these eras do not survive validation: ${rejected.join(", ")}`);
+    return `${eras.length} eras round-trip`;
+  });
+
+  check("challenge ids cannot break the database path they key", () => {
+    // Firebase keys cannot contain . # $ [ ] or /, so a hostile id has to become
+    // an invalid challenge rather than a write somewhere else in the tree.
+    assert(lb.cleanChallengeId("../../players/x") === "playersx",
+      `path traversal survived: ${lb.cleanChallengeId("../../players/x")}`);
+    assert(lb.cleanChallengeId("A1#b$c[]/d.e") === "a1bcde", `got ${lb.cleanChallengeId("A1#b$c[]/d.e")}`);
+    assert(lb.cleanChallengeId("x".repeat(200)).length === lb.LIMITS.challengeIdMax, "no length cap");
+    assert(lb.cleanChallengeId(null) === "" && lb.cleanChallengeId({}) === "", "non-strings were not neutralised");
+    return "traversal, punctuation, case and length all handled";
+  });
+
+  check("generated codes avoid characters that get misread", () => {
+    // These get retyped from a phone screen and read aloud, so 0/O and 1/l/I
+    // have no business in them.
+    const ids = Array.from({ length: 200 }, () => lb.newChallengeId());
+    const bad = ids.filter((id) => !/^[23456789abcdefghjkmnpqrstuvwxyz]{6}$/.test(id));
+    assert(bad.length === 0, `ambiguous or malformed codes: ${bad.slice(0, 3).join(", ")}`);
+    assert(new Set(ids).size > 195, "200 generated codes collided more than chance allows");
+    assert(ids.every((id) => lb.cleanChallengeId(id) === id), "a generated code does not survive its own cleaner");
+    // Typed back in as it is displayed — uppercase, with stray spaces.
+    assert(ids.every((id) => lb.cleanChallengeId(` ${lb.formatChallengeCode(id)} `) === id),
+      "a code does not survive being read off the screen and retyped");
+    return `200 codes, 6 chars, uppercase round-trips`;
+  });
+
+  check("the player cap is stored, bounded and defaulted", () => {
+    assert(lb.normalizeChallenge({ seed: "s", maxPlayers: 4 }).maxPlayers === 4, "a chosen size was lost");
+    assert(lb.normalizeChallenge({ seed: "s" }).maxPlayers === lb.CHALLENGE_PLAYERS_MIN,
+      "a challenge with no size did not default to a duel");
+    // Anything outside 2-6 is clamped rather than rejected: a challenge that
+    // exists with an odd size beats one that failed to create at all.
+    assert(lb.normalizeChallenge({ seed: "s", maxPlayers: 99 }).maxPlayers === lb.CHALLENGE_PLAYERS_MAX, "99 was not clamped");
+    assert(lb.normalizeChallenge({ seed: "s", maxPlayers: 1 }).maxPlayers === lb.CHALLENGE_PLAYERS_MIN, "1 was not clamped");
+    assert(lb.normalizeChallenge({ seed: "s", maxPlayers: "four" }).maxPlayers === lb.CHALLENGE_PLAYERS_MIN, "junk was not defaulted");
+    const rule = lb.LEADERBOARD_RULES.rules.challenges.$challenge.maxPlayers[".validate"];
+    assert(/>= 2/.test(rule) && /<= 6/.test(rule), `the stored value is unbounded: ${rule}`);
+    return `${lb.CHALLENGE_PLAYERS_MIN}-${lb.CHALLENGE_PLAYERS_MAX}, clamped both ends`;
+  });
+
+  check("the cap is honest about not being a database rule", () => {
+    /* Realtime Database rules cannot count a node's children, so the cap
+     * genuinely cannot be enforced server-side. This asserts the code does not
+     * pretend otherwise — if someone later adds an entry-count rule that
+     * silently does nothing, this fails and says why. */
+    const entries = lb.LEADERBOARD_RULES.rules.challenges.$challenge.entries;
+    const asText = JSON.stringify(entries);
+    assert(!/maxPlayers/.test(asText),
+      "the entry rules reference maxPlayers — rules cannot count children, so this cannot work");
+    return "cap enforced at join, not by a rule that could not work";
+  });
+
+  check("a full challenge reports itself full", () => {
+    const rows = (n) => Array.from({ length: n }, (_, i) => ({
+      careerId: `c${i}`, name: `P${i}`, goals: 100 + i, apps: 300, seasons: 15,
+    }));
+    // challengeStandings is what fetchChallenge counts, so count the same way.
+    assert(lb.challengeStandings(rows(3), null).length === 3, "standings dropped valid rows");
+    const cap = lb.normalizeChallenge({ seed: "s", maxPlayers: 3 }).maxPlayers;
+    assert(lb.challengeStandings(rows(3), null).length >= cap, "3 of 3 did not read as full");
+    assert(lb.challengeStandings(rows(2), null).length < cap, "2 of 3 read as full");
+    return "3 of 3 full, 2 of 3 open";
+  });
+
+  check("a challenge has no 500-goal floor", () => {
+    // The global board's floor exists because 27 real benchmarks sit above it.
+    // A challenge between two friends is its own contest — 180 beating 140 is a
+    // perfectly good result, and a floor would end most challenges in nothing.
+    const small = { name: "Rival", goals: 180, apps: 400, seasons: 16 };
+    assert(lb.normalizeChallengeEntry(small), "a 180-goal career could not enter a challenge");
+    assert(lb.normalizeEntry(small), "the shared validator rejected it outright");
+    assert(lb.LIMITS.goalsMin === 500, "the global floor moved");
+    const rules = JSON.stringify(lb.LEADERBOARD_RULES.rules.challenges);
+    assert(!rules.includes("goals').val() >= " + lb.LIMITS.goalsMin),
+      "the challenge rules inherited the 500-goal floor");
+    return "180 goals accepted into a challenge, floor still 500 on the board";
+  });
+
+  check("the challenge rules are create-only at both levels", () => {
+    const ch = lb.LEADERBOARD_RULES.rules.challenges;
+    assert(ch[".read"] === true, "challenges are not readable");
+    const createOnly = "!data.exists() && newData.exists()";
+    assert(ch.$challenge[".write"] === createOnly, "a challenge's settings can be edited after sharing");
+    assert(ch.$challenge.entries.$careerId[".write"] === createOnly, "a result can be overwritten");
+    assert(/hasChildren\(\['seed','createdAt'\]\)/.test(ch.$challenge[".validate"]), "a challenge need not carry a seed");
+    assert(/createdAt'\)\.val\(\) == now/.test(ch.$challenge.entries.$careerId[".validate"]),
+      "entry timestamps are not server-stamped");
+    return "settings and results both immutable once written";
+  });
+
+  check("challenge results rank the way the leaderboard does", () => {
+    const rows = [
+      { careerId: "c1", name: "Ada", goals: 220, apps: 500, seasons: 18 },
+      { careerId: "c2", name: "Bo", goals: 340, apps: 610, seasons: 20 },
+      { careerId: "c3", name: "Cy", goals: 340, apps: 480, seasons: 19 },
+      { careerId: "c4", name: "junk", goals: -5, apps: 10, seasons: 2 },
+    ];
+    const board = lb.challengeStandings(rows, "c1");
+    assert(board.length === 3, `invalid rows were not dropped (got ${board.length})`);
+    assert(board[0].name === "Cy", `fewer apps did not break the 340-goal tie: ${board[0].name}`);
+    assert(board.map((r) => r.rank).join(",") === "1,2,3", "ranks are not sequential");
+    assert(board.filter((r) => r.you).length === 1 && board[2].you, "the player's own row was not flagged");
+    return "Cy 340/480, Bo 340/610, Ada 220 (you)";
+  });
+
+  check("a modest career posts to a challenge but not to the board", () => {
+    makeState({ club: "Arsenal", age: 33, season: 16, totalGoals: 180, totalApps: 420,
+                totalAssists: 60, challengeId: "abc123" });
+    const entry = api.currentChallengeEntry();
+    assert(lb.normalizeChallengeEntry(entry), `challenge rejected a real career: ${JSON.stringify(entry)}`);
+    assert(entry.goals === 180 && entry.club === "Arsenal", `entry was ${JSON.stringify(entry)}`);
+    return `${entry.goals} goals, ${entry.apps} apps — into the challenge, not onto the board`;
+  });
+
+  check("the standalone summary page loads the scripts it needs", () => {
+    // challenge.html is a second entry point, so it has its own chance to
+    // reference a file that is not there — which is exactly how the board once
+    // went silently offline in production.
+    const page = fs.readFileSync(path.join(here, "..", "challenge.html"), "utf8");
+    const srcs = [...page.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1]);
+    const local = srcs.filter((s) => !/^https?:/.test(s));
+    assert(local.length > 0, "the summary page loads no local scripts at all");
+    const missing = local.filter((s) => !fs.existsSync(path.join(here, "..", s)));
+    assert(missing.length === 0, `missing: ${missing.join(", ")}`);
+    assert(local.some((s) => /leaderboard\.js$/.test(s)), "the page never loads the challenge API");
+    assert(srcs.some((s) => /firebase-database-compat/.test(s)), "the page never loads the database SDK");
+    return `${local.length} local script(s), all present`;
+  });
+
+  check("the challenge link round-trips through the id cleaner", () => {
+    const id = lb.newChallengeId();
+    const link = api.challengeLink(id);
+    assert(link.includes(`#challenge=${id}`), `link was ${link}`);
+    assert(lb.cleanChallengeId(link.split("#challenge=")[1]) === id, "the id did not survive the URL");
+    return link;
+  });
+
+  check("a challenge career does not repost itself when resumed", () => {
+    // resumeGame calls endCareer again for a retired career, which re-renders
+    // this panel. The saved flag skips the write; the create-only rule is what
+    // actually enforces it.
+    makeState({ totalGoals: 400, totalApps: 700, season: 18, challengeId: "abc123",
+                challengeSubmitted: true, careerId: "career-1" });
+    let threw = null;
+    try { api.renderChallengeResult(); } catch (e) { threw = e; }
+    assert(!threw, `the head-to-head threw: ${threw && threw.message}`);
+    assert(api.getState().challengeSubmitted === true, "the submitted flag was cleared on re-render");
+    return "re-render is safe and does not clear the flag";
+  });
+
+  check("a career with no challenge renders no challenge panel", () => {
+    makeState({ totalGoals: 400, challengeId: null });
+    let threw = null;
+    try { api.renderChallengeResult(); } catch (e) { threw = e; }
+    assert(!threw, `threw for an ordinary career: ${threw && threw.message}`);
+    assert(api.challengeStandingsHtml([]).includes("No results posted yet"), "an empty board says nothing");
+    return "ordinary careers are unaffected";
   });
 
   runQueued().then(() => {
