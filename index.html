@@ -335,6 +335,12 @@
   #goal-progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--gold)); transition: width .6s ease; }
   #goal-progress-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
 
+  /* ---- End-of-career totals ---- */
+  .legacy-totals { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 14px auto 0; max-width: 560px; }
+  .lt-box { flex: 1 1 90px; background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 6px; text-align: center; }
+  .lt-num { font-size: 20px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .lt-lab { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+
   /* ---- Leaderboard on the landing page ---- */
   .welcome-lb { margin: 22px auto 4px; max-width: 460px; text-align: left; }
   .welcome-lb-title { font-size: 14px; font-weight: 700; color: var(--accent); text-align: center; margin-bottom: 8px; }
@@ -368,7 +374,52 @@
   .lb-tag { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; padding: 1px 5px; margin-left: 6px;
             border-radius: 20px; border: 1px solid var(--line); color: var(--muted); vertical-align: 1px; }
   .lb-tag.you { border-color: var(--accent); color: var(--accent); }
+  /* Difficulty a career was played on. Colour-coded so the hard runs stand out
+     without needing to read the word. */
+  .lb-tag.diff { border-color: var(--line); color: var(--muted); }
+  .lb-tag.diff.easy { border-color: #3d6b52; color: #6fbf8f; }
+  .lb-tag.diff.medium { border-color: #6b6134; color: var(--gold); }
+  .lb-tag.diff.hard { border-color: #7a4a2a; color: #e29a5c; }
+  .lb-tag.diff.impossible { border-color: #7a3030; color: #f0736b; }
   .lb-foot { font-size: 11px; color: var(--muted); margin-top: 10px; text-align: center; }
+
+  /* ---- Challenge a friend ---- */
+  .challenge-panel { max-width: 460px; margin: 18px auto 0; padding: 16px; text-align: center;
+                     background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; }
+  /* The invite is the one thing to do on the page, so it gets the accent edge
+     that nothing else on the welcome screen has. */
+  .challenge-invite { border-color: var(--accent); margin-bottom: 18px; }
+  .challenge-invite-title { font-size: 14px; font-weight: 700; color: var(--accent);
+                            text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .challenge-note { font-size: 13px; color: var(--txt); line-height: 1.5; }
+  .challenge-invite .challenge-note { margin-bottom: 12px; }
+  .challenge-link-row { display: flex; gap: 8px; margin-top: 12px; }
+  .challenge-link-row input { flex: 1 1 auto; min-width: 0; padding: 10px; border-radius: 8px;
+                              border: 1px solid var(--line); background: var(--bg); color: var(--txt);
+                              font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .challenge-hint { font-size: 11px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+  .challenge-result { margin: 22px auto; }
+  .challenge-result .challenge-note { margin-bottom: 12px; }
+  /* The panel is centred; the standings inside it are a table and read left. */
+  .challenge-panel .lb-table { text-align: left; }
+  /* How it works: numbered because the steps genuinely happen in this order. */
+  .challenge-steps { max-width: 460px; margin: 0 auto; padding-left: 22px; text-align: left;
+                     font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .challenge-steps li { margin-bottom: 7px; }
+  .challenge-steps strong { color: var(--txt); font-weight: 700; }
+  /* The code is the thing people retype, so it is set large, monospaced and
+     wide-tracked — the shape of each character matters more than the styling. */
+  .challenge-code-display { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                            font-size: 34px; font-weight: 800; letter-spacing: 6px;
+                            color: var(--gold); margin: 6px 0 12px; text-indent: 6px; }
+  .challenge-code-input { text-transform: uppercase; letter-spacing: 3px; font-weight: 700; }
+  /* The tracking is for a typed code; the hint text should read as prose. */
+  .challenge-code-input::placeholder { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .challenge-panel + .challenge-panel { margin-top: 14px; }
+  #challenge-hub .challenge-panel:first-of-type { margin-top: 18px; }
+  .setup-players { max-width: 720px; margin: 18px auto 0; text-align: left; }
+  .player-count { display: flex; gap: 8px; flex-wrap: wrap; }
+  .player-count .setup-option { flex: 1 1 60px; justify-content: center; font-weight: 700; }
   .lb-submit { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
   .lb-submit-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
   .lb-submit-row input { flex: 1 1 160px; max-width: 240px; padding: 10px; border-radius: 8px;
@@ -852,10 +903,80 @@
           <div class="muted" style="font-size:12px;margin-top:10px">Peak: donors always use their career-best attributes. At-the-time: attributes reflect the selected season.</div>
         </div>
       </div>
+      <!-- Only shown when these settings are being locked into a challenge:
+           an ordinary career has no other players to cap. -->
+      <div class="panel setup-players" id="setup-players" style="display:none">
+        <h3 style="font-size:16px;color:var(--gold);margin-bottom:12px">How many players?</h3>
+        <div class="player-count" id="setup-player-count">
+          <label class="setup-option"><input type="radio" name="setup-players" value="2" checked> 2</label>
+          <label class="setup-option"><input type="radio" name="setup-players" value="3"> 3</label>
+          <label class="setup-option"><input type="radio" name="setup-players" value="4"> 4</label>
+          <label class="setup-option"><input type="radio" name="setup-players" value="5"> 5</label>
+          <label class="setup-option"><input type="radio" name="setup-players" value="6"> 6</label>
+        </div>
+        <div class="muted" style="font-size:12px;margin-top:10px">Including you. Once that many careers have joined, the code stops accepting new players.</div>
+      </div>
+
       <div style="margin-top:24px">
         <button class="btn primary big" id="btn-setup-continue">CONTINUE TO CREATION ▶</button>
       </div>
       <div style="margin-top:12px"><button class="btn" id="btn-setup-back">← Back</button></div>
+    </div>
+  </section>
+
+  <!-- ============ SCREEN 1d: CHALLENGE HUB ============
+       Three panels, one at a time: the hub (how it works, create, join by
+       code), the created challenge (code + link), and a joined challenge
+       (its settings + accept). -->
+  <section id="screen-challenge" class="screen">
+    <div class="hero">
+      <h2>CHALLENGE A FRIEND</h2>
+
+      <div id="challenge-hub">
+        <ol class="challenge-steps">
+          <li><strong>One player creates a challenge</strong> and picks the difficulty, era and how many people can play (2–6).</li>
+          <li><strong>Share the code.</strong> Everyone enters it below, or opens the link.</li>
+          <li><strong>You all draft from the same seed</strong> — the same countries, clubs and squads come up in the same order. Only your decisions differ.</li>
+          <li><strong>Play your career out.</strong> Nobody sees anyone else's total until their own career ends.</li>
+          <li><strong>Highest career goals wins.</strong> The result stays at the code, so you can come back to it any time.</li>
+        </ol>
+
+        <div class="challenge-panel">
+          <div class="challenge-invite-title">Create</div>
+          <div class="challenge-note">Pick the rules, get a code, send it to your friends.</div>
+          <button class="btn primary big" id="btn-challenge-create" style="margin-top:12px">CREATE A CHALLENGE</button>
+        </div>
+
+        <div class="challenge-panel">
+          <div class="challenge-invite-title">Join with a code</div>
+          <div class="challenge-note">Got a code from a friend? Enter it here.</div>
+          <div class="challenge-link-row">
+            <input type="text" id="challenge-code" maxlength="12" autocomplete="off" autocapitalize="characters"
+                   spellcheck="false" aria-label="Challenge code" placeholder="e.g. K3F9A2" class="challenge-code-input" />
+            <button class="btn primary" id="btn-challenge-join">Find</button>
+          </div>
+          <div class="challenge-note" id="challenge-join-note"></div>
+          <button class="btn primary big" id="btn-challenge-join-accept" style="display:none;margin-top:12px">ACCEPT THE CHALLENGE ▶</button>
+        </div>
+
+        <div class="challenge-hint">Results are also viewable any time at <a href="challenge.html" class="footer-link">the challenge summary page</a>.</div>
+      </div>
+
+      <div class="challenge-panel" id="challenge-create" style="display:none">
+        <div class="challenge-invite-title">Your challenge code</div>
+        <div class="challenge-code-display" id="challenge-code-display">······</div>
+        <div class="challenge-note" id="challenge-create-note">Creating your challenge…</div>
+        <div class="challenge-link-row">
+          <input type="text" id="challenge-link" readonly aria-label="Challenge link" placeholder="Generating link…" />
+          <button class="btn" id="btn-challenge-copy">Copy link</button>
+        </div>
+        <div class="challenge-hint">Everyone drafts from the same seed, with the same era, rating mode and difficulty. Nobody sees another player's total until their own career ends.</div>
+      </div>
+
+      <div style="margin-top:22px">
+        <button class="btn primary big" id="btn-challenge-start" style="display:none">START MY CAREER ▶</button>
+      </div>
+      <div style="margin-top:12px"><button class="btn" id="btn-challenge-back">← Back</button></div>
     </div>
   </section>
 
@@ -878,7 +999,15 @@
       <div id="continue-box" style="display:none; margin-bottom: 14px;">
         <button class="btn primary big" id="btn-continue">▶ CONTINUE CAREER</button>
       </div>
+      <!-- An accepted challenge link takes over the landing page: there is one
+           thing to do next, and it is not "start creation". -->
+      <div class="challenge-panel challenge-invite" id="challenge-invite" style="display:none">
+        <div class="challenge-invite-title">⚔️ You have been challenged</div>
+        <div class="challenge-note" id="challenge-invite-note"></div>
+        <button class="btn primary big" id="btn-challenge-accept" style="display:none">ACCEPT THE CHALLENGE ▶</button>
+      </div>
       <div><button class="btn primary big" id="btn-start">START CREATION</button></div>
+      <div style="margin-top:10px"><button class="btn" id="btn-challenge-friend">⚔️ Challenge a friend</button></div>
       <details class="how-to-play">
         <summary>How to play</summary>
         <ol>
@@ -899,6 +1028,7 @@
           <summary>See the full top 25</summary>
           <div id="welcome-leaderboard-full"></div>
         </details>
+        <a class="footer-link" href="hall-of-fame.html">Hall of Fame →</a>
       </section>
 
       <footer class="welcome-footer">
@@ -1008,6 +1138,8 @@
   <section id="screen-legacy" class="screen">
     <div class="legacy">
       <div class="legacy-status" id="legacy-status">CAREER COMPLETE</div>
+      <div class="legacy-big" id="legacy-goals">0</div>
+      <div class="legacy-big-lab">CAREER GOALS</div>
 
       <!-- The card is the deliverable. The career used to end on eight stacked
            sections; the attributes, honours and totals they listed are all on
@@ -1027,7 +1159,16 @@
         </div>
       </div>
 
+      <!-- Only rendered for a career started from a challenge link. -->
+      <div class="challenge-panel challenge-result" id="challenge-result" style="display:none">
+        <div class="challenge-invite-title">⚔️ Challenge result</div>
+        <div class="challenge-note" id="challenge-result-note"></div>
+        <div id="challenge-standings"></div>
+        <div class="challenge-hint" id="challenge-result-code"></div>
+      </div>
+
       <div class="legacy-section" id="legacy-summary"></div>
+      <div class="legacy-totals" id="legacy-totals"></div>
 
       <div class="share-card" id="share-tagline-card" style="display:none;">
         <h3>Can You Beat Me?</h3>

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Challenge Results – Football DNA Simulator</title>
+  <meta name="description" content="Look up a Football DNA Simulator challenge by code and see every career that played it: goals, appearances, trophies and peak rating." />
+  <link rel="canonical" href="https://1000goals.co.uk/challenge.html" />
+  <meta property="og:title" content="Challenge Results – Football DNA Simulator" />
+  <meta property="og:description" content="Enter a challenge code to see how everyone's career finished." />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary" />
+  <style>
+    :root {
+      --bg: #04120b;
+      --bg2: #0a1f15;
+      --card: #0f2b1d;
+      --card2: #163a27;
+      --line: #1e4d35;
+      --txt: #f4fff8;
+      --muted: #7b9b8b;
+      --accent: #00d06c;
+      --accent2: #38b6ff;
+      --gold: #f5e050;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, Roboto, "Arial Narrow", sans-serif;
+      background: repeating-linear-gradient(0deg, rgba(0,0,0,0.08) 0px, rgba(0,0,0,0.08) 1px, transparent 1px, transparent 4px),
+        radial-gradient(1200px 600px at 50% -10%, #0d3d25 0%, var(--bg) 60%);
+      color: var(--txt);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 40px 20px 60px; }
+    h1 { font-size: 2.2em; margin: 0 0 0.2em; }
+    .intro { color: var(--muted); margin-bottom: 1.6em; }
+    a { color: var(--accent2); }
+
+    /* Lookup */
+    .lookup { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+    .lookup input {
+      flex: 1 1 220px; min-width: 0; padding: 14px 16px; border-radius: 10px;
+      border: 1px solid var(--line); background: var(--bg2); color: var(--txt);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 20px; font-weight: 700; letter-spacing: 4px; text-transform: uppercase;
+    }
+    .lookup input::placeholder { letter-spacing: 2px; color: var(--muted); font-weight: 400; }
+    .lookup button {
+      padding: 14px 26px; border-radius: 10px; border: none; cursor: pointer;
+      background: var(--accent); color: #04120b; font-size: 15px; font-weight: 800;
+      letter-spacing: 1px; text-transform: uppercase;
+    }
+    .lookup button:hover { filter: brightness(1.1); }
+    .status { color: var(--muted); font-size: 14px; min-height: 22px; }
+    .status.bad { color: var(--gold); }
+
+    /* Challenge header */
+    .meta { display: none; background: var(--card); border: 1px solid var(--line);
+            border-radius: var(--radius); padding: 18px 20px; margin: 22px 0 18px; }
+    .meta-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                 font-size: 30px; font-weight: 800; letter-spacing: 6px; color: var(--gold); }
+    .meta-rules { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .chip { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; padding: 4px 10px;
+            border-radius: 20px; border: 1px solid var(--line); color: var(--muted); background: var(--bg2); }
+    .chip.on { border-color: var(--accent); color: var(--accent); }
+
+    /* Career cards — one per entrant, the summary the page is named for. */
+    .careers { display: grid; gap: 12px; }
+    .career { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+              padding: 16px 18px; }
+    .career.first { border-color: var(--gold); }
+    .career-top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    .career-rank { font-size: 22px; font-weight: 900; color: var(--muted); min-width: 34px;
+                   font-variant-numeric: tabular-nums; }
+    .career.first .career-rank { color: var(--gold); }
+    .career-name { font-size: 18px; font-weight: 700; flex: 1 1 auto; }
+    .career-goals { font-size: 26px; font-weight: 900; color: var(--accent);
+                    font-variant-numeric: tabular-nums; }
+    .career-goals span { font-size: 12px; font-weight: 700; color: var(--muted);
+                         text-transform: uppercase; letter-spacing: 1px; margin-left: 6px; }
+    .career-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .stat { flex: 1 1 74px; background: var(--bg2); border: 1px solid var(--line);
+            border-radius: 8px; padding: 8px 6px; text-align: center; }
+    .stat b { display: block; font-size: 17px; color: var(--txt); font-variant-numeric: tabular-nums; }
+    .stat span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+
+    .empty { color: var(--muted); text-align: center; padding: 30px 10px; }
+    .foot { margin-top: 34px; padding-top: 18px; border-top: 1px solid var(--line);
+            color: var(--muted); font-size: 14px; }
+    @media (max-width: 520px) {
+      .wrap { padding: 24px 14px 40px; }
+      h1 { font-size: 1.7em; }
+      .lookup input { font-size: 17px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Challenge results</h1>
+    <p class="intro">Enter the code from your challenge to see every career that played it. Anyone with the code can look it up — you do not need to have played.</p>
+
+    <div class="lookup">
+      <input type="text" id="code" maxlength="12" autocomplete="off" autocapitalize="characters"
+             spellcheck="false" placeholder="e.g. K3F9A2" aria-label="Challenge code" />
+      <button id="go">Look up</button>
+    </div>
+    <div class="status" id="status"></div>
+
+    <div class="meta" id="meta">
+      <div class="meta-code" id="meta-code"></div>
+      <div class="meta-rules" id="meta-rules"></div>
+    </div>
+
+    <div class="careers" id="careers"></div>
+
+    <div class="foot">
+      <a href="index.html">← Back to the game</a> · <a href="hall-of-fame.html">Hall of Fame</a>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script src="src/leaderboard.js"></script>
+  <script>
+  (function () {
+    "use strict";
+    /* This page is a reader. It never writes, so it needs nothing from the game
+     * engine beyond the leaderboard module's challenge API. */
+    var lb = window.createLeaderboard ? window.createLeaderboard(null) : null;
+    var codeEl = document.getElementById("code");
+    var statusEl = document.getElementById("status");
+    var metaEl = document.getElementById("meta");
+    var metaCode = document.getElementById("meta-code");
+    var metaRules = document.getElementById("meta-rules");
+    var careersEl = document.getElementById("careers");
+
+    function esc(s) {
+      var d = document.createElement("div");
+      d.textContent = s == null ? "" : String(s);
+      return d.innerHTML;
+    }
+    function say(msg, bad) {
+      statusEl.textContent = msg || "";
+      statusEl.className = "status" + (bad ? " bad" : "");
+    }
+    function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
+
+    var ERA_LABELS = {
+      all: "All eras", classic: "Classic era", modern: "Modern era",
+      recent: "Recent era", current: "Current season"
+    };
+
+    function renderCareer(row, isFirst) {
+      // Only show a stat when the career actually carried it, so an older entry
+      // written before a field existed reads as absent rather than as zero.
+      var stats = [
+        ["Apps", row.apps],
+        ["Seasons", row.seasons],
+        ["Assists", row.assists],
+        ["Trophies", row.trophies],
+        ["Ballon d'Ors", row.ballonDors],
+        ["Peak", row.peakRating]
+      ].filter(function (s) { return typeof s[1] === "number" && s[1] > 0; });
+      var ratio = row.apps > 0 ? (row.goals / row.apps).toFixed(2) : null;
+      if (ratio) stats.push(["Goals/game", ratio]);
+      var where = [row.club, row.country].filter(Boolean).join(" · ");
+      return '<div class="career' + (isFirst ? " first" : "") + '">' +
+        '<div class="career-top">' +
+          '<div class="career-rank">' + row.rank + "</div>" +
+          '<div class="career-name">' + esc(row.name) +
+            (where ? '<div style="font-size:12px;color:var(--muted);font-weight:400">' + esc(where) + "</div>" : "") +
+          "</div>" +
+          '<div class="career-goals">' + row.goals + "<span>goals</span></div>" +
+        "</div>" +
+        (stats.length
+          ? '<div class="career-stats">' + stats.map(function (s) {
+              return '<div class="stat"><b>' + esc(s[1]) + "</b><span>" + esc(s[0]) + "</span></div>";
+            }).join("") + "</div>"
+          : "") +
+      "</div>";
+    }
+
+    function render(res, code) {
+      metaEl.style.display = "block";
+      metaCode.textContent = lb.formatChallengeCode(code);
+      var c = res.challenge;
+      var chips = [
+        c.difficulty,
+        ERA_LABELS[c.era] || c.era,
+        c.ratingMode === "at-time" ? "Rating at the time" : "Peak rating",
+        plural(c.maxPlayers, "player", "players")
+      ];
+      var done = res.standings.length;
+      chips.push(res.full ? "Complete" : plural(res.slotsLeft, "place", "places") + " left");
+      metaRules.innerHTML = chips.map(function (t, i) {
+        return '<span class="chip' + (i === chips.length - 1 && res.full ? " on" : "") + '">' + esc(t) + "</span>";
+      }).join("");
+
+      if (!done) {
+        careersEl.innerHTML = '<div class="empty">Nobody has finished this challenge yet.</div>';
+        say("Challenge found. No careers posted yet.");
+        return;
+      }
+      careersEl.innerHTML = res.standings.map(function (row, i) {
+        return renderCareer(row, i === 0);
+      }).join("");
+      say(plural(done, "career", "careers") + " posted" + (res.full ? "" : ", " + plural(res.slotsLeft, "place", "places") + " still open") + ".");
+    }
+
+    function lookup(raw, pushHash) {
+      if (!lb) { say("The leaderboard module did not load.", true); return; }
+      var code = lb.cleanChallengeId(raw);
+      if (!code) { say("Enter a challenge code.", true); return; }
+      metaEl.style.display = "none";
+      careersEl.innerHTML = "";
+      say("Looking up " + lb.formatChallengeCode(code) + "…");
+      if (!lb.available()) { say("Cannot reach the database — " + lb.initError(), true); return; }
+      lb.fetchChallenge(code).then(function (res) {
+        if (!res.found) { say(res.error || "No challenge found with that code.", true); return; }
+        if (pushHash) {
+          try { history.replaceState(null, "", "#" + code); } catch (e) { location.hash = code; }
+        }
+        render(res, code);
+      });
+    }
+
+    document.getElementById("go").addEventListener("click", function () { lookup(codeEl.value, true); });
+    codeEl.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); lookup(codeEl.value, true); }
+    });
+
+    // A code in the fragment loads straight away, so the end-of-career screen
+    // can link here and land on the right challenge.
+    var fromHash = (location.hash || "").replace(/^#(challenge=)?/, "");
+    if (fromHash) {
+      codeEl.value = lb ? lb.formatChallengeCode(fromHash) : fromHash;
+      lookup(fromHash, false);
+    }
+  })();
+  </script>
+</body>
+</html>
