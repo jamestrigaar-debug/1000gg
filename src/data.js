@@ -25352,6 +25352,7 @@ const PLAYER_DATABASE_2025_26 = {
     p("Ross Barkley","CM",68,63,70,189,85,79,79,53,"Calm",68,67),
     p("Jacob Ramsey","AM",58,79,68,180,74,70,79,78,"Level-Headed",67,75),
     p("Morgan Rogers","AM",66,84,80,187,78,72,82,78,"Steady",56,79),
+    p("Marcus Rashford","WG",68,76,78,180,75,72,84,90,"Maverick",86,83,"G"),
     p("Emiliano Buendía","AM",75,60,61,172,68,67,77,67,"Measured",57,71),
     p("Jaden Philogene","WG",46,73,60,181,79,76,77,83,"Winner",85,70),
     p("Leon Bailey","WG",57,64,61,178,71,78,48,88,"Professional",65,73),
@@ -25449,7 +25450,7 @@ const PLAYER_DATABASE_2025_26 = {
     p("Kiernan Dewsbury-Hall","CM",60,85,75,187,80,65,72,67,"Diligent",65,72),
     p("Cole Palmer","AM",70,86,67,189,82,74,87,82,"Ice Cold",92,82,"G"),
     p("Christopher Nkunku","AM",77,74,72,178,75,70,83,79,"Mercurial",67,81),
-    p("Pedro Neto","WG",52,75,67,173,68,69,89,92,"Measured",57,80),
+    p("Pedro Neto","WG",52,75,67,173,68,69,89,94,"Measured",57,80),
     p("Mykhaylo Mudryk","WG",57,87,60,175,71,58,80,97,"Understated",50,75),
     p("Noni Madueke","WG",62,80,70,182,75,65,85,89,"Temperamental",58,76),
     p("Jadon Sancho","WG",64,79,56,180,73,74,87,83,"Maverick",70,75),
@@ -25459,7 +25460,7 @@ const PLAYER_DATABASE_2025_26 = {
   "Crystal Palace (2025)": [
     p("Dean Henderson","GK",50,79,70,188,82,60,60,54,"Reliable",59,74),
     p("Marc Guéhi","CB",80,74,76,186,82,58,68,75,"Leader",83,78),
-    p("Joachim Andersen","CB",72,68,76,190,85,50,63,60,"Balanced",52,72),
+    p("Joachim Andersen","FB",72,68,76,190,85,50,63,60,"Balanced",52,72),
     p("Chris Richards","CB",76,77,82,188,84,50,64,77,"Measured",56,75),
     p("Tyrick Mitchell","FB",60,80,62,181,74,80,56,87,"Diligent",57,74),
     p("Daniel Muñoz","FB",64,84,74,180,75,58,78,90,"Fearless",81,74),
@@ -25610,7 +25611,6 @@ const PLAYER_DATABASE_2025_26 = {
     p("Christian Eriksen","CM",67,69,62,181,72,68,81,55,"Unflappable",80,72),
     p("Alejandro Garnacho","WG",58,85,70,180,72,75,80,91,"Fearless",78,80),
     p("Amad Diallo","WG",58,78,60,173,71,78,82,88,"Winner",79,74),
-    p("Marcus Rashford","WG",68,76,78,180,75,72,84,90,"Maverick",86,83,"G"),
     p("Rasmus Højlund","FW",80,78,88,191,85,64,83,86,"Fearless",84,84,"G"),
     p("Joshua Zirkzee","FW",74,80,84,193,87,70,81,78,"Composed",62,80),
   ],
@@ -25645,7 +25645,7 @@ const PLAYER_DATABASE_2025_26 = {
     p("Ibrahim Sangaré","DM",68,82,84,191,82,50,79,76,"Quiet",48,78),
     p("Ryan Yates","CM",74,73,80,190,80,54,80,67,"Leader",85,78),
     p("Morgan Gibbs-White","AM",62,88,73,178,70,75,80,85,"Relentless",83,82,"G"),
-    p("Anthony Elanga","WG",55,80,68,178,70,74,81,93,"Measured",58,76),
+    p("Anthony Elanga","WG",55,80,68,178,70,74,81,96,"Measured",58,76),
     p("Callum Hudson-Odoi","WG",62,80,68,178,70,78,80,88,"Winner",79,76),
     p("Eric da Silva Moreira","WG",40,68,54,180,76,44,69,87,"Fearless",51,68),
     p("Taiwo Awoniyi","FW",80,74,88,183,80,64,81,80,"Fearless",80,82),
@@ -25672,7 +25672,7 @@ const PLAYER_DATABASE_2025_26 = {
     p("Guglielmo Vicario","GK",50,63,80,194,84,58,60,60,"Relentless",87,71),
     p("Fraser Forster","GK",50,72,62,201,93,56,60,47,"Fearless",73,67),
     p("Cristian Romero","CB",84,71,85,185,78,36,58,68,"Diligent",55,77),
-    p("Micky van de Ven","CB",86,77,88,193,80,48,68,82,"Fearless",86,84,"G"),
+    p("Micky van de Ven","CB",86,77,88,193,80,48,68,97,"Fearless",86,84,"G"),
     p("Ben Davies","CB",72,76,78,181,78,50,62,65,"Steady",50,72),
     p("Radu Drăgușin","CB",79,75,88,191,87,47,44,70,"Calm",56,78),
     p("Pedro Porro","FB",66,84,74,173,70,70,80,87,"Relentless",82,79),
@@ -25728,6 +25728,7 @@ const PLAYER_DATABASE_2025_26 = {
     p("Matheus Cunha","FW",70,84,75,183,75,76,86,79,"Grounded",46,80),
     p("Jørgen Strand Larsen","FW",77,86,88,193,86,59,78,77,"Consistent",65,80),
     p("Hee-chan Hwang","FW",65,86,66,177,74,52,83,82,"Maverick",72,78),
+    p("Jackson Tchatchoua","FB",65,80,78,186,80,61,70,80,Balanced",46,72))
   ],
 };
 
@@ -25978,7 +25979,7 @@ const ACADEMY_STARTING_POOL = {
   "Weak": ["Ipswich Town", "Leicester City", "Southampton"],
 };
 
-/* National team for the international track. */
+/* National team for the international track. */ 
 const NATIONAL_TEAM = { name: "England", attack: 84, midfield: 82, defence: 82, manager: 82, tacticalStyle: "Possession", homeAdvantage: 6 };
 
 /* Expose to game.js. */
