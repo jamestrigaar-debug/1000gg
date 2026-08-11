@@ -25841,8 +25841,11 @@ const TEAM_DATABASE = {
   "Wolves": { attack: 72, midfield: 68, defence: 66, manager: 70, tacticalStyle: "Counter", homeAdvantage: 7, league: "Mid" },
   "Nottingham Forest": { attack: 70, midfield: 66, defence: 64, manager: 68, tacticalStyle: "Park the Bus", homeAdvantage: 7, league: "Mid" },
   "Bournemouth": { attack: 71, midfield: 67, defence: 65, manager: 69, tacticalStyle: "High Press", homeAdvantage: 7, league: "Mid" },
-  "Burnley": { attack: 66, midfield: 62, defence: 60, manager: 64, tacticalStyle: "Route One", homeAdvantage: 7, league: "Championship" },
-  "Leeds United": { attack: 72, midfield: 68, defence: 66, manager: 70, tacticalStyle: "High Press", homeAdvantage: 7, league: "Championship" },
+  // Promoted for 2025/26 (Ipswich, Leicester and Southampton went down). Their
+  // ratings were already tuned weaker than the "Mid" tier established sides —
+  // appropriate for newly-promoted PL clubs — so only the tier moves.
+  "Burnley": { attack: 66, midfield: 62, defence: 60, manager: 64, tacticalStyle: "Route One", homeAdvantage: 7, league: "Lower" },
+  "Leeds United": { attack: 72, midfield: 68, defence: 66, manager: 70, tacticalStyle: "High Press", homeAdvantage: 7, league: "Lower" },
   "Huddersfield Town": { attack: 64, midfield: 60, defence: 58, manager: 62, tacticalStyle: "Park the Bus", homeAdvantage: 7, league: "League1" },
   "Luton Town": { attack: 63, midfield: 59, defence: 57, manager: 61, tacticalStyle: "Route One", homeAdvantage: 7, league: "Championship" },
   "Real Madrid": { attack: 99, midfield: 95, defence: 93, manager: 97, tacticalStyle: "Possession", homeAdvantage: 8, league: "LaLiga" },
@@ -25950,15 +25953,18 @@ const TEAM_DATABASE = {
   "San Jose Earthquakes": { attack: 67, midfield: 63, defence: 61, manager: 65, tacticalStyle: "Direct", homeAdvantage: 6, league: "MLS" },
   "Real Salt Lake": { attack: 67, midfield: 63, defence: 61, manager: 65, tacticalStyle: "Possession", homeAdvantage: 6, league: "MLS" },
   "Vancouver Whitecaps": { attack: 66, midfield: 62, defence: 60, manager: 64, tacticalStyle: "Counter", homeAdvantage: 6, league: "MLS" },
-  "Southampton": { attack: 84, midfield: 80, defence: 78, manager: 82, tacticalStyle: "Direct", homeAdvantage: 7, league: "Lower" },
-  "Leicester City": { attack: 83, midfield: 79, defence: 77, manager: 81, tacticalStyle: "Route One", homeAdvantage: 7, league: "Lower" },
-  "Ipswich Town": { attack: 82, midfield: 78, defence: 76, manager: 80, tacticalStyle: "Park the Bus", homeAdvantage: 7, league: "Lower" },
+  // Relegated for 2025/26. Ratings are untouched — they read as a strong,
+  // promotion-fancied Championship trio, which is the right shape for three
+  // sides that just came down from the Premier League.
+  "Southampton": { attack: 84, midfield: 80, defence: 78, manager: 82, tacticalStyle: "Direct", homeAdvantage: 7, league: "Championship" },
+  "Leicester City": { attack: 83, midfield: 79, defence: 77, manager: 81, tacticalStyle: "Route One", homeAdvantage: 7, league: "Championship" },
+  "Ipswich Town": { attack: 82, midfield: 78, defence: 76, manager: 80, tacticalStyle: "Park the Bus", homeAdvantage: 7, league: "Championship" },
   "Sheffield United": { attack: 81, midfield: 77, defence: 75, manager: 79, tacticalStyle: "Counter", homeAdvantage: 7, league: "Championship" },
   "Norwich City": { attack: 80, midfield: 76, defence: 74, manager: 78, tacticalStyle: "Direct", homeAdvantage: 7, league: "Championship" },
   "Middlesbrough": { attack: 79, midfield: 75, defence: 73, manager: 77, tacticalStyle: "Route One", homeAdvantage: 6, league: "Championship" },
   "West Brom": { attack: 79, midfield: 75, defence: 73, manager: 77, tacticalStyle: "Park the Bus", homeAdvantage: 6, league: "Championship" },
   "Coventry City": { attack: 78, midfield: 74, defence: 72, manager: 76, tacticalStyle: "Counter", homeAdvantage: 6, league: "Championship" },
-  "Sunderland": { attack: 78, midfield: 74, defence: 72, manager: 76, tacticalStyle: "Direct", homeAdvantage: 6, league: "Championship" },
+  "Sunderland": { attack: 78, midfield: 74, defence: 72, manager: 76, tacticalStyle: "Direct", homeAdvantage: 6, league: "Lower" },
   "Blackburn Rovers": { attack: 77, midfield: 73, defence: 71, manager: 75, tacticalStyle: "Route One", homeAdvantage: 6, league: "Championship" },
   "Bristol City": { attack: 76, midfield: 72, defence: 70, manager: 74, tacticalStyle: "Park the Bus", homeAdvantage: 6, league: "Championship" },
   "Hull City": { attack: 75, midfield: 71, defence: 69, manager: 73, tacticalStyle: "Counter", homeAdvantage: 6, league: "Championship" },
@@ -26064,7 +26070,10 @@ const ACADEMY_STARTING_POOL = {
   "World Class": ["Manchester City", "Liverpool", "Arsenal", "Chelsea", "Manchester United"],
   "Strong": ["Newcastle United", "Tottenham", "Aston Villa", "Brighton"],
   "Average": ["Nottingham Forest", "Bournemouth", "West Ham", "Crystal Palace", "Brentford", "Fulham", "Everton", "Wolves"],
-  "Weak": ["Ipswich Town", "Leicester City", "Southampton"],
+  // Kept in sync with TEAM_DATABASE's promoted/relegated trio above — this
+  // pool is a fallback starting club, so it must only ever offer clubs
+  // actually in the Premier League this season.
+  "Weak": ["Burnley", "Leeds United", "Sunderland"],
 };
 
 /* National team for the international track. */

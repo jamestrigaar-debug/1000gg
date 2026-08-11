@@ -299,6 +299,65 @@ if (require.main === module) {
     return `legacy → 1992, explicit 1998 preserved`;
   });
 
+  check("the Premier League table reflects the 2025/26 promotion and relegation", () => {
+    // The two datasets have to agree: PLAYER_DATABASE_2025_26 is which squads
+    // exist, TEAM_DATABASE.league is who is actually IN the Premier League.
+    // Before this fix the second one was still the 2024/25 division.
+    const TD = api.TEAM_DATABASE;
+    for (const up of ["Burnley", "Leeds United", "Sunderland"]) {
+      assert(api.PL_TIERS.includes(TD[up].league), `${up} was promoted but TEAM_DATABASE has them in ${TD[up].league}`);
+    }
+    for (const down of ["Southampton", "Leicester City", "Ipswich Town"]) {
+      assert(TD[down].league === "Championship", `${down} was relegated but TEAM_DATABASE has them in ${TD[down].league}`);
+    }
+    const pl = api.getPLLeagueClubs();
+    assert(pl.length === 20, `getPLLeagueClubs() returned ${pl.length} clubs, not 20`);
+    assert(["Burnley", "Leeds United", "Sunderland"].every((c) => pl.includes(c)), "a promoted club is missing from the PL table");
+    assert(!["Southampton", "Leicester City", "Ipswich Town"].some((c) => pl.includes(c)), "a relegated club is still in the PL table");
+    // The academy fallback pool is a starting club — it must never offer one
+    // that is not actually in the league this season.
+    assert(api.ACADEMY_STARTING_POOL.Weak.every((c) => pl.includes(c)), "the Weak academy pool offers a non-PL club");
+    return `20 PL clubs, promoted trio in, relegated trio out`;
+  });
+
+  check("every Premier League club's AI squad uses its real 2025/26 players", () => {
+    // initializeTeamSquad used to gate real data behind `league === "Elite"`
+    // (6 of 20 clubs) AND look it up by the wrong key ("Arsenal" against
+    // "Arsenal FC (2025)") — so the branch had never fired for ANY club. Every
+    // squad in the game, including the player's own teammates on the Squad
+    // Info tab, was fully fictional regardless of the real data sitting in
+    // PLAYER_DATABASE_2025_26. This is the fix: one club from each prestige
+    // band, including a club promoted this season.
+    const TD = api.TEAM_DATABASE;
+    const sample = ["Arsenal", "Tottenham", "West Ham", "Burnley", "Leeds United", "Sunderland"];
+    for (const club of sample) {
+      const squad = api.initializeTeamSquad(club, 1);
+      assert(squad && squad.players.length === 20, `${club}: squad did not build`);
+      const real = squad.players.filter((p) => p.name && !/^Player \d+$/.test(p.name));
+      assert(real.length === 20, `${club} (${TD[club].league}): only ${real.length}/20 players are real`);
+      // The p() field is `pos`, not `position` — a prior fix mismatched these,
+      // which would have silently rendered every real player as "ST".
+      const positions = new Set(real.map((p) => p.position));
+      assert(!positions.has("ST") || real.filter((p) => p.position === "ST").length < 20,
+        `${club}: every player mapped to position "ST" — the pos/position field mismatch is back`);
+      assert([...positions].every((pos) => ["GK", "CB", "FB", "DM", "CM", "AM", "WG", "FW"].includes(pos)),
+        `${club}: an unrecognised position leaked through: ${[...positions].join(", ")}`);
+    }
+    // A club outside the Premier League must still fall back to generated
+    // players — the pool is drawn from the same season's PL squads only.
+    const championship = api.initializeTeamSquad("Southampton", 1);
+    const realInChampionship = championship.players.filter((p) => p.name && !/^Player \d+$/.test(p.name));
+    assert(realInChampionship.length === 0, "a relegated club is still drawing from the PL squad pool");
+    return `${sample.length} PL clubs across all four bands field their real 20-man squads`;
+  });
+
+  check("every current Premier League club has a real manager on file", () => {
+    const pl = api.getPLLeagueClubs();
+    const generic = pl.filter((c) => !api.MANAGER_DATABASE[c]);
+    assert(generic.length === 0, `no manager entry for: ${generic.join(", ")}`);
+    return `${pl.length} managers on file, none falling back to the generic default`;
+  });
+
   check("the 2025/26 squads are the current division and reach both eras", () => {
     // "Current Season" draws from these alone, and they are the newest slice of
     // "All Eras" — so a squad missing here is a hole in two era pools at once.

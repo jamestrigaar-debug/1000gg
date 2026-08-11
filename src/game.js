@@ -78,6 +78,9 @@
     "Nottingham Forest": { name: "N. Williams", focus: "Counter Attacks", tag: "High-profile targets", youth: "Low", project: "Squad overhaul" },
     "Bournemouth": { name: "A. Iraola", focus: "High Press", tag: "Trusts youth", youth: "High", project: "High-energy press" },
     "Burnley": { name: "S. Parker", focus: "Disciplined Press", tag: "Squad players", youth: "Medium", project: "Relegation scrap" },
+    // Promoted for 2025/26, alongside Burnley above.
+    "Leeds United": { name: "D. Farke", focus: "Possession Build-Up", tag: "Promotion-tested", youth: "Medium", project: "Established at this level" },
+    "Sunderland": { name: "R. Le Bris", focus: "Structured Press", tag: "Trusts youth", youth: "High", project: "Surprise package" },
     "Huddersfield Town": { name: "C. Wilder", focus: "Organised Battle", tag: "Squad players", youth: "Medium", project: "Defensive underdogs" },
     "Luton Town": { name: "R. Edwards", focus: "Underdog Spirit", tag: "Development project", youth: "High", project: "Minnow mentality" },
   };
@@ -101,6 +104,33 @@
     "Park the Bus": { attack: 0.8, midfield: 0.95, defence: 1.25, homeAdvantage: 1.2 },
     "Route One": { attack: 1.1, midfield: 0.8, defence: 1.15, homeAdvantage: 1.0 },
   };
+
+  /* TEAM_DATABASE keys clubs by their short competition name ("Arsenal",
+   * "West Ham"); PLAYER_DATABASE_2025_26 keys them by their long draft-screen
+   * name with the season year ("Arsenal FC (2025)", "West Ham United (2025)").
+   * Bridging the two by stripping suffixes would mangle names that already end
+   * in "United"/"Town" ("Manchester United", "Newcastle United" are already
+   * exact matches) — the eleven that do not match are listed explicitly. */
+  const TEAM_TO_2025_26_BASE = {
+    "Manchester City": "Manchester City", "Liverpool": "Liverpool FC", "Arsenal": "Arsenal FC",
+    "Manchester United": "Manchester United", "Chelsea": "Chelsea FC", "Tottenham": "Tottenham Hotspur",
+    "Newcastle United": "Newcastle United", "Aston Villa": "Aston Villa", "Brighton": "Brighton & Hove Albion",
+    "West Ham": "West Ham United", "Crystal Palace": "Crystal Palace", "Brentford": "Brentford FC",
+    "Fulham": "Fulham FC", "Everton": "Everton FC", "Wolves": "Wolverhampton Wanderers",
+    "Nottingham Forest": "Nottingham Forest", "Bournemouth": "AFC Bournemouth", "Burnley": "Burnley FC",
+    "Leeds United": "Leeds United", "Sunderland": "Sunderland",
+  };
+  /* PLAYER_DATABASE_2025_26 holds exactly one season, so any key starting with
+   * the base name IS that season's squad — no year to hardcode and keep in
+   * sync. Cached because it is looked up once per club per browser session
+   * (initializeTeamSquad only runs for a club it has not already built). */
+  const squad202526Cache = {};
+  function squad202526For(teamName) {
+    if (teamName in squad202526Cache) return squad202526Cache[teamName];
+    const base = TEAM_TO_2025_26_BASE[teamName];
+    const key = base && Object.keys(PLAYER_DATABASE_2025_26).find((k) => k.startsWith(base + " ("));
+    return (squad202526Cache[teamName] = (key && PLAYER_DATABASE_2025_26[key]) || null);
+  }
 
   // Generate a random player matching team strength
   function generateSquadPlayer(teamStrength, position, seed) {
@@ -137,14 +167,20 @@
     const teamStrength = (teamData.attack + teamData.midfield + teamData.defence + teamData.manager) / 4;
     const players = [];
 
-    // For Premier League teams, try to use real 2025/26 data
-    const isPL = teamData.league === "Elite";
-    if (isPL && PLAYER_DATABASE_2025_26[teamName]) {
-      const realPlayers = PLAYER_DATABASE_2025_26[teamName].slice(0, 20);
+    // Every Premier League club (all four prestige bands, not just "Elite" —
+    // that check alone meant only the top six ever reached this branch) gets
+    // its real 2025/26 first team here, when the name bridge above resolves.
+    const isPL = PL_TIERS.includes(teamData.league);
+    const realSquad = isPL ? squad202526For(teamName) : null;
+    if (realSquad) {
+      const realPlayers = realSquad.slice(0, 20);
       for (const pl of realPlayers) {
         players.push({
           name: pl.name,
-          position: pl.position || "ST",
+          // p()'s field is `pos`, not `position` — that mismatch was silent
+          // because this whole branch never ran for any club before now, so
+          // every real player would otherwise have rendered as position "ST".
+          position: pl.pos || "ST",
           age: pl.age || randInt(19, 35),
           heading: pl.heading || clamp(teamStrength + randInt(-5, 5), 40, 99),
           leftFoot: pl.leftFoot || clamp(teamStrength + randInt(-5, 5), 40, 99),
@@ -8444,6 +8480,8 @@
     resetWorldState, resetTeamDatabase,
     landCountry, landBuild, landSquad, draftStepKey, seedDraftStream, rand,
     getEraSquadKeys, parseSquadKey, PLAYER_DATABASE_2025_26, MENTALITY_TRAITS,
+    squad202526For, TEAM_TO_2025_26_BASE,
+    ACADEMY_STARTING_POOL, MANAGER_DATABASE, PL_TIERS,
     challengeLink, currentChallengeEntry, challengeStandingsHtml, renderChallengeResult, saveState,
     startChallengeCareer, checkUrlHashChallenge, renderChallengeInvite, renderChallengeOffer,
     showChallengeHub, joinChallengeByCode, createChallengeFromSetup, eraLabel,
