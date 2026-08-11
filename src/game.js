@@ -19,7 +19,8 @@
     ACADEMY_TIERS,
     CLUB_ACADEMY,
     PLAYER_DATABASE,
-    PLAYER_DATABASE_2025_26,
+    PLAYER_DATABASE_2025,
+    PLAYER_DATABASE_2026,
     TEAM_DATABASE,
     ACADEMY_STARTING_POOL,
     NATIONAL_TEAM,
@@ -106,12 +107,18 @@
   };
 
   /* TEAM_DATABASE keys clubs by their short competition name ("Arsenal",
-   * "West Ham"); PLAYER_DATABASE_2025_26 keys them by their long draft-screen
-   * name with the season year ("Arsenal FC (2025)", "West Ham United (2025)").
-   * Bridging the two by stripping suffixes would mangle names that already end
-   * in "United"/"Town" ("Manchester United", "Newcastle United" are already
-   * exact matches) — the eleven that do not match are listed explicitly. */
-  const TEAM_TO_2025_26_BASE = {
+   * "West Ham"); PLAYER_DATABASE_2026 keys them by their long draft-screen
+   * name with the season's end year ("Arsenal FC (2026)", "West Ham United
+   * (2026)" — see the comment on that database for why it's "2026" and not
+   * "2025"). Bridging the two by stripping suffixes would mangle names that
+   * already end in "United"/"Town" ("Manchester United", "Newcastle United"
+   * are already exact matches) — the eleven that do not match are listed
+   * explicitly.
+   *
+   * This is deliberately the ONE place that names which season is "current"
+   * for AI squads. When next season's data replaces this one, only the
+   * PLAYER_DATABASE_CURRENT alias two lines down needs to move. */
+  const TEAM_TO_CURRENT_SQUAD_BASE = {
     "Manchester City": "Manchester City", "Liverpool": "Liverpool FC", "Arsenal": "Arsenal FC",
     "Manchester United": "Manchester United", "Chelsea": "Chelsea FC", "Tottenham": "Tottenham Hotspur",
     "Newcastle United": "Newcastle United", "Aston Villa": "Aston Villa", "Brighton": "Brighton & Hove Albion",
@@ -120,16 +127,17 @@
     "Nottingham Forest": "Nottingham Forest", "Bournemouth": "AFC Bournemouth", "Burnley": "Burnley FC",
     "Leeds United": "Leeds United", "Sunderland": "Sunderland",
   };
-  /* PLAYER_DATABASE_2025_26 holds exactly one season, so any key starting with
-   * the base name IS that season's squad — no year to hardcode and keep in
-   * sync. Cached because it is looked up once per club per browser session
+  const PLAYER_DATABASE_CURRENT = PLAYER_DATABASE_2026;
+  /* PLAYER_DATABASE_CURRENT holds exactly one season, so any key starting
+   * with the base name IS that season's squad — no year to hardcode and keep
+   * in sync. Cached because it is looked up once per club per browser session
    * (initializeTeamSquad only runs for a club it has not already built). */
-  const squad202526Cache = {};
-  function squad202526For(teamName) {
-    if (teamName in squad202526Cache) return squad202526Cache[teamName];
-    const base = TEAM_TO_2025_26_BASE[teamName];
-    const key = base && Object.keys(PLAYER_DATABASE_2025_26).find((k) => k.startsWith(base + " ("));
-    return (squad202526Cache[teamName] = (key && PLAYER_DATABASE_2025_26[key]) || null);
+  const currentSquadCache = {};
+  function currentSquadFor(teamName) {
+    if (teamName in currentSquadCache) return currentSquadCache[teamName];
+    const base = TEAM_TO_CURRENT_SQUAD_BASE[teamName];
+    const key = base && Object.keys(PLAYER_DATABASE_CURRENT).find((k) => k.startsWith(base + " ("));
+    return (currentSquadCache[teamName] = (key && PLAYER_DATABASE_CURRENT[key]) || null);
   }
 
   // Generate a random player matching team strength
@@ -171,7 +179,7 @@
     // that check alone meant only the top six ever reached this branch) gets
     // its real 2025/26 first team here, when the name bridge above resolves.
     const isPL = PL_TIERS.includes(teamData.league);
-    const realSquad = isPL ? squad202526For(teamName) : null;
+    const realSquad = isPL ? currentSquadFor(teamName) : null;
     if (realSquad) {
       const realPlayers = realSquad.slice(0, 20);
       for (const pl of realPlayers) {
@@ -665,7 +673,7 @@
   };
 
   // Combine the historical database with the 2024/25 and 2025/26 season squads.
-  const ALL_PLAYER_DATABASE = { ...PLAYER_DATABASE, ...PLAYER_DATABASE_2025_26 };
+  const ALL_PLAYER_DATABASE = { ...PLAYER_DATABASE, ...PLAYER_DATABASE_2025, ...PLAYER_DATABASE_2026 };
   const SQUAD_KEYS = Object.keys(ALL_PLAYER_DATABASE);
   const CLUB_KEYS = Object.keys(CLUB_ACADEMY);
 
@@ -727,7 +735,7 @@
     { key: "classic", label: "Classic Era (1992–2004)", years: [1992, 2004], startYear: 1992 },
     { key: "modern", label: "Modern Era (2005–2014)", years: [2005, 2014], startYear: 2005 },
     { key: "recent", label: "Recent Era (2015–2024)", years: [2015, 2024], startYear: 2015 },
-    { key: "current", label: "Current Season (2025–26)", years: [2025, 2025], startYear: 2025 },
+    { key: "current", label: "Current Season (2025–26)", years: [2026, 2026], startYear: 2025 },
   ];
   const DEFAULT_START_YEAR = 2025;
   function eraStartYear(eraKey) {
@@ -5928,11 +5936,18 @@
   function eraShortLabel(opt) {
     if (opt.key === "all") return "all";
     const yy = (y) => String(y % 100).padStart(2, "0");
-    const from = opt.years && opt.years[0];
-    const to = opt.years && opt.years[1];
+    // Deliberately startYear, not years[0]/years[1] — years is which squad-key
+    // vintage the draft pulls from (for "current" that's 2026, since this
+    // project keys a season by its END year: 2025 = 2024/25, 2026 = 2025/26 —
+    // see PLAYER_DATABASE_2026's own comment). startYear is the real calendar
+    // year the career's season count is anchored to, which for every era is
+    // the season's START year. A career tagged from years would have read
+    // "26/27" for a career that was actually played across 2025/26.
+    const from = opt.startYear;
     if (!from) return opt.key;
+    const to = opt.years && opt.years[1] > opt.years[0] ? opt.years[1] : from;
     // A single-year era is one season, and a season straddles two calendar years.
-    return from === to ? `${yy(from)}/${yy(from + 1)}` : `${yy(from)}–${yy(to)}`;
+    return to === from ? `${yy(from)}/${yy(from + 1)}` : `${yy(from)}–${yy(to)}`;
   }
 
   function leaderboardRowsHtml(entries, compact) {
@@ -8479,8 +8494,8 @@
     renderWelcomeLeaderboard, leaderboardRowsHtml, init, newCareerId, ensureCareerId,
     resetWorldState, resetTeamDatabase,
     landCountry, landBuild, landSquad, draftStepKey, seedDraftStream, rand,
-    getEraSquadKeys, parseSquadKey, PLAYER_DATABASE_2025_26, MENTALITY_TRAITS,
-    squad202526For, TEAM_TO_2025_26_BASE,
+    getEraSquadKeys, parseSquadKey, PLAYER_DATABASE_2025, PLAYER_DATABASE_2026, MENTALITY_TRAITS,
+    currentSquadFor, TEAM_TO_CURRENT_SQUAD_BASE,
     ACADEMY_STARTING_POOL, MANAGER_DATABASE, PL_TIERS,
     challengeLink, currentChallengeEntry, challengeStandingsHtml, renderChallengeResult, saveState,
     startChallengeCareer, checkUrlHashChallenge, renderChallengeInvite, renderChallengeOffer,

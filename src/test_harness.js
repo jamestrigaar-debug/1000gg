@@ -299,8 +299,62 @@ if (require.main === module) {
     return `legacy → 1992, explicit 1998 preserved`;
   });
 
+  check("2025 and 2026 are two distinct seasons, not one overwriting the other", () => {
+    // 2025 = the 2024/25 season (restored verbatim from before any of this
+    // session's edits); 2026 = the 2025/26 season the club uploaded. A
+    // one-season update should add a new vintage, not erase the old one — an
+    // earlier pass through this fix overwrote 2025 in place before this was
+    // caught. Both must exist, independently, with different rosters.
+    const y25 = api.PLAYER_DATABASE_2025, y26 = api.PLAYER_DATABASE_2026;
+    assert(Object.keys(y25).length === 20 && Object.keys(y26).length === 20,
+      `expected 20 clubs each, got ${Object.keys(y25).length} / ${Object.keys(y26).length}`);
+    assert(Object.keys(y25).every((k) => k.endsWith(" (2025)")), "a 2025 key is not dated 2025");
+    assert(Object.keys(y26).every((k) => k.endsWith(" (2026)")), "a 2026 key is not dated 2026");
+    // 2025 is last season's division: the trio that got relegated FOR 2025/26
+    // were still up here. 2026 has the swap already applied.
+    for (const up of ["Ipswich Town (2025)", "Leicester City (2025)", "Southampton FC (2025)"]) {
+      assert(y25[up], `${up} should still be in the 2025 (2024/25) division`);
+    }
+    for (const up of ["Burnley FC (2026)", "Leeds United (2026)", "Sunderland (2026)"]) {
+      assert(y26[up], `${up} is missing from the 2026 (2025/26) division`);
+    }
+    // The clearest possible proof the two seasons are actually different
+    // datasets and not the same content under two names: a summer signing
+    // that only exists in one of them.
+    const cityNames = (db, key) => (db[key] || []).map((p) => p.name);
+    assert(!cityNames(y25, "Manchester City (2025)").includes("Gianluigi Donnarumma"),
+      "Donnarumma (a 2025/26 City signing) is already in the 2024/25 squad — the seasons are not distinct");
+    assert(cityNames(y26, "Manchester City (2026)").includes("Gianluigi Donnarumma"),
+      "Donnarumma is missing from the 2025/26 City squad");
+    return "20+20 clubs, correctly dated, genuinely different rosters";
+  });
+
+  check("Current Season rolls 2025/26 clubs; last season is reachable only via All Eras", () => {
+    const current = api.getEraSquadKeys("current");
+    assert(current.length === 20, `Current Season offers ${current.length} squads, not 20`);
+    assert(current.every((k) => k.endsWith(" (2026)")), `Current Season is not exclusively 2026: ${current.find((k) => !k.endsWith(" (2026)"))}`);
+    const recent = api.getEraSquadKeys("recent");
+    assert(!recent.some((k) => k.endsWith(" (2025)") || k.endsWith(" (2026)")),
+      "Recent Era reaches into last season or this one — its own range should stop at 2024");
+    const all = api.getEraSquadKeys("all");
+    assert(Object.keys(api.PLAYER_DATABASE_2025).every((k) => all.includes(k)), "2025 (2024/25) is missing from All Eras");
+    assert(Object.keys(api.PLAYER_DATABASE_2026).every((k) => all.includes(k)), "2026 (2025/26) is missing from All Eras");
+    return "Current Season = 2026 only; 2025 lives on in All Eras alongside it";
+  });
+
+  check("a Current Season career's calendar is unaffected by which squad vintage backs it", () => {
+    // years (which squad-key vintage the draft pulls from) and startYear (the
+    // real calendar year the season count is anchored to) used to be the same
+    // number by coincidence. Retargeting "current" to the 2026-keyed pool
+    // decoupled them on purpose — the season a player actually experiences is
+    // still 2025/26, regardless of which dataset supplied the donor squads.
+    makeState({ era: "current", season: 1 });
+    assert(api.seasonLabel() === "2025/26", `Current Season career started ${api.seasonLabel()}`);
+    return "season label still reads 2025/26";
+  });
+
   check("the Premier League table reflects the 2025/26 promotion and relegation", () => {
-    // The two datasets have to agree: PLAYER_DATABASE_2025_26 is which squads
+    // The two datasets have to agree: PLAYER_DATABASE_2026 is which squads
     // exist, TEAM_DATABASE.league is who is actually IN the Premier League.
     // Before this fix the second one was still the 2024/25 division.
     const TD = api.TEAM_DATABASE;
@@ -326,7 +380,7 @@ if (require.main === module) {
     // "Arsenal FC (2025)") — so the branch had never fired for ANY club. Every
     // squad in the game, including the player's own teammates on the Squad
     // Info tab, was fully fictional regardless of the real data sitting in
-    // PLAYER_DATABASE_2025_26. This is the fix: one club from each prestige
+    // PLAYER_DATABASE_2026. This is the fix: one club from each prestige
     // band, including a club promoted this season.
     const TD = api.TEAM_DATABASE;
     const sample = ["Arsenal", "Tottenham", "West Ham", "Burnley", "Leeds United", "Sunderland"];
@@ -358,59 +412,48 @@ if (require.main === module) {
     return `${pl.length} managers on file, none falling back to the generic default`;
   });
 
-  check("the 2025/26 squads are the current division and reach both eras", () => {
-    // "Current Season" draws from these alone, and they are the newest slice of
-    // "All Eras" — so a squad missing here is a hole in two era pools at once.
-    const db = api.PLAYER_DATABASE_2025_26;
-    const clubs = Object.keys(db);
-    assert(clubs.length === 20, `${clubs.length} clubs in the 2025/26 pool, expected a 20-club division`);
-    // The 2024/25 division was still in place: Ipswich, Leicester and
-    // Southampton went down, Burnley, Leeds and Sunderland came up.
-    for (const up of ["Burnley FC (2025)", "Leeds United (2025)", "Sunderland (2025)"]) {
-      assert(db[up], `${up} is missing from the 2025/26 pool`);
-    }
-    for (const down of ["Ipswich Town (2025)", "Leicester City (2025)", "Southampton FC (2025)"]) {
-      assert(!db[down], `${down} was relegated but is still in the 2025/26 pool`);
-    }
-    const current = api.getEraSquadKeys("current");
-    assert(current.length === 20, `the Current Season era offers ${current.length} squads`);
-    assert(current.every((k) => db[k]), "a Current Season squad key resolves to no squad");
-    const all = api.getEraSquadKeys("all");
-    assert(clubs.every((k) => all.includes(k)), "the 2025/26 squads are not all inside All Eras");
-    return `${clubs.length} clubs, ${current.length} in Current Season, all inside All Eras`;
-  });
-
   check("every 2025/26 player is shaped the way the draft expects", () => {
     // The draft reads pos, the eight drafted attributes and mentality straight
     // off these records; an unknown trait or an out-of-range value would only
-    // surface as a broken donor card mid-draft.
-    const db = api.PLAYER_DATABASE_2025_26;
+    // surface as a broken donor card mid-draft. Covers both vintages — a
+    // malformed record in the older (2025) dataset breaks "All Eras" just as
+    // surely as one in the current (2026) dataset breaks "Current Season".
     const positions = new Set(["GK", "CB", "FB", "DM", "CM", "AM", "WG", "FW"]);
     const numeric = ["heading", "fitness", "strength", "leftFoot", "rightFoot", "speed",
                      "mentalityRating", "overall"];
     const bad = [];
-    let total = 0;
-    for (const [club, squad] of Object.entries(db)) {
-      assert(/ \(\d{4}\)$/.test(club), `"${club}" has no year, so no era can find it`);
-      assert(squad.length >= 18, `${club} has only ${squad.length} players`);
-      const seen = new Set();
-      for (const pl of squad) {
-        total++;
-        if (!pl.name) bad.push(`${club}: a player with no name`);
-        if (seen.has(pl.name)) bad.push(`${club}: ${pl.name} listed twice`);
-        seen.add(pl.name);
-        if (!positions.has(pl.pos)) bad.push(`${club}/${pl.name}: position "${pl.pos}"`);
-        if (!api.MENTALITY_TRAITS[pl.mentality]) bad.push(`${club}/${pl.name}: trait "${pl.mentality}"`);
-        for (const k of numeric) {
-          const v = pl[k];
-          if (typeof v !== "number" || v < 1 || v > 99) bad.push(`${club}/${pl.name}: ${k}=${v}`);
+    let total = 0, clubCount = 0;
+    for (const db of [api.PLAYER_DATABASE_2025, api.PLAYER_DATABASE_2026]) {
+      clubCount += Object.keys(db).length;
+      // The 18-per-squad floor only holds for 2026, the vintage actually
+      // curated for this fix. 2025 was restored verbatim from the historical
+      // database's own convention, where squad size already varies a lot
+      // (some 1990s squads run to single figures) — asserting a floor on
+      // restored data would mean editing it to satisfy the test, exactly the
+      // kind of silent rewrite this whole fix exists to stop doing.
+      const minSquad = db === api.PLAYER_DATABASE_2026 ? 18 : 1;
+      for (const [club, squad] of Object.entries(db)) {
+        assert(/ \(\d{4}\)$/.test(club), `"${club}" has no year, so no era can find it`);
+        assert(squad.length >= minSquad, `${club} has only ${squad.length} players`);
+        const seen = new Set();
+        for (const pl of squad) {
+          total++;
+          if (!pl.name) bad.push(`${club}: a player with no name`);
+          if (seen.has(pl.name)) bad.push(`${club}: ${pl.name} listed twice`);
+          seen.add(pl.name);
+          if (!positions.has(pl.pos)) bad.push(`${club}/${pl.name}: position "${pl.pos}"`);
+          if (!api.MENTALITY_TRAITS[pl.mentality]) bad.push(`${club}/${pl.name}: trait "${pl.mentality}"`);
+          for (const k of numeric) {
+            const v = pl[k];
+            if (typeof v !== "number" || v < 1 || v > 99) bad.push(`${club}/${pl.name}: ${k}=${v}`);
+          }
+          if (!(pl.height >= 150 && pl.height <= 210)) bad.push(`${club}/${pl.name}: height ${pl.height}`);
+          if (!(pl.weight >= 50 && pl.weight <= 120)) bad.push(`${club}/${pl.name}: weight ${pl.weight}`);
         }
-        if (!(pl.height >= 150 && pl.height <= 210)) bad.push(`${club}/${pl.name}: height ${pl.height}`);
-        if (!(pl.weight >= 50 && pl.weight <= 120)) bad.push(`${club}/${pl.name}: weight ${pl.weight}`);
       }
     }
     assert(bad.length === 0, `${bad.length} malformed records:\n      ${bad.slice(0, 6).join("\n      ")}`);
-    return `${total} players across ${Object.keys(db).length} squads, all well formed`;
+    return `${total} players across ${clubCount} squads (both seasons), all well formed`;
   });
 
   group("Step 03 — internationals");
