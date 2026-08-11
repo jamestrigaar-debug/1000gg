@@ -743,6 +743,15 @@
   .legacy-section h3 { color: var(--accent2); font-size: 16px; }
   .legacy-summary-text { font-size: 15px; line-height: 1.6; color: var(--txt); background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
   .legacy-summary-text .highlight { color: var(--accent); font-weight: 700; }
+  /* Clubs played — reuses the leaderboard row grid rather than a raw <table>,
+     so it reads as the same kind of stat row already established elsewhere. */
+  #legacy-clubs .lb-row { grid-template-columns: 1fr 54px 54px 54px 54px; }
+  #legacy-clubs .lb-row.head { text-align: right; }
+  #legacy-clubs .lb-row.head .lb-club { text-align: left; }
+  #legacy-clubs .lb-club { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #legacy-clubs .lb-club b { color: var(--gold); font-weight: 700; }
+  #legacy-clubs .lb-apps, #legacy-clubs .lb-goals, #legacy-clubs .lb-assists, #legacy-clubs .lb-seasons { text-align: right; font-variant-numeric: tabular-nums; }
+  #legacy-clubs .lb-goals { font-weight: 700; color: var(--accent); }
   .clubs-table td.lt-pts { color: var(--accent); }
   .history-list { list-style: none; padding: 0; margin: 8px 0 0; }
   .history-list li { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
@@ -1161,7 +1170,7 @@
            sections; the attributes, honours and totals they listed are all on
            the card itself now. -->
       <div class="share-card" id="share-card" style="display:none;">
-        <canvas id="share-card-canvas" width="600" height="1130"></canvas>
+        <canvas id="share-card-canvas" width="600" height="1180"></canvas>
         <div class="share-actions">
           <button class="btn primary" id="btn-download-card">📥 Download Card</button>
           <button class="btn" id="btn-share-card">🔗 Share / Copy</button>
@@ -1185,6 +1194,7 @@
 
       <div class="legacy-section" id="legacy-summary"></div>
       <div class="legacy-totals" id="legacy-totals"></div>
+      <div class="legacy-section" id="legacy-clubs"></div>
 
       <div class="share-card" id="share-tagline-card" style="display:none;">
         <h3>Can You Beat Me?</h3>
