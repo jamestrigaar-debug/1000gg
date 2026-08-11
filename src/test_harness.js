@@ -1036,6 +1036,109 @@ if (require.main === module) {
     return `${line.length} chars`;
   });
 
+  group("Nine-tier career card");
+
+  function tierFor(totalGoals, honoursOver, extra) {
+    makeState(Object.assign({
+      totalGoals, reputation: 50,
+      honours: Object.assign({ leagueTitles: 0, domesticCups: 0, europeanCups: 0, intlTrophies: 0,
+                               ballonDors: 0, goldenBoots: 0, playerOfSeason: 0, youngPlayer: 0, tots: 0 }, honoursOver),
+    }, extra));
+    return api.computeCareerRarity();
+  }
+
+  check("nine tiers exist, in ascending order, each carrying its own label", () => {
+    const names = api.CARD_TIERS.map((t) => t.name);
+    assert(names.join("|") === "Tin|Bronze|Silver|Gold|Gold²|Blue|Blue-Red|Green|Rainbow",
+      `tier order is ${names.join(", ")}`);
+    const labels = api.CARD_TIERS.map((t) => t.label);
+    assert(new Set(labels).size === labels.length, `two tiers share a label: ${labels.join(", ")}`);
+    for (const t of api.CARD_TIERS) {
+      assert(/^#[0-9a-f]{6}$/i.test(t.accent), `${t.name}: accent "${t.accent}" is not a hex colour`);
+      assert(Array.isArray(t.bg) && t.bg.length === 3, `${t.name}: bg is not a 3-stop gradient`);
+    }
+    return "9 tiers, 9 distinct labels, all colours well-formed";
+  });
+
+  check("a Tin card is the floor, not an exception", () => {
+    // Every career must land SOMEWHERE — a brand new, zero-goal save must
+    // resolve to a real tier rather than throwing or falling through to
+    // undefined (CARD_TIERS[0].test is a bare `() => true`, so this also
+    // guards against that becoming conditional by accident).
+    const t = tierFor(0, {});
+    assert(t.name === "Tin" && t.label === "PROFESSIONAL", `zero-goal career landed on ${t.name} / ${t.label}`);
+    return "an empty career still renders a card";
+  });
+
+  check("the bottom five tiers are reachable by goals, trophies, or reputation alone", () => {
+    assert(tierFor(80, {}).name === "Tin", "80 goals escaped Tin");
+    assert(tierFor(150, {}).name === "Bronze", "150 goals did not reach Bronze");
+    assert(tierFor(0, { leagueTitles: 1 }).name === "Bronze", "a single trophy did not reach Bronze");
+    assert(tierFor(300, {}).name === "Silver", "300 goals did not reach Silver");
+    assert(tierFor(0, {}, { reputation: 70 }).name === "Silver", "reputation 70 alone did not reach Silver");
+    assert(tierFor(400, {}).name === "Gold", "400 goals did not reach Gold");
+    assert(tierFor(500, {}).name === "Gold²", "500 goals did not reach Gold²");
+    assert(tierFor(0, { ballonDors: 1 }).name === "Gold²", "a single Ballon d'Or did not reach Gold²");
+    // This is the user's own worked example: a genuinely good career — 1-2
+    // Ballon d'Ors, north of 500 goals, short of 900 — caps at Gold², the top
+    // of the "ordinary" band, however good the rest of the career reads.
+    const goodCareer = tierFor(880, { ballonDors: 2 });
+    assert(goodCareer.name === "Gold²", `880 goals + 2 Ballon d'Ors landed on ${goodCareer.name}, not Gold²`);
+    return "Tin/Bronze/Silver/Gold/Gold² all individually reachable";
+  });
+
+  check("the top four tiers need goals AND Ballon d'Ors together, not either alone", () => {
+    // Goals without the individual award: capped at Gold², however high.
+    assert(tierFor(999, {}).name === "Gold²", `999 goals with no Ballon d'Or reached ${tierFor(999, {}).name}`);
+    // Ballon d'Ors without the goals: also capped at Gold².
+    assert(tierFor(100, { ballonDors: 8 }).name === "Gold²", `8 Ballon d'Ors on 100 goals reached ${tierFor(100, { ballonDors: 8 }).name}`);
+    // Both together, at each explicit threshold from the brief.
+    assert(tierFor(950, { ballonDors: 2 }).name === "Blue", "2 Ballon d'Ors + 950 goals did not reach Blue");
+    assert(tierFor(949, { ballonDors: 2 }).name === "Gold²", "949 goals still cleared Blue's bar");
+    assert(tierFor(975, { ballonDors: 3 }).name === "Blue-Red", "3 Ballon d'Ors + 975 goals did not reach Blue-Red");
+    assert(tierFor(985, { ballonDors: 6 }).name === "Green", "6 Ballon d'Ors + 985 goals did not reach Green");
+    assert(tierFor(1000, { ballonDors: 8 }).name === "Rainbow", "the exact 1000/8 benchmark did not reach Rainbow");
+    // The Rainbow bar is the same Messi benchmark used elsewhere in this
+    // project as the realistic ceiling — a 7-Ballon-d'Or career, already an
+    // extraordinary outlier, still does not buy the top tier.
+    assert(tierFor(1000, { ballonDors: 7 }).name === "Green", "7 Ballon d'Ors at 1000 goals reached Rainbow");
+    return "Blue/Blue-Red/Green/Rainbow all gated on goals AND Ballon d'Ors together";
+  });
+
+  check("the six radar/stat values used by the card are all in FIFA's 1-99 range", () => {
+    makeState({ club: "Arsenal", age: 27, baseRating: 88,
+      attrs: { heading: 90, fitness: 85, strength: 82, height: 188, weight: 84, leftFoot: 70, rightFoot: 91, speed: 89 } });
+    const peak = api.peakSnapshot();
+    const stats = api.cardFifaStats(peak);
+    assert(stats.length === 6, `expected 6 stats, got ${stats.length}`);
+    const labels = stats.map(([l]) => l).join(",");
+    assert(labels === "PAC,SHO,PAS,DRI,PHY,HEA", `stat order/labels changed: ${labels}`);
+    for (const [label, val] of stats) {
+      assert(Number.isInteger(val) && val >= 1 && val <= 99, `${label} is ${val}, outside 1-99`);
+    }
+    return `${stats.map(([l, v]) => `${l} ${v}`).join(" / ")}`;
+  });
+
+  check("a World Cup win names itself on the card, not just a trophy count", () => {
+    makeState({ club: "Real Madrid", totalGoals: 340, clubsPlayed: ["Santos", "Real Madrid"],
+      honours: { leagueTitles: 2, domesticCups: 0, europeanCups: 0, intlTrophies: 1, ballonDors: 0,
+                 goldenBoots: 0, playerOfSeason: 0, youngPlayer: 0, tots: 0 },
+      wonTournaments: ["World Cup"] });
+    const line = api.cardTagline();
+    assert(/World Cup winner/.test(line), `no named tournament in: ${line}`);
+    return line;
+  });
+
+  check("winning the same tournament twice is counted, not just listed twice", () => {
+    makeState({ club: "Real Madrid", totalGoals: 340, clubsPlayed: ["Santos", "Real Madrid"],
+      honours: { leagueTitles: 0, domesticCups: 0, europeanCups: 0, intlTrophies: 2, ballonDors: 0,
+                 goldenBoots: 0, playerOfSeason: 0, youngPlayer: 0, tots: 0 },
+      wonTournaments: ["World Cup", "World Cup"] });
+    const line = api.cardTagline();
+    assert(/2x World Cup winner/.test(line), `expected a "2x" count in: ${line}`);
+    return line;
+  });
+
   group("Leaderboard");
 
   check("the board is seeded with real-world benchmarks and ranks by goals", () => {
