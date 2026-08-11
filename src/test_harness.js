@@ -329,27 +329,34 @@ if (require.main === module) {
     return "20+20 clubs, correctly dated, genuinely different rosters";
   });
 
-  check("Current Season rolls 2025/26 clubs; last season is reachable only via All Eras", () => {
+  check("Current spans both real seasons on file, with no gap year between it and Recent Era", () => {
+    // Recent Era stops at 2024. Current used to start at 2026, which left
+    // 2025 (last season) reachable only through All Eras despite the whole
+    // point of "Current" being the recent, real-world-accurate squads. Now
+    // it covers both 2025 and 2026, so nothing falls in the gap.
     const current = api.getEraSquadKeys("current");
-    assert(current.length === 20, `Current Season offers ${current.length} squads, not 20`);
-    assert(current.every((k) => k.endsWith(" (2026)")), `Current Season is not exclusively 2026: ${current.find((k) => !k.endsWith(" (2026)"))}`);
+    assert(current.length === 40, `Current offers ${current.length} squads, expected 40 (20 clubs x 2 seasons)`);
+    assert(current.every((k) => k.endsWith(" (2025)") || k.endsWith(" (2026)")),
+      `a Current squad is neither 2025 nor 2026: ${current.find((k) => !/\(202[56]\)$/.test(k))}`);
+    assert(Object.keys(api.PLAYER_DATABASE_2025).every((k) => current.includes(k)), "2025 (2024/25) is missing from Current");
+    assert(Object.keys(api.PLAYER_DATABASE_2026).every((k) => current.includes(k)), "2026 (2025/26) is missing from Current");
     const recent = api.getEraSquadKeys("recent");
     assert(!recent.some((k) => k.endsWith(" (2025)") || k.endsWith(" (2026)")),
       "Recent Era reaches into last season or this one — its own range should stop at 2024");
     const all = api.getEraSquadKeys("all");
     assert(Object.keys(api.PLAYER_DATABASE_2025).every((k) => all.includes(k)), "2025 (2024/25) is missing from All Eras");
     assert(Object.keys(api.PLAYER_DATABASE_2026).every((k) => all.includes(k)), "2026 (2025/26) is missing from All Eras");
-    return "Current Season = 2026 only; 2025 lives on in All Eras alongside it";
+    return "40 squads under Current (both seasons), Recent Era untouched, both also inside All Eras";
   });
 
-  check("a Current Season career's calendar is unaffected by which squad vintage backs it", () => {
-    // years (which squad-key vintage the draft pulls from) and startYear (the
-    // real calendar year the season count is anchored to) used to be the same
-    // number by coincidence. Retargeting "current" to the 2026-keyed pool
-    // decoupled them on purpose — the season a player actually experiences is
-    // still 2025/26, regardless of which dataset supplied the donor squads.
+  check("a Current-era career's calendar is unaffected by which squad vintage backs it", () => {
+    // years (which squad-key vintages the draft pulls from) and startYear
+    // (the real calendar year the season count is anchored to) are
+    // deliberately independent — a Current-era career is still, correctly,
+    // played across calendar 2025/26 no matter whether a given draft spin
+    // lands on a 2025 or a 2026 squad.
     makeState({ era: "current", season: 1 });
-    assert(api.seasonLabel() === "2025/26", `Current Season career started ${api.seasonLabel()}`);
+    assert(api.seasonLabel() === "2025/26", `Current-era career started ${api.seasonLabel()}`);
     return "season label still reads 2025/26";
   });
 
@@ -417,7 +424,7 @@ if (require.main === module) {
     // off these records; an unknown trait or an out-of-range value would only
     // surface as a broken donor card mid-draft. Covers both vintages — a
     // malformed record in the older (2025) dataset breaks "All Eras" just as
-    // surely as one in the current (2026) dataset breaks "Current Season".
+    // surely as one in the newer (2026) dataset breaks "Current".
     const positions = new Set(["GK", "CB", "FB", "DM", "CM", "AM", "WG", "FW"]);
     const numeric = ["heading", "fitness", "strength", "leftFoot", "rightFoot", "speed",
                      "mentalityRating", "overall"];
@@ -1133,8 +1140,9 @@ if (require.main === module) {
     // The years must be the era's own, not a guess.
     assert(api.eraTagFor("classic").short === "92–04", `classic reads ${api.eraTagFor("classic").short}`);
     assert(api.eraTagFor("recent").short === "15–24", `recent reads ${api.eraTagFor("recent").short}`);
-    // A one-year era is a single season, which straddles two calendar years.
-    assert(api.eraTagFor("current").short === "25/26", `current reads ${api.eraTagFor("current").short}`);
+    // Current now spans two real seasons (2025 and 2026), the same shape as
+    // Classic/Modern/Recent, so it reads the same way they do.
+    assert(api.eraTagFor("current").short === "25–26", `current reads ${api.eraTagFor("current").short}`);
     assert(api.eraTagFor("all").short === "all", `all-eras reads ${api.eraTagFor("all").short}`);
     // A real-world benchmark has no era, and neither junk nor absence invents one.
     const rows = html.split('<div class="lb-row').slice(1);

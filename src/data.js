@@ -25309,12 +25309,13 @@ const PLAYER_DATABASE = {
   ],
 };
 
-/* 2024/25 Premier League squads — one season behind "current". Restored
- * verbatim from before this file's squad data was updated for 2025/26; this
- * block must not be edited when a newer season is added, only appended
- * alongside (see PLAYER_DATABASE_2026 below). Reachable through "All Eras"
- * only — "Current Season" and "Recent Era" both stop short of it, at 2026
- * and 2024 respectively, so this is the one gap year between them. */
+/* 2024/25 Premier League squads — one season behind PLAYER_DATABASE_2026.
+ * Restored verbatim from before this file's squad data was updated for
+ * 2025/26; this block must not be edited when a newer season is added, only
+ * appended alongside (see PLAYER_DATABASE_2026 below). Reachable through
+ * "Current" (which spans both 2025 and 2026 — Recent Era stops at 2024, so
+ * without this it would fall into a gap year reachable only through "All
+ * Eras") and, naturally, through "All Eras" itself. */
 const PLAYER_DATABASE_2025 = {
   "Arsenal FC (2025)": [
     p("David Raya","GK",50,65,76,183,79,54,60,48,"Relentless",74,73),
@@ -25743,9 +25744,9 @@ const PLAYER_DATABASE_2025 = {
  * the 2024/25 season, 2026 = the 2025/26 season — the season's END year, not
  * its start year, which is why this deliberately does not match the "(YYYY)
  * = season start year" convention used by the historical PLAYER_DATABASE
- * above. This is the "Current Season" era's donor pool and the newest slice
- * of "All Eras"; PLAYER_DATABASE_2025 sits one season behind it, reachable
- * only through "All Eras".
+ * above. This is one half of "Current" (the other half is
+ * PLAYER_DATABASE_2025, one season behind — Current spans both, so a Current
+ * draft can land on either) and the newest slice of "All Eras".
  *
  * Replaces the 2024/25 division for AI/league purposes: Ipswich, Leicester
  * and Southampton went down, Burnley, Leeds and Sunderland came up (see
