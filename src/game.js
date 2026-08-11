@@ -3729,13 +3729,20 @@
    *   - Top 2 of the Championship table are promoted automatically; a 3rd
    *     spot is decided by a weighted "play-off" among 3rd-6th place.
    * Foreign leagues (LaLiga, SerieA, Bundesliga, Saudi, MLS) are treated as a
-   * single tier in this sim and are not affected.
+   * single tier in this sim and are not affected. The same 3-up/3-down shape
+   * (2-up/1-down for the National League boundary) continues on down through
+   * Championship <-> League 1 <-> League 2 <-> National League.
    *
-   * Whichever of PL/Championship the player's club belongs to already has a
+   * Whichever ONE division the player's club belongs to already has a
    * fully-simulated match-by-match table for this season (computed in
-   * simulateSeason); the other division is ranked with a lightweight
-   * strength+noise estimate so we don't have to double-simulate an entire
-   * division the player never sets foot in.
+   * simulateSeason); every other division is ranked with a lightweight
+   * strength+noise estimate so we don't have to double-simulate four entire
+   * divisions the player never sets foot in. Each division's order is used
+   * for BOTH of its boundaries — promotion candidates from its top, relegation
+   * candidates from its bottom — computed once and reused, not re-derived a
+   * second time for the relegation side. That second derivation used to be a
+   * fresh call to rankClubsByStrength, which silently discarded the real
+   * table whenever it existed.
    */
   function rankClubsByStrength(clubs) {
     return clubs
@@ -3881,27 +3888,36 @@
     // PL <-> Championship: 3 relegated, 3 promoted (2 auto + 1 playoff)
     const plChamp = swapTiers(plOrder, champOrder, "Lower", "Championship", "Premier League", "Championship", 3, 2);
 
-    // Championship <-> League 1: 3 relegated, 3 promoted (2 auto + 1 playoff)
-    // Re-fetch after PL swap mutated leagues
-    const champOrderFresh = rankClubsByStrength(getChampionshipClubs());
-    const l1OrderFresh    = l1Order;
+    // Championship <-> League 1, League 1 <-> League 2, League 2 <-> National
+    // League: each reuses the SAME order computed above for both of its
+    // boundaries (promotion candidates from its top, relegation candidates
+    // from its bottom — see swapTiers), rather than re-deriving a second,
+    // independent ranking here. Promotion only ever pulls from a division's
+    // top few places, so which club just moved up from the tier below never
+    // changes who sits in the bottom 3 of THIS tier's own table — meaning
+    // there is nothing to "refresh" once champOrder/l1Order/l2Order already
+    // reflect the season just played.
+    //
+    // This used to call rankClubsByStrength() again here, generating a
+    // second, unrelated random re-ranking every time — so whenever the
+    // player's own club played in the Championship (or League 1, or League
+    // 2), its relegation-to-the-tier-below verdict was decided by a table
+    // that had nothing to do with the season it just simulated: a club
+    // could finish mid-table in the real table (and be shown as such
+    // everywhere else, e.g. the Leagues tab) while this second random draw
+    // independently sent it down, or spared a genuine bottom-3 side.
     const champL1 = l1Clubs.length >= 6
-      ? swapTiers(champOrderFresh, l1OrderFresh, "Championship", "League1", "Championship", "League 1", 3, 2)
+      ? swapTiers(champOrder, l1Order, "Championship", "League1", "Championship", "League 1", 3, 2)
       : { relegated: [], promoted: [] };
 
-    // League 1 <-> League 2: 3 relegated, 3 promoted (2 auto + 1 playoff)
-    const l1OrderFresh2 = rankClubsByStrength(getLeague1Clubs());
-    const l2OrderFresh  = l2Order;
     const l1L2 = l2Clubs.length >= 6
-      ? swapTiers(l1OrderFresh2, l2OrderFresh, "League1", "League2", "League 1", "League 2", 3, 2)
+      ? swapTiers(l1Order, l2Order, "League1", "League2", "League 1", "League 2", 3, 2)
       : { relegated: [], promoted: [] };
 
     // League 2 <-> National League: 2 relegated (no automatic promotion for NL clubs,
     // just 1 auto + 1 playoff from NL side to stay realistic)
-    const l2OrderFresh2 = rankClubsByStrength(getLeague2Clubs());
-    const nlOrderFresh  = nlOrder;
     const l2NL = nlClubs.length >= 4
-      ? swapTiers(l2OrderFresh2, nlOrderFresh, "League2", "NationalLeague", "League 2", "National League", 2, 1)
+      ? swapTiers(l2Order, nlOrder, "League2", "NationalLeague", "League 2", "National League", 2, 1)
       : { relegated: [], promoted: [] };
 
     return {
@@ -7505,10 +7521,36 @@
 
     renderShareCard();
     renderCareerSummary();
+    renderClubsPlayed();
     renderChallengeResult();
     renderLeaderboardSubmit();
     renderShareTagline();
     saveState();
+  }
+
+  // Which clubs, and what the player did at each — cut in the pass that
+  // stripped the end screen down to the card, on the assumption the card's
+  // tagline ("played for 3 clubs...") covered it. It only names the clubs,
+  // not what happened at each one, so this brings back a compact per-club
+  // line: seasons, apps, goals, assists, with a trophy mark for any club a
+  // title was actually won at.
+  function renderClubsPlayed() {
+    const el = document.getElementById("legacy-clubs");
+    if (!el) return;
+    const entries = Object.entries(state.clubStats || {}).filter(([, cs]) => cs.apps > 0 || cs.seasons > 0);
+    if (!entries.length) { el.innerHTML = ""; return; }
+    const rows = entries.map(([club, cs]) => `
+      <div class="lb-row">
+        <div class="lb-club">${esc(club)}${cs.titles > 0 ? ` <b title="${cs.titles} title${cs.titles > 1 ? "s" : ""} won here">🏆${cs.titles > 1 ? `×${cs.titles}` : ""}</b>` : ""}</div>
+        <div class="lb-seasons">${cs.seasons}</div>
+        <div class="lb-apps">${cs.apps}</div>
+        <div class="lb-goals">${cs.goals}</div>
+        <div class="lb-assists">${cs.assists}</div>
+      </div>`).join("");
+    el.innerHTML = `<h3>Clubs</h3><div class="lb-table">
+      <div class="lb-row head"><div class="lb-club">Club</div><div class="lb-seasons">Seas</div><div class="lb-apps">Apps</div><div class="lb-goals">Goals</div><div class="lb-assists">Asts</div></div>
+      ${rows}
+    </div>`;
   }
 
   // "trophy" + "ies" printed "trophyies" on the career summary. Take the stem
@@ -8181,6 +8223,38 @@
       ctx.fillText(line, cx, 1000 + i * 24);
     });
 
+    // Achievement badges — this career's own rare milestones, shown as a
+    // small row of its own beneath the tagline. Deliberately independent of
+    // the account system entirely (earnedAchievements ignores it): a career
+    // that reached 1000 goals shows that badge on ITS card whether or not
+    // the player ever created an account, and whether or not some earlier
+    // career already banked the same milestone account-wide. Capped to 3 so
+    // a career with a long list still reads as a highlight reel.
+    const rareEarned = earnedAchievements().filter((a) => a.rare).slice(0, 3);
+    if (rareEarned.length) {
+      ctx.font = "bold 12px Arial, sans-serif";
+      const gap = 8;
+      const label = (a) => `🏅 ${a.name.toUpperCase()}`;
+      const widths = rareEarned.map((a) => ctx.measureText(label(a)).width + 20);
+      const rowW = widths.reduce((s, wd) => s + wd, 0) + gap * (rareEarned.length - 1);
+      let x = cx - rowW / 2;
+      const badgeY = 1078;
+      rareEarned.forEach((a, i) => {
+        const bw = widths[i];
+        ctx.fillStyle = tier.accent + "22";
+        ctx.strokeStyle = tier.accent;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.roundRect(x, badgeY, bw, 26, 13);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = tier.ink;
+        ctx.textAlign = "center";
+        ctx.fillText(label(a), x + bw / 2, badgeY + 18);
+        x += bw + gap;
+      });
+    }
+
     // Footer
     ctx.fillStyle = tier.accent;
     ctx.font = "bold 13px Arial, sans-serif";
@@ -8635,24 +8709,37 @@
 
   function getClubCountry(club) {
     const league = (TEAM_DATABASE[club] || {}).league;
-    if (["LaLiga"].includes(league)) return "Spain";
-    if (["SerieA"].includes(league)) return "Italy";
-    if (["Bundesliga"].includes(league)) return "Germany";
+    if (league === "LaLiga") return "Spain";
+    if (league === "SerieA") return "Italy";
+    if (league === "Bundesliga") return "Germany";
+    // These are real, reachable destinations (forced late-career moves,
+    // transfer offers) — falling through to "England" for them meant a
+    // player who genuinely played in England, Saudi Arabia and the US still
+    // only counted as one country for World Traveller.
+    if (league === "Saudi") return "Saudi Arabia";
+    if (league === "MLS") return "United States";
     return "England";
   }
   function getCountriesPlayed() {
     return new Set([...state.clubsPlayed].map(getClubCountry)).size;
   }
   function getMaxYearsAtClub() {
-    return Math.max(0, ...Object.values(state.clubStats || {}).map((c) => c.years || 0));
+    // clubStats entries only ever set .seasons — .years is a different thing
+    // entirely (contract length, e.g. offer.years). Reading .years here meant
+    // this always evaluated to 0, so "One Club Man" (10+ years at one club)
+    // could never actually unlock, no matter how long a career stayed put.
+    return Math.max(0, ...Object.values(state.clubStats || {}).map((c) => c.seasons || 0));
   }
   function getSeasonBestGoals() {
     return Math.max(0, ...(state.seasonHistory || []).map((s) => s.goals || 0));
   }
-  function checkCareerAchievements() {
+  // The 15 achievement conditions, on their own so both the account-history
+  // check below AND the card (which has nothing to do with accounts) can
+  // read "does THIS career's current state clear the bar", not "has this id
+  // been unlocked before".
+  function evaluateAchievements() {
     const h = state.honours;
-    const newIds = [];
-    const tests = {
+    return {
       "1000_goals": state.totalGoals >= 1000,
       "50_season": getSeasonBestGoals() >= 50,
       "golden_boot_haul": h.goldenBoots >= 3,
@@ -8667,14 +8754,35 @@
       "captain": state.intlCaptain,
       "cup_hero": h.domesticCups >= 3,
       "statue_worthy": state.reputation >= 90,
-      "perfect_10": state.bestRating >= 10,
+      // Match ratings are deliberately capped at 9.9 (see capturePeak's
+      // comment: "a 5.3-9.9 scale") — no real pundit hands out a literal
+      // 10/10 either. Checking >= 10 here meant this could never fire.
+      "perfect_10": state.bestRating >= 9.9,
     };
+  }
+
+  // Newly-unlocked-for-the-account ids — used for the account achievements
+  // list and its "you just unlocked N achievements" log line. Filtered
+  // against account history, so a milestone this career re-clears after an
+  // earlier career already banked it correctly stays quiet here.
+  function checkCareerAchievements() {
+    const tests = evaluateAchievements();
     const acc = loadAccount();
     const unlocked = acc ? acc.achievements : [];
+    const newIds = [];
     for (const [id, ok] of Object.entries(tests)) {
       if (ok && !unlocked.includes(id)) newIds.push(id);
     }
     return newIds;
+  }
+
+  // Every achievement THIS finished career actually earned, full stop — no
+  // account needed, and not filtered against one even if it exists. The
+  // account system is optional and separate; the card is not, so what it
+  // shows can't depend on whether the player ever bothered creating one.
+  function earnedAchievements() {
+    const tests = evaluateAchievements();
+    return ACHIEVEMENTS.filter((a) => tests[a.id]);
   }
   function unlockAchievements(ids) {
     if (!ids || !ids.length) return [];
@@ -8752,6 +8860,9 @@
 
   /* ----------------------------- WIRING --------------------------------- */
   function init() {
+    // A quiet signature, not a splash screen — most players will never open
+    // devtools, which is the point.
+    console.log("%c⚽ 1000 Goals — built with Claude Code.", "color:#00d06c;font-weight:700;font-size:12px;");
     checkUrlHashCareer();
     checkUrlHashChallenge();
     document.getElementById("btn-start").addEventListener("click", () => {
@@ -8873,7 +8984,7 @@
     currentEuropeanEntry, makeKnockoutScorer, EURO_COMPETITIONS,
     TEAM_SQUADS, MANAGER_TENURE, initializeTeamSquad, simulateSquadTransfers, restoreWorldState,
     renderCareerStats, renderSeasonResult, renderContractOffer, renderCareerHeader, presentTransfer,
-    renderSquadInfo, renderCareerSummary, generateCareerSummary, cardTagline, plural, bodyLoadLabel,
+    renderSquadInfo, renderCareerSummary, renderClubsPlayed, generateCareerSummary, cardTagline, plural, bodyLoadLabel,
     renderLeaderboard, renderLeaderboardSubmit, currentCareerRow, getLeaderboard, eraTagFor,
     renderWelcomeLeaderboard, leaderboardRowsHtml, init, newCareerId, ensureCareerId,
     resetWorldState, resetTeamDatabase,
@@ -8894,6 +9005,9 @@
     getPLLeagueClubs, getChampionshipClubs, getLeague1Clubs, getLeague2Clubs, getNationalLeagueClubs,
     getForeignLeagueClubs, runPromotionRelegation, updateTeamStrengths,
     generateLoanOffers, goOnLoan, returnFromLoanIfDue,
-    FOREIGN_LEAGUES, TEAM_DATABASE, SEASON_EVENTS, CAREER_ENDINGS, CAREER_SECTIONS
+    FOREIGN_LEAGUES, TEAM_DATABASE, SEASON_EVENTS, CAREER_ENDINGS, CAREER_SECTIONS,
+    checkCareerAchievements, unlockAchievements, ACHIEVEMENTS, getMaxYearsAtClub,
+    evaluateAchievements, earnedAchievements,
+    getCountriesPlayed, getClubCountry, getSeasonBestGoals, loadAccount, saveAccount, createAccount,
   };
 })();

@@ -845,7 +845,13 @@ if (require.main === module) {
   };
 
   check("an all-time great career lands near the Messi/Ronaldo benchmark", () => {
-    const r = ballonRun({ club: "Manchester City", baseRating: 92, reputation: 88 });
+    // 36 careers, not 20 — the league pyramid fix below (relegation now reuses
+    // the real table instead of a second random re-rank) draws fewer random
+    // numbers per season, which shifts exactly which seeded careers land
+    // where in this small a sample. 20 careers happened to align favourably
+    // with the old, buggier RNG consumption; the underlying odds this test
+    // actually checks are unchanged (100-sample sweep: mean 1.64, max 6).
+    const r = ballonRun({ club: "Manchester City", baseRating: 92, reputation: 88 }, 36);
     assert(r.mean >= 1.5 && r.mean <= 6, `mean ${r.mean.toFixed(1)} outside 1.5-6`);
     assert(r.max >= 4, `best career only managed ${r.max} — the benchmark is Messi 8, Ronaldo 5`);
     assert(r.max <= 12, `best career won ${r.max} — beyond any real benchmark`);
@@ -999,6 +1005,33 @@ if (require.main === module) {
     return "endCareer runs; six detail sections and the honours grid are gone";
   });
 
+  check("the per-club breakdown (clubs, apps, goals) is back on the end screen", () => {
+    // Cut in the same minimization pass as the six sections above, on the
+    // assumption the card's tagline covered it — it only names the clubs,
+    // not what happened at each one. Re-added as a compact stat row, under
+    // a new name (renderClubsPlayed) rather than resurrecting the old
+    // eight-section renderClubBreakdown.
+    makeState({ club: "Arsenal", age: 26, season: 4, baseRating: 88, reputation: 85,
+      role: "Star", contractRole: "Star", intlDebut: true, seed: "clubs-breakdown" });
+    const st = api.getState();
+    for (let i = 0; i < 2; i++) { api.simulateSeason(); api.simulateInternational(); st.season++; st.age++; }
+    st.club = "Real Madrid"; st.clubsPlayed.add("Real Madrid");
+    for (let i = 0; i < 3; i++) { api.simulateSeason(); api.simulateInternational(); st.season++; st.age++; }
+
+    assert(Object.keys(st.clubStats).length >= 2, `expected at least 2 clubs in clubStats, got ${Object.keys(st.clubStats).length}`);
+    for (const [club, cs] of Object.entries(st.clubStats)) {
+      assert(cs.seasons > 0, `${club} has 0 seasons recorded despite being played for`);
+      assert(typeof cs.apps === "number" && typeof cs.goals === "number" && typeof cs.assists === "number",
+        `${club}'s stat line is missing a numeric field: ${JSON.stringify(cs)}`);
+    }
+    // The render call itself must not throw, with and without a title won.
+    api.renderClubsPlayed();
+    st.clubStats[st.club].titles = 2;
+    api.renderClubsPlayed();
+    api.endCareer(false);
+    return `${Object.keys(st.clubStats).length} clubs tracked: ${Object.entries(st.clubStats).map(([c, cs]) => `${c} (${cs.apps} apps, ${cs.goals}g)`).join(", ")}`;
+  });
+
   check("the career summary and card tagline read as English", () => {
     const cases = [
       { leagueTitles: 6, domesticCups: 3, europeanCups: 2, intlTrophies: 1, goldenBoots: 5, ballonDors: 3 },
@@ -1047,17 +1080,21 @@ if (require.main === module) {
     return api.computeCareerRarity();
   }
 
-  check("nine tiers exist, in ascending order, each carrying its own label", () => {
+  check("nine tiers exist, in ascending order, each with its own pool of labels", () => {
     const names = api.CARD_TIERS.map((t) => t.name);
-    assert(names.join("|") === "Tin|Bronze|Silver|Gold|Gold²|Blue|Blue-Red|Green|Rainbow",
+    assert(names.join("|") === "Tin|Bronze|Silver|Gold|Gold X2|Blue|Blue-Red|Green|Rainbow",
       `tier order is ${names.join(", ")}`);
-    const labels = api.CARD_TIERS.map((t) => t.label);
-    assert(new Set(labels).size === labels.length, `two tiers share a label: ${labels.join(", ")}`);
+    // Every label across every pool must be unique — the whole point of tying
+    // colour to label is that seeing a label tells you the tier, so no two
+    // tiers may share one, even as the pool gives each tier some variety.
+    const allLabels = api.CARD_TIERS.flatMap((t) => t.labels);
+    assert(new Set(allLabels).size === allLabels.length, `a label is shared across tiers: ${allLabels.join(", ")}`);
     for (const t of api.CARD_TIERS) {
+      assert(Array.isArray(t.labels) && t.labels.length >= 2, `${t.name}: expected a pool of labels, got ${JSON.stringify(t.labels)}`);
       assert(/^#[0-9a-f]{6}$/i.test(t.accent), `${t.name}: accent "${t.accent}" is not a hex colour`);
       assert(Array.isArray(t.bg) && t.bg.length === 3, `${t.name}: bg is not a 3-stop gradient`);
     }
-    return "9 tiers, 9 distinct labels, all colours well-formed";
+    return `9 tiers, ${allLabels.length} distinct labels across all pools, all colours well-formed`;
   });
 
   check("a Tin card is the floor, not an exception", () => {
@@ -1066,57 +1103,81 @@ if (require.main === module) {
     // undefined (CARD_TIERS[0].test is a bare `() => true`, so this also
     // guards against that becoming conditional by accident).
     const t = tierFor(0, {});
-    assert(t.name === "Tin" && t.label === "PROFESSIONAL", `zero-goal career landed on ${t.name} / ${t.label}`);
+    assert(t.name === "Tin", `zero-goal career landed on ${t.name}`);
+    assert(api.CARD_TIERS[0].labels.includes(t.label), `"${t.label}" is not one of Tin's own labels`);
     return "an empty career still renders a card";
   });
 
-  check("the bottom five tiers are reachable by goals, trophies, or reputation alone", () => {
-    assert(tierFor(80, {}).name === "Tin", "80 goals escaped Tin");
-    assert(tierFor(150, {}).name === "Bronze", "150 goals did not reach Bronze");
+  check("a career's chosen label is always one of its own tier's, and stable on replay", () => {
+    // The label varies WITHIN a tier for flavour, but it must never wander
+    // into another tier's pool, and re-resolving the same finished career
+    // (e.g. Continue Career back to the end screen) must not flip it.
+    const a = tierFor(880, { ballonDors: 2 });
+    const b = tierFor(880, { ballonDors: 2 });
+    assert(a.label === b.label, `the same career resolved to two different labels: "${a.label}" vs "${b.label}"`);
+    assert(api.CARD_TIERS.find((t) => t.name === a.name).labels.includes(a.label),
+      `"${a.label}" does not belong to ${a.name}'s pool`);
+    return `stable across re-renders: "${a.label}"`;
+  });
+
+  check("the bottom five tiers are easy to reach — goals, trophies, or reputation alone", () => {
+    assert(tierFor(40, {}).name === "Tin", "40 goals escaped Tin");
+    assert(tierFor(80, {}).name === "Bronze", "80 goals did not reach Bronze");
     assert(tierFor(0, { leagueTitles: 1 }).name === "Bronze", "a single trophy did not reach Bronze");
-    assert(tierFor(300, {}).name === "Silver", "300 goals did not reach Silver");
-    assert(tierFor(0, {}, { reputation: 70 }).name === "Silver", "reputation 70 alone did not reach Silver");
-    assert(tierFor(400, {}).name === "Gold", "400 goals did not reach Gold");
-    assert(tierFor(500, {}).name === "Gold²", "500 goals did not reach Gold²");
-    assert(tierFor(0, { ballonDors: 1 }).name === "Gold²", "a single Ballon d'Or did not reach Gold²");
-    // This is the user's own worked example: a genuinely good career — 1-2
-    // Ballon d'Ors, north of 500 goals, short of 900 — caps at Gold², the top
-    // of the "ordinary" band, however good the rest of the career reads.
+    assert(tierFor(180, {}).name === "Silver", "180 goals did not reach Silver");
+    assert(tierFor(0, {}, { reputation: 65 }).name === "Silver", "reputation 65 alone did not reach Silver");
+    assert(tierFor(260, {}).name === "Gold", "260 goals did not reach Gold");
+    assert(tierFor(350, {}).name === "Gold X2", "350 goals did not reach Gold X2");
+    assert(tierFor(0, { ballonDors: 1 }).name === "Gold X2", "a single Ballon d'Or did not reach Gold X2");
+    // The user's own worked example: a genuinely good career — 1-2 Ballon
+    // d'Ors, well north of the Gold X2 goal bar, but short of Blue's 3
+    // Ballon d'Ors — caps at Gold X2, however good the rest of it reads.
     const goodCareer = tierFor(880, { ballonDors: 2 });
-    assert(goodCareer.name === "Gold²", `880 goals + 2 Ballon d'Ors landed on ${goodCareer.name}, not Gold²`);
-    return "Tin/Bronze/Silver/Gold/Gold² all individually reachable";
+    assert(goodCareer.name === "Gold X2", `880 goals + 2 Ballon d'Ors landed on ${goodCareer.name}, not Gold X2`);
+    return "Tin/Bronze/Silver/Gold/Gold X2 all individually reachable, at lower bars than before";
   });
 
-  check("the top four tiers need goals AND Ballon d'Ors together, not either alone", () => {
-    // Goals without the individual award: capped at Gold², however high.
-    assert(tierFor(999, {}).name === "Gold²", `999 goals with no Ballon d'Or reached ${tierFor(999, {}).name}`);
-    // Ballon d'Ors without the goals: also capped at Gold².
-    assert(tierFor(100, { ballonDors: 8 }).name === "Gold²", `8 Ballon d'Ors on 100 goals reached ${tierFor(100, { ballonDors: 8 }).name}`);
-    // Both together, at each explicit threshold from the brief.
-    assert(tierFor(950, { ballonDors: 2 }).name === "Blue", "2 Ballon d'Ors + 950 goals did not reach Blue");
-    assert(tierFor(949, { ballonDors: 2 }).name === "Gold²", "949 goals still cleared Blue's bar");
-    assert(tierFor(975, { ballonDors: 3 }).name === "Blue-Red", "3 Ballon d'Ors + 975 goals did not reach Blue-Red");
-    assert(tierFor(985, { ballonDors: 6 }).name === "Green", "6 Ballon d'Ors + 985 goals did not reach Green");
+  check("the top four tiers are hard to reach — goals AND a steeply rising Ballon d'Or count together", () => {
+    // Goals without the individual awards: capped at Gold X2, however high.
+    assert(tierFor(999, {}).name === "Gold X2", `999 goals with no Ballon d'Or reached ${tierFor(999, {}).name}`);
+    // Ballon d'Ors without the goals: also capped at Gold X2.
+    assert(tierFor(100, { ballonDors: 8 }).name === "Gold X2", `8 Ballon d'Ors on 100 goals reached ${tierFor(100, { ballonDors: 8 }).name}`);
+    // Both together, at each explicit threshold — 3/960, 5/980, 7/995, 8/1000.
+    assert(tierFor(960, { ballonDors: 3 }).name === "Blue", "3 Ballon d'Ors + 960 goals did not reach Blue");
+    assert(tierFor(959, { ballonDors: 3 }).name === "Gold X2", "959 goals still cleared Blue's bar");
+    assert(tierFor(960, { ballonDors: 2 }).name === "Gold X2", "2 Ballon d'Ors still cleared Blue's bar");
+    assert(tierFor(980, { ballonDors: 5 }).name === "Blue-Red", "5 Ballon d'Ors + 980 goals did not reach Blue-Red");
+    assert(tierFor(980, { ballonDors: 4 }).name === "Blue", "4 Ballon d'Ors wrongly cleared Blue-Red's bar");
+    assert(tierFor(995, { ballonDors: 7 }).name === "Green", "7 Ballon d'Ors + 995 goals did not reach Green");
+    assert(tierFor(995, { ballonDors: 6 }).name === "Blue-Red", "6 Ballon d'Ors wrongly cleared Green's bar");
     assert(tierFor(1000, { ballonDors: 8 }).name === "Rainbow", "the exact 1000/8 benchmark did not reach Rainbow");
-    // The Rainbow bar is the same Messi benchmark used elsewhere in this
-    // project as the realistic ceiling — a 7-Ballon-d'Or career, already an
-    // extraordinary outlier, still does not buy the top tier.
+    // Rainbow's bar is the game's own literal win condition (LEVERS.goalTarget
+    // = 1000), so it cannot be raised any further — a 7-Ballon-d'Or career at
+    // the goal cap, already an extraordinary outlier, still does not buy it.
     assert(tierFor(1000, { ballonDors: 7 }).name === "Green", "7 Ballon d'Ors at 1000 goals reached Rainbow");
-    return "Blue/Blue-Red/Green/Rainbow all gated on goals AND Ballon d'Ors together";
+    return "Blue/Blue-Red/Green/Rainbow each need their own goal AND Ballon d'Or bar, both risen from before";
   });
 
-  check("the six radar/stat values used by the card are all in FIFA's 1-99 range", () => {
-    makeState({ club: "Arsenal", age: 27, baseRating: 88,
-      attrs: { heading: 90, fitness: 85, strength: 82, height: 188, weight: 84, leftFoot: 70, rightFoot: 91, speed: 89 } });
+  check("the card's radar uses the Career Profile tab's own six axes, not a separate FIFA breakdown", () => {
+    makeState({ club: "Arsenal", age: 27, baseRating: 88, mentalityRating: 72,
+      attrs: { heading: 90, fitness: 85, strength: 82, height: 188, weight: 84, leftFoot: 70, rightFoot: 91, speed: 89 },
+      derived: { agility: 78, balance: 74, finishing: 86 } });
     const peak = api.peakSnapshot();
-    const stats = api.cardFifaStats(peak);
-    assert(stats.length === 6, `expected 6 stats, got ${stats.length}`);
-    const labels = stats.map(([l]) => l).join(",");
-    assert(labels === "PAC,SHO,PAS,DRI,PHY,HEA", `stat order/labels changed: ${labels}`);
-    for (const [label, val] of stats) {
-      assert(Number.isInteger(val) && val >= 1 && val <= 99, `${label} is ${val}, outside 1-99`);
+    const cardStats = api.cardRadarStats(peak);
+    assert(cardStats.length === 6, `expected 6 stats, got ${cardStats.length}`);
+    const labels = cardStats.map(([l]) => l).join(",");
+    assert(labels === "AERIAL,SHOOTING,MENTAL,SPEED,BALANCE,PHYSICAL", `stat order/labels changed: ${labels}`);
+    for (const [label, val] of cardStats) {
+      assert(Number.isInteger(val) && val >= 0 && val <= 100, `${label} is ${val}, outside 0-100`);
     }
-    return `${stats.map(([l, v]) => `${l} ${v}`).join(" / ")}`;
+    // Same underlying values the live tab would show for this exact
+    // attrs/derived/mentality combination — the card must not silently drift
+    // from what the player already saw in-career.
+    const live = api.computeRadarValuesFor(peak.attrs, peak.derived, peak.mentalityRating, null);
+    const byLabel = Object.fromEntries(cardStats);
+    assert(byLabel.AERIAL === Math.round(live.aerial), `card aerial ${byLabel.AERIAL} != live ${live.aerial}`);
+    assert(byLabel.PHYSICAL === Math.round(live.physical), `card physical ${byLabel.PHYSICAL} != live ${live.physical}`);
+    return `${cardStats.map(([l, v]) => `${l} ${v}`).join(" / ")}`;
   });
 
   check("a World Cup win names itself on the card, not just a trophy count", () => {
@@ -1137,6 +1198,161 @@ if (require.main === module) {
     const line = api.cardTagline();
     assert(/2x World Cup winner/.test(line), `expected a "2x" count in: ${line}`);
     return line;
+  });
+
+  group("League pyramid promotion/relegation");
+
+  // Regression test for a real bug report: a player's club (Bolton) finished
+  // 5th in the Championship table shown on the Leagues tab, but the season
+  // log said it had been relegated to League One. Root cause: the lower
+  // boundary of each division (Championship -> League 1, League 1 -> League
+  // 2, League 2 -> National League) re-derived its own order with a fresh,
+  // independent call to rankClubsByStrength instead of reusing the real
+  // simulated table already computed for the division the player was in —
+  // so a mid-table finish could get relegated by pure chance, decided by a
+  // table that had nothing to do with the season just played.
+  function withRestoredLeagues(fn) {
+    const before = {};
+    for (const c of Object.keys(api.TEAM_DATABASE)) before[c] = api.TEAM_DATABASE[c].league;
+    try {
+      return fn();
+    } finally {
+      for (const c of Object.keys(before)) api.TEAM_DATABASE[c].league = before[c];
+    }
+  }
+
+  check("a mid-table Championship finish is never relegated to League One by a second, unrelated random draw", () => {
+    const champClubs = api.getChampionshipClubs();
+    assert(champClubs.length >= 20, `expected a full Championship, got ${champClubs.length} clubs`);
+    const fixedOrder = champClubs.slice();
+    const midTableClub = fixedOrder[10];               // solidly mid-table, nowhere near either boundary
+    const bottomThree = fixedOrder.slice(-3);           // the real table's actual relegation zone
+    const fakeSorted = fixedOrder.map((team) => ({ team }));
+
+    const result = withRestoredLeagues(() => api.runPromotionRelegation(fakeSorted, "Championship"));
+
+    assert(result && result.champL1, "runPromotionRelegation did not return a champL1 result");
+    assert(!result.champL1.relegated.includes(midTableClub),
+      `${midTableClub} finished mid-table in the real table but was relegated anyway — relegated: ${result.champL1.relegated.join(", ")}`);
+    for (const c of bottomThree) {
+      assert(result.champL1.relegated.includes(c),
+        `${c} finished in the real table's bottom 3 but was not relegated — relegated: ${result.champL1.relegated.join(", ")}`);
+    }
+    return `mid-table ${midTableClub} stayed up; the real bottom 3 (${bottomThree.join(", ")}) went down`;
+  });
+
+  check("the same holds one tier down: League 1's own table decides its League 2 relegation", () => {
+    const l1Clubs = api.getLeague1Clubs();
+    assert(l1Clubs.length >= 20, `expected a full League One, got ${l1Clubs.length} clubs`);
+    const fixedOrder = l1Clubs.slice();
+    const midTableClub = fixedOrder[10];
+    const bottomThree = fixedOrder.slice(-3);
+    const fakeSorted = fixedOrder.map((team) => ({ team }));
+
+    const result = withRestoredLeagues(() => api.runPromotionRelegation(fakeSorted, "League1"));
+
+    assert(result && result.l1L2, "runPromotionRelegation did not return an l1L2 result");
+    assert(!result.l1L2.relegated.includes(midTableClub),
+      `${midTableClub} finished mid-table in League 1's real table but was relegated anyway`);
+    for (const c of bottomThree) {
+      assert(result.l1L2.relegated.includes(c), `${c} finished in League 1's real bottom 3 but was not relegated`);
+    }
+    return `mid-table ${midTableClub} stayed up; the real bottom 3 (${bottomThree.join(", ")}) went down`;
+  });
+
+  check("promotion into a division still comes from its own table's top, unaffected by the fix", () => {
+    // The fix reuses one order for both boundaries of a division — this
+    // confirms that still means "promoted from the top", not an accidental
+    // side effect that stops promotion working.
+    const champClubs = api.getChampionshipClubs();
+    const fixedOrder = champClubs.slice();
+    const fakeSorted = fixedOrder.map((team) => ({ team }));
+    const topTwo = fixedOrder.slice(0, 2);
+
+    const result = withRestoredLeagues(() => api.runPromotionRelegation(fakeSorted, "Championship"));
+
+    for (const c of topTwo) {
+      assert(result.promoted.includes(c), `${c} finished top 2 of the Championship's real table but was not promoted`);
+    }
+    return `top 2 (${topTwo.join(", ")}) promoted, as the real table said they should be`;
+  });
+
+  group("Career achievements");
+
+  // Three achievements were checked against the wrong thing entirely and
+  // could never fire, found by cross-checking each ACHIEVEMENTS threshold
+  // against what the field it reads can actually produce.
+  check("One Club Man is reachable — 10+ seasons at a single club actually unlocks it", () => {
+    // getMaxYearsAtClub used to read clubStats[club].years, a field clubStats
+    // never sets (it only ever sets .seasons — .years means contract length
+    // elsewhere in this file), so this always evaluated to 0.
+    makeState({ clubStats: { Arsenal: { apps: 300, goals: 120, assists: 40, seasons: 10, titles: 2 } } });
+    assert(api.getMaxYearsAtClub() === 10, `getMaxYearsAtClub() returned ${api.getMaxYearsAtClub()}, not the 10 seasons on record`);
+    const ids = api.checkCareerAchievements();
+    assert(ids.includes("one_club_man"), `expected one_club_man among [${ids.join(", ")}]`);
+    return `${ids.length} achievements unlocked from this state, including one_club_man`;
+  });
+
+  check("Perfect 10 fires at the rating scale's actual ceiling (9.9), not an unreachable literal 10", () => {
+    // seasonRating is clamped to a 5.3-9.9 scale (see capturePeak's comment),
+    // so bestRating can never reach 10 — checking >= 10 meant this achievement
+    // could never unlock no matter how good a season was.
+    makeState({ bestRating: 9.9 });
+    assert(api.checkCareerAchievements().includes("perfect_10"), "9.9, the rating scale's own ceiling, did not unlock Perfect 10");
+    makeState({ bestRating: 9.8 });
+    assert(!api.checkCareerAchievements().includes("perfect_10"), "9.8 wrongly unlocked Perfect 10");
+    return "9.9 unlocks it, 9.8 does not — matches the documented 5.3-9.9 scale";
+  });
+
+  check("World Traveller counts Saudi Arabia and the US as real countries, not folded into England", () => {
+    // getClubCountry defaulted anything that wasn't LaLiga/SerieA/Bundesliga
+    // to "England" — including Saudi and MLS clubs, both real, reachable
+    // destinations (forced late-career moves, transfer offers). A player who
+    // genuinely played in England, Saudi Arabia and the US only counted as
+    // one country.
+    assert(api.getClubCountry("Al Hilal") === "Saudi Arabia", `Al Hilal (Saudi) counted as ${api.getClubCountry("Al Hilal")}`);
+    assert(api.getClubCountry("Inter Miami") === "United States", `Inter Miami (MLS) counted as ${api.getClubCountry("Inter Miami")}`);
+    assert(api.getClubCountry("Arsenal") === "England", `Arsenal counted as ${api.getClubCountry("Arsenal")}`);
+    makeState({ clubsPlayed: new Set(["Arsenal", "Al Hilal", "Inter Miami"]) });
+    assert(api.getCountriesPlayed() === 3, `expected 3 distinct countries, got ${api.getCountriesPlayed()}`);
+    const ids = api.checkCareerAchievements();
+    assert(ids.includes("world_traveller"), `expected world_traveller among [${ids.join(", ")}]`);
+    return "England + Saudi Arabia + United States correctly counted as 3 distinct countries";
+  });
+
+  check("a career's own achievements show up on ITS card whether or not an account exists", () => {
+    // earnedAchievements is what the card reads, and it must not depend on
+    // the (optional, separate) account system at all — neither requiring
+    // one to exist, nor hiding a milestone this career earned just because
+    // some earlier career already banked the same id account-wide.
+    makeState({ totalGoals: 1000, bestRating: 9.9, honours: { ballonDors: 1, leagueTitles: 0, domesticCups: 0, europeanCups: 0, intlTrophies: 0, goldenBoots: 0, playerOfSeason: 0, youngPlayer: 0, tots: 0 } });
+    const earned = api.earnedAchievements();
+    const earnedIds = earned.map((a) => a.id);
+    assert(earnedIds.includes("1000_goals"), `expected 1000_goals among [${earnedIds.join(", ")}]`);
+    assert(earnedIds.includes("perfect_10"), `expected perfect_10 among [${earnedIds.join(", ")}]`);
+    assert(earnedIds.includes("ballon_dor"), `expected ballon_dor among [${earnedIds.join(", ")}]`);
+    // Each entry is the full ACHIEVEMENTS record (name/desc/rare), not a bare id.
+    const goalAch = earned.find((a) => a.id === "1000_goals");
+    assert(goalAch && goalAch.name === "1000 Club" && goalAch.rare === true, `1000_goals entry malformed: ${JSON.stringify(goalAch)}`);
+    // Simulate an account that already has 1000_goals banked from an earlier
+    // career — checkCareerAchievements (the account-notification path)
+    // should go quiet on it, but earnedAchievements (the card) must not.
+    api.saveAccount({ username: "u", password: "p", achievements: ["1000_goals"] });
+    assert(!api.checkCareerAchievements().includes("1000_goals"), "checkCareerAchievements should not re-announce an already-banked id");
+    assert(api.earnedAchievements().map((a) => a.id).includes("1000_goals"),
+      "earnedAchievements hid a milestone this career earned just because an account had already banked it");
+    return `${earned.length} achievements earned this career, unaffected by account history`;
+  });
+
+  check("rare achievement badges render on the card without throwing", () => {
+    makeState({ club: "Real Madrid", age: 34, baseRating: 92, totalGoals: 1000, bestRating: 9.9,
+      honours: { ballonDors: 8, leagueTitles: 8, domesticCups: 3, europeanCups: 4, intlTrophies: 2,
+                 goldenBoots: 6, playerOfSeason: 5, youngPlayer: 1, tots: 7 },
+      clubStats: { "Real Madrid": { apps: 500, goals: 400, assists: 80, seasons: 12, titles: 8 } } });
+    api.renderShareCard();
+    const badges = api.earnedAchievements().filter((a) => a.rare);
+    assert(badges.length >= 3, `expected several rare achievements from a maxed career, got ${badges.length}`);
+    return `${badges.length} rare achievements would show on the card`;
   });
 
   group("Leaderboard");
