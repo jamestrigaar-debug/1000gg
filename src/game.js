@@ -8443,6 +8443,7 @@
     renderWelcomeLeaderboard, leaderboardRowsHtml, init, newCareerId, ensureCareerId,
     resetWorldState, resetTeamDatabase,
     landCountry, landBuild, landSquad, draftStepKey, seedDraftStream, rand,
+    getEraSquadKeys, parseSquadKey, PLAYER_DATABASE_2025_26, MENTALITY_TRAITS,
     challengeLink, currentChallengeEntry, challengeStandingsHtml, renderChallengeResult, saveState,
     startChallengeCareer, checkUrlHashChallenge, renderChallengeInvite, renderChallengeOffer,
     showChallengeHub, joinChallengeByCode, createChallengeFromSetup, eraLabel,
