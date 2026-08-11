@@ -566,9 +566,12 @@
   // Mental combines the hidden personality rating with the career pillars;
   // Balance & Agility uses the existing derived agility/balance values;
   // Shooting uses the existing derived finishing value.
-  function computeRadarValues(attrs) {
-    const dv = state.derived || {};
-    const pillarValues = state.pillars ? Object.values(state.pillars) : [];
+  // Parameterized so both the live Career Profile tab (which reads current
+  // state) and the end-of-career card (which reads the frozen peak snapshot)
+  // can share one calculation instead of two radars silently drifting apart.
+  function computeRadarValuesFor(attrs, dv, mentalityRating, pillars) {
+    dv = dv || {};
+    const pillarValues = pillars ? Object.values(pillars) : [];
     const avgPillars = pillarValues.length ? pillarValues.reduce((s, v) => s + v, 0) / pillarValues.length : 50;
     const heightCm = attrs.height || 180;
     const heightAerial = clamp((heightCm - 165) / (195 - 165) * 100, 0, 100);
@@ -577,11 +580,15 @@
     return {
       aerial: attrs.heading * 0.75 + heightAerial * 0.25,
       shooting: dv.finishing || ((attrs.leftFoot + attrs.rightFoot) / 2),
-      mental: (state.mentalityRating || 50) * 0.7 + avgPillars * 0.3,
+      mental: (mentalityRating || 50) * 0.7 + avgPillars * 0.3,
       speed: attrs.speed,
       balanceAgility: (agility + balance) / 2,
       physical: (attrs.strength + attrs.fitness) / 2,
     };
+  }
+
+  function computeRadarValues(attrs) {
+    return computeRadarValuesFor(attrs, state.derived, state.mentalityRating, state.pillars);
   }
 
   function drawRadarChart(canvas, attrs) {
@@ -7584,62 +7591,97 @@
    * Rainbow) and a narrative label that always travels with it, so a card
    * never shows a top-tier finish with a throwaway label or vice versa.
    *
-   * The bottom five (Tin/Bronze/Silver/Gold/Gold²) are deliberately wide —
-   * this is where ~90% of careers land, from a real failure to a genuinely
-   * good one (1-2 Ballon d'Ors, 500-900 goals). Any ONE of goals/trophies/
-   * reputation clears the bar, same as the old system.
+   * The bottom five (Tin/Bronze/Silver/Gold/Gold X2) are deliberately easy to
+   * climb — most careers, including short or mediocre ones, should see some
+   * colour on the card rather than grey. Any ONE of goals/trophies/reputation
+   * clears the bar, same as before, just at lower bars than the first pass.
    *
-   * The top four (Blue/Blue-Red/Green/Rainbow) are a different shape on
-   * purpose: goals ALONE cannot buy them. Both the goal tally and the Ballon
-   * d'Or count must clear the bar together — this is the same principle
-   * behind making the Ballon d'Or itself hard to win (a league, real goals,
-   * not just a striker who never left the door). Rainbow's bar (1000 goals,
-   * 8 Ballon d'Ors) is deliberately the exact Messi benchmark this project
-   * already uses elsewhere as the realistic ceiling — reaching it here means
-   * reaching it for real, not a numbers-inflation exercise.
+   * The top four (Blue/Blue-Red/Green/Rainbow) are the opposite: harder than
+   * the first pass, not easier. Goals ALONE still cannot buy them — both the
+   * goal tally and the Ballon d'Or count must clear the bar together, and
+   * that Ballon d'Or bar now climbs steeply (3, then 5, then 7, then 8) so
+   * each of the top four actually separates a rare career from the last one,
+   * rather than four cards that all basically read "very good striker".
+   * Empirical testing of this engine's own simulation (maximally favourable
+   * settings, no strategic play) tops out around 830-840 career goals and
+   * never clears 900 — so Blue's 960-goal bar is already beyond blind luck
+   * and demands deliberate, skilled play to reach. Rainbow's bar (1000 goals,
+   * 8 Ballon d'Ors) is unchanged: it is the game's own literal win condition
+   * (LEVERS.goalTarget), so it was already the hardest number in the game and
+   * cannot be pushed any higher without moving the goalposts of the goal
+   * itself.
    */
   const CARD_TIERS = [
-    // name: the material/rarity word. label: the narrative achievement shown
-    // large on the card — this is what "linked to the colour" means: the two
-    // always arrive together, never mixed and matched.
-    { name: "Tin", label: "PROFESSIONAL",
+    // name: the material/rarity word. labels: a small pool of narrative
+    // achievement titles — this is what "linked to the colour" means: every
+    // option in a tier's pool is exclusive to that tier, so the label always
+    // tells you the tier even though the exact wording varies career to
+    // career. pickCardLabel below resolves the pool down to one string.
+    { name: "Tin", labels: ["PROFESSIONAL", "BENCH WARMER", "ACADEMY GRADUATE"],
       test: () => true,  // the floor — reached if nothing else applies
       ink: "#e7e9ee", accent: "#9a9ea6", accent2: "#6b6f76",
       bg: ["#22242a", "#1a1c21", "#131417"] },
-    { name: "Bronze", label: "SQUAD PLAYER",
-      test: (g, h, t) => g >= 150 || t >= 1,
+    { name: "Bronze", labels: ["SQUAD PLAYER", "DEPENDABLE PRO", "ROTATION OPTION"],
+      test: (g, h, t) => g >= 80 || t >= 1,
       ink: "#fdf1e6", accent: "#c17f4e", accent2: "#7a4a26",
       bg: ["#2c1c10", "#22150c", "#180e07"] },
-    { name: "Silver", label: "CULT HERO",
-      test: (g, h, t) => g >= 300 || t >= 2 || state.reputation >= 70,
+    { name: "Silver", labels: ["CULT HERO", "FIRST-TEAM REGULAR", "FAN FAVOURITE"],
+      test: (g, h, t) => g >= 180 || t >= 2 || state.reputation >= 65,
       ink: "#f5f7fb", accent: "#c9d2df", accent2: "#7c8699",
       bg: ["#1f232c", "#181b22", "#111318"] },
-    { name: "Gold", label: "CLUB LEGEND",
-      test: (g, h, t) => g >= 400 || t >= 3,
+    { name: "Gold", labels: ["CLUB LEGEND", "TITLE WINNER", "TOP SCORER"],
+      test: (g, h, t) => g >= 260 || t >= 3,
       ink: "#fff8e6", accent: "#e6b955", accent2: "#a3792c",
       bg: ["#2e2410", "#241b0a", "#181205"] },
-    { name: "Gold²", label: "WORLD CLASS",
-      test: (g, h, t) => g >= 500 || h.ballonDors >= 1 || t >= 4,
+    { name: "Gold X2", labels: ["WORLD CLASS", "ELITE STRIKER", "SUPERSTAR"],
+      test: (g, h, t) => g >= 350 || h.ballonDors >= 1 || t >= 4,
       ink: "#fffaf0", accent: "#ffcf4d", accent2: "#ff9d2e",
       bg: ["#332711", "#261c0b", "#191106"], foil: true },
-    // From here on: goals AND Ballon d'Ors together, not either/or.
-    { name: "Blue", label: "BALLON D'OR WINNER",
-      test: (g, h) => h.ballonDors >= 2 && g >= 950,
+    // From here on: goals AND Ballon d'Ors together, not either/or — and the
+    // Ballon d'Or bar climbs steeply tier to tier (3, 5, 7, 8) so these four
+    // are genuinely harder to tell apart from each other, not just renamed.
+    { name: "Blue", labels: ["BALLON D'OR WINNER", "AWARD-WINNING ICON", "GAME CHANGER"],
+      test: (g, h) => h.ballonDors >= 3 && g >= 960,
       ink: "#eaf4ff", accent: "#4aa3ff", accent2: "#1f5fbf",
       bg: ["#0d2440", "#0a1a30", "#071224"] },
-    { name: "Blue-Red", label: "GLOBAL ICON",
-      test: (g, h) => h.ballonDors >= 3 && g >= 975,
+    { name: "Blue-Red", labels: ["GLOBAL ICON", "GENERATIONAL TALENT", "HISTORY MAKER"],
+      test: (g, h) => h.ballonDors >= 5 && g >= 980,
       ink: "#fff0f0", accent: "#4aa3ff", accent2: "#ff4d4d",
       bg: ["#241030", "#2a0f18", "#160a12"], duotone: ["#1f5fbf", "#c22b2b"], foil: true },
-    { name: "Green", label: "LEGENDARY",
-      test: (g, h) => h.ballonDors >= 6 && g >= 985,
+    { name: "Green", labels: ["LEGENDARY", "GOAT CONTENDER", "ALL-TIME GREAT"],
+      test: (g, h) => h.ballonDors >= 7 && g >= 995,
       ink: "#eafff2", accent: "#00d06c", accent2: "#0a8f4d",
       bg: ["#0c2b1c", "#092013", "#06140c"], foil: true },
-    { name: "Rainbow", label: "FOOTBALL GOD",
+    { name: "Rainbow", labels: ["FOOTBALL GOD", "THE GREATEST OF ALL TIME", "IMMORTAL"],
       test: (g, h) => h.ballonDors >= 8 && g >= 1000,
       ink: "#ffffff", accent: "#f6c453", accent2: "#ff8a3c",
       bg: ["#1a1522", "#150f1c", "#0f0a15"], rainbow: true, foil: true },
   ];
+
+  /* A small, stable hash over whatever facts are passed in — not
+   * cryptographic, just enough spread to pick a pool index that stays fixed
+   * for one finished career (re-rendering the same save must not flip the
+   * label) while varying naturally across different careers. */
+  function stableHash(...parts) {
+    let h = 0;
+    for (const part of parts) {
+      const s = String(part == null ? "" : part);
+      for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+    }
+    return h >>> 0;
+  }
+
+  /* Which of a tier's label pool this specific career gets. Seeded on facts
+   * that are fixed once a career ends (name, country, goals, clubs, Ballon
+   * d'Ors) rather than anything that could change between two renders of the
+   * same finished save. */
+  function pickCardLabel(tier) {
+    const pool = tier.labels || [tier.label || tier.name];
+    if (pool.length <= 1) return pool[0];
+    const seed = stableHash(state.player && state.player.name, state.country,
+      state.totalGoals, state.clubsPlayed ? state.clubsPlayed.size : 0, state.honours.ballonDors);
+    return pool[seed % pool.length];
+  }
 
   function computeCareerRarity() {
     const goals = state.totalGoals;
@@ -7649,10 +7691,11 @@
     for (let i = CARD_TIERS.length - 1; i >= 0; i--) {
       const tier = CARD_TIERS[i];
       if (tier.test(goals, h, trophies)) {
-        return Object.assign({ tier: tier.name, color: tier.accent, border: tier.accent }, tier);
+        return Object.assign({ tier: tier.name, color: tier.accent, border: tier.accent },
+          tier, { label: pickCardLabel(tier) });
       }
     }
-    return CARD_TIERS[0];  // unreachable — Tin's test() is always true
+    return Object.assign({}, CARD_TIERS[0], { label: pickCardLabel(CARD_TIERS[0]) });  // unreachable — Tin's test() is always true
   }
 
   function getCardDNA() {
@@ -7675,30 +7718,28 @@
    * pace and fitness floors of a man who should have stopped years ago.
    * Career totals stay career-long; only the player is frozen at their peak.
    */
-  function cardFifaStats(peak) {
-    const a = peak.attrs || {};
-    const d = peak.derived || {};
-    const val = (v, fallback) => Math.round(clamp(v == null ? fallback : v, 1, 99));
-    const bestFoot = Math.max(a.leftFoot || 0, a.rightFoot || 0);
-    const weakFoot = Math.min(a.leftFoot || 0, a.rightFoot || 0);
+  /* The card's radar uses the exact same six axes as the in-career "Career
+   * Profile" tab (Aerial/Shooting/Mental/Speed/Balance & Agility/Physical,
+   * via computeRadarValuesFor) rather than a separate FIFA-style PAC/SHO/
+   * PAS/DRI/PHY/HEA breakdown — a player recognises this shape because it is
+   * the one they have been looking at all career, just now frozen at their
+   * peak instead of read live. */
+  function cardRadarStats(peak) {
+    const values = computeRadarValuesFor(peak.attrs || {}, peak.derived || {}, peak.mentalityRating, null);
+    const val = (v) => Math.round(clamp(v, 0, 100));
     return [
-      ["PAC", val(a.speed, 50)],
-      ["SHO", val(d.finishing == null ? bestFoot : d.finishing, 50)],
-      ["PAS", val(weakFoot, 50)],
-      ["DRI", val(((d.agility == null ? a.speed : d.agility) + (d.balance == null ? a.strength : d.balance)) / 2, 50)],
-      ["PHY", val(a.strength, 50)],
-      ["HEA", val(a.heading, 50)],
+      ["AERIAL", val(values.aerial)],
+      ["SHOOTING", val(values.shooting)],
+      ["MENTAL", val(values.mental)],
+      ["SPEED", val(values.speed)],
+      ["BALANCE", val(values.balanceAgility)],
+      ["PHYSICAL", val(values.physical)],
     ];
   }
 
-  /* The card's radar, plotting the exact same six numbers cardFifaStats
-   * prints as text — deliberately not the in-career "Career Profile" tab's
-   * radar (drawRadarChart/computeRadarValues), which uses a different six
-   * axes (Aerial/Mental/Balance…) built from the LIVE state rather than the
-   * peak snapshot. Showing two different six-axis breakdowns of the same
-   * player on the one artefact would read as a contradiction — this one
-   * stays in lockstep with the numbers already on the card. Full 1-99 range,
-   * not compressed, so the shape reads the way an actual FIFA card's does. */
+  /* Same compression drawRadarChart uses: these composite axes cluster in
+   * 50-100, so mapping that range across the full radius is what makes the
+   * hexagon actually fill out instead of shrinking toward the centre. */
   function drawCardRadar(ctx, cx, cy, radius, stats, tier) {
     const n = stats.length;
     const angleFor = (i) => (Math.PI * 2 * i) / n - Math.PI / 2;
@@ -7706,6 +7747,7 @@
       const a = angleFor(i);
       return [cx + Math.cos(a) * radius * frac, cy + Math.sin(a) * radius * frac];
     };
+    const frac = (v) => clamp((clamp(v, 0, 100) - 50) / 50, 0, 1);
 
     // Grid rings.
     ctx.strokeStyle = "rgba(255,255,255,0.12)";
@@ -7731,21 +7773,27 @@
     // Data shape, tier-tinted.
     ctx.beginPath();
     stats.forEach(([, val], i) => {
-      const [x, y] = pointAt(i, clamp(val, 1, 99) / 99);
+      const [x, y] = pointAt(i, frac(val));
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
     ctx.closePath();
-    ctx.fillStyle = tier.accent + "4d";  // ~30% alpha, same hex-alpha trick as the chips
+    ctx.fillStyle = tier.accent + "61";  // ~38% alpha — solid enough to read as a shape, not a wash
     ctx.fill();
     ctx.strokeStyle = tier.accent;
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 3.5;  // was 2.5 — a hairline edge was the "weak" complaint
+    ctx.stroke();
+    // A thin bright edge on top of the tier stroke so the polygon pops as a
+    // solid badge instead of blending into a similarly-hued background (gold
+    // on dark brown reads weaker than green on dark green at the same alpha).
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 1.2;
     ctx.stroke();
 
     // Vertices.
     stats.forEach(([, val], i) => {
-      const [x, y] = pointAt(i, clamp(val, 1, 99) / 99);
+      const [x, y] = pointAt(i, frac(val));
       ctx.beginPath();
-      ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
       ctx.fillStyle = tier.ink;
       ctx.fill();
     });
@@ -7755,13 +7803,13 @@
     // around the hexagon instead of in two rows.
     ctx.textAlign = "center";
     stats.forEach(([label, val], i) => {
-      const [lx, ly] = pointAt(i, 1.34);
+      const [lx, ly] = pointAt(i, 1.4);
       ctx.fillStyle = tier.ink;
-      ctx.font = "bold 22px Arial, sans-serif";
-      ctx.fillText(String(val), lx, ly - 6);
+      ctx.font = "bold 17px Arial, sans-serif";
+      ctx.fillText(String(val), lx, ly - 5);
       ctx.fillStyle = tier.accent;
-      ctx.font = "bold 11px Arial, sans-serif";
-      ctx.fillText(label, lx, ly + 12);
+      ctx.font = "bold 9px Arial, sans-serif";
+      ctx.fillText(label, lx, ly + 9);
     });
   }
 
@@ -7777,9 +7825,17 @@
     const h = state.honours;
     const clubs = state.clubsPlayed ? state.clubsPlayed.size : 0;
     const facts = [];
+    // Same deterministic seed the label pool uses, so the SAME career always
+    // reads the same way on re-render, but two different careers don't open
+    // on identical phrasing just because they both moved between 3 clubs.
+    const seed = stableHash(state.player && state.player.name, state.country, state.totalGoals, clubs);
 
-    if (clubs <= 1) facts.push(`One-club career${state.club ? ` at ${state.club}` : ""}`);
-    else facts.push(`Played for ${clubs} clubs`);
+    if (clubs <= 1) {
+      facts.push(`One-club career${state.club ? ` at ${state.club}` : ""}`);
+    } else {
+      const openings = [`Played for ${clubs} clubs`, `A ${clubs}-club career`, `${clubs} clubs, one calling`];
+      facts.push(openings[seed % openings.length]);
+    }
 
     if (h.ballonDors > 0) facts.push(`${h.ballonDors} Ballon d'Or${h.ballonDors > 1 ? "s" : ""}`);
 
@@ -7792,9 +7848,12 @@
       facts.push(`${named.join(" & ")} winner`);
     }
 
+    if (h.goldenBoots > 0) facts.push(`${h.goldenBoots}x Golden Boot`);
     if (h.leagueTitles > 0) facts.push(`${h.leagueTitles}-time league champion`);
-    if (h.europeanCups > 0 && facts.length < 4) facts.push(`${h.europeanCups} European Cup${h.europeanCups > 1 ? "s" : ""}`);
-    if (h.domesticCups > 0 && facts.length < 4) facts.push(`${h.domesticCups} domestic cup${h.domesticCups > 1 ? "s" : ""}`);
+    if (h.europeanCups > 0) facts.push(`${h.europeanCups} European Cup${h.europeanCups > 1 ? "s" : ""}`);
+    if (h.playerOfSeason > 0) facts.push(`${h.playerOfSeason}x Player of the Season`);
+    if (h.domesticCups > 0) facts.push(`${h.domesticCups} domestic cup${h.domesticCups > 1 ? "s" : ""}`);
+    if (h.youngPlayer > 0) facts.push("Young Player of the Year");
 
     // A trophyless career still gets a fact, not silence after "Played for
     // N clubs" alone — the goal tally is the one number every career has.
@@ -7822,6 +7881,79 @@
       return kept;
     }
     return lines;
+  }
+
+  function hexToRgb(hex) {
+    const n = parseInt(String(hex).replace("#", ""), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+
+  /* Difficulty is a choice the player made before a single goal was scored —
+   * Easy gets nothing (it is the default, not an achievement), but Medium,
+   * Hard and Impossible each earn a visibly bigger flex than the last: a
+   * corner tag everyone gets, then an escalating outer glow, then Impossible
+   * alone gets the crackle accents — something to actually hunt for, the way
+   * the tier colour already is for the career itself. */
+  const DIFFICULTY_PERKS = {
+    medium: { label: "MEDIUM MODE", icon: "⚔️", glow: "#f5a623", glowLayers: 1 },
+    hard: { label: "HARD MODE", icon: "🔥", glow: "#ff5a36", glowLayers: 2 },
+    impossible: { label: "IMPOSSIBLE", icon: "💀", glow: "#ff2e63", glowLayers: 3, crackle: true },
+  };
+
+  function drawDifficultyPerk(ctx, w, h, difficulty) {
+    const perk = DIFFICULTY_PERKS[difficulty];
+    if (!perk) return;
+    const [gr, gg, gb] = hexToRgb(perk.glow);
+
+    // Outer glow, drawn widest-and-faintest first so the layers blend into
+    // a soft falloff instead of a hard ring — the harder the difficulty,
+    // the more layers, so the glow itself scales with the flex.
+    for (let i = perk.glowLayers; i >= 1; i--) {
+      const alpha = 0.16 * (perk.glowLayers - i + 1) / perk.glowLayers;
+      const off = i * 4;
+      ctx.strokeStyle = `rgba(${gr},${gg},${gb},${alpha.toFixed(2)})`;
+      ctx.lineWidth = 5 + i * 3;
+      ctx.strokeRect(3 - off, 3 - off, w - 6 + off * 2, h - 6 + off * 2);
+    }
+
+    // Corner tag — small, top-left, out of the way of the identity block.
+    ctx.save();
+    ctx.textAlign = "left";
+    ctx.font = "bold 12px Arial, sans-serif";
+    const label = `${perk.icon} ${perk.label}`;
+    const tagW = ctx.measureText(label).width + 24;
+    const tagX = 16, tagY = 14, tagH = 26;
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.strokeStyle = perk.glow;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(tagX, tagY, tagW, tagH, 13);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(label, tagX + 12, tagY + 18);
+    ctx.restore();
+
+    // Impossible alone gets the crackle — two small lightning accents near
+    // opposite corners, the "this one looks broken/electrified" detail that
+    // makes it an achievement to hunt for rather than just a bigger glow.
+    if (perk.crackle) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,255,255,0.85)";
+      ctx.lineWidth = 2;
+      const bolt = (x, y, flip) => {
+        const s = flip ? -1 : 1;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + 13 * s, y + 9);
+        ctx.lineTo(x + 5 * s, y + 13);
+        ctx.lineTo(x + 18 * s, y + 25);
+        ctx.stroke();
+      };
+      bolt(w - 26, 46, true);
+      bolt(26, h - 66, false);
+      ctx.restore();
+    }
   }
 
   function renderShareCard() {
@@ -7881,20 +8013,34 @@
       ctx.fillRect(0, 0, w, h);
     }
 
+    // A white-edged sheen rather than a flat single-hue line — the border
+    // itself should read as premium foil, not a colouring-book outline.
+    const borderGradient = (x0, y0, x1, y1) => {
+      const g = ctx.createLinearGradient(x0, y0, x1, y1);
+      g.addColorStop(0, "#ffffff");
+      g.addColorStop(0.15, tier.accent);
+      g.addColorStop(0.85, tier.accent);
+      g.addColorStop(1, "#ffffff");
+      return g;
+    };
     ctx.lineWidth = 6;
-    ctx.strokeStyle = tier.rainbow ? rainbowGradient(0, 0, w, h) : tier.accent;
+    ctx.strokeStyle = tier.rainbow ? rainbowGradient(0, 0, w, h) : borderGradient(0, 0, w, h);
     ctx.strokeRect(3, 3, w - 6, h - 6);
 
-    // Material tier, then the narrative label — always the same pair, never
-    // mixed and matched, so "FOOTBALL GOD" only ever appears on a Rainbow
-    // card and "PROFESSIONAL" only ever on a Tin one.
+    // The difficulty perk — a corner tag plus an escalating outer glow for
+    // medium/hard/impossible careers, drawn now so the identity block below
+    // sits on top of it. Easy and untagged saves get nothing extra.
+    drawDifficultyPerk(ctx, w, h, state.difficulty);
+
+    // The narrative label is the whole headline now — the material/rarity
+    // word used to run above it as its own line ("GOLD X2 TIER"), but the
+    // border colour and background gradient already say the rarity; a
+    // second line repeating it in words was just noise above the real
+    // title.
     ctx.textAlign = "center";
-    ctx.fillStyle = tier.accent2;
-    ctx.font = "bold 12px Arial, sans-serif";
-    ctx.fillText(`${tier.name.toUpperCase()} TIER`, cx, 38);
     ctx.fillStyle = tier.rainbow ? rainbowGradient(cx - 140, 0, cx + 140, 0) : tier.accent;
-    ctx.font = "bold 26px Arial, sans-serif";
-    ctx.fillText(tier.label, cx, 70);
+    ctx.font = "bold 28px Arial, sans-serif";
+    ctx.fillText(tier.label, cx, 52);
 
     // Overall at prime, in a ring
     const ringCy = 168;
@@ -7912,32 +8058,42 @@
     ctx.font = "bold 11px Arial, sans-serif";
     ctx.fillText("OVERALL", cx, ringCy + 36);
 
-    // Identity
+    // Identity — the name and the nation's flag are the biggest things on the
+    // card after the tier label, on purpose: this is whose card it is, and a
+    // flag reads at a glance across a shared timeline in a way small inline
+    // text never does.
     const pos = POSITIONS[state.position] || POSITIONS.ST;
     const flag = (state.player.origin && state.player.origin.flag) || "";
+    if (flag) {
+      ctx.fillStyle = tier.ink;
+      ctx.font = "48px Arial, sans-serif";
+      ctx.fillText(flag, cx, 258);
+    }
     ctx.fillStyle = tier.ink;
-    ctx.font = "bold 38px Arial, sans-serif";
-    ctx.fillText(String(state.player.name || "").toUpperCase(), cx, 278);
+    ctx.font = "bold 54px Arial, sans-serif";
+    ctx.fillText(String(state.player.name || "").toUpperCase(), cx, 322);
     ctx.fillStyle = tier.accent;
-    ctx.font = "bold 16px Arial, sans-serif";
-    ctx.fillText(`${flag} ${pos.label.toUpperCase()} · ${String(state.country || "").toUpperCase()}`, cx, 305);
+    ctx.font = "bold 18px Arial, sans-serif";
+    ctx.fillText(`${pos.label.toUpperCase()} · ${String(state.country || "").toUpperCase()}`, cx, 350);
 
     // The prime this card is frozen at
     ctx.fillStyle = tier.ink + "b0";
     ctx.font = "12px Arial, sans-serif";
     const primeBits = [`PRIME ${seasonLabel(peak.season)}`, `AGE ${peak.age}`];
     if (peak.club) primeBits.push(String(peak.club).toUpperCase());
-    ctx.fillText(primeBits.join("  ·  "), cx, 328);
+    ctx.fillText(primeBits.join("  ·  "), cx, 374);
 
-    // The radar — the same six numbers a flat stat row used to show, plotted
-    // as a shape instead. It IS the stat block now, not an addition beside it.
-    drawCardRadar(ctx, cx, 548, 138, cardFifaStats(peak), tier);
+    // The radar — the same six axes the Career Profile tab already shows the
+    // player live, plotted at their peak instead. Kept small and modest so
+    // it reads as one element among several — the name and flag above it are
+    // the point of the card, not this.
+    drawCardRadar(ctx, cx, 528, 78, cardRadarStats(peak), tier);
 
     // Divider
     ctx.strokeStyle = tier.accent + "40";
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(60, 760); ctx.lineTo(w - 60, 760); ctx.stroke();
+    ctx.moveTo(60, 690); ctx.lineTo(w - 60, 690); ctx.stroke();
 
     // Career totals — the whole career, not the prime season
     const trophies = hon.leagueTitles + hon.domesticCups + hon.europeanCups + hon.intlTrophies;
@@ -7951,32 +8107,67 @@
       const x = 105 + i * 130;
       ctx.fillStyle = tier.ink;
       ctx.font = "bold 30px Arial, sans-serif";
-      ctx.fillText(String(val), x, 816);
+      ctx.fillText(String(val), x, 744);
       ctx.fillStyle = tier.accent;
       ctx.font = "bold 11px Arial, sans-serif";
-      ctx.fillText(label, x, 836);
+      ctx.fillText(label, x, 764);
     });
 
-    // Honours, as a single row of chips
+    // Honours, as solid badges — every award the career actually won, not
+    // just team trophies. The icon is the hero (drawn large, centred in a
+    // filled badge) and the count is a small corner marker, not the other
+    // way round like the old thin-lined pill did. Splits to a second row
+    // rather than overflowing, since a Rainbow-tier career can plausibly
+    // earn all nine.
     const chips = [
       ["🏆", hon.leagueTitles], ["🌍", hon.europeanCups], ["🦁", hon.intlTrophies],
       ["🏅", hon.ballonDors], ["👟", hon.goldenBoots], ["🥇", hon.domesticCups],
+      ["⭐", hon.playerOfSeason], ["🌱", hon.youngPlayer], ["🎖️", hon.tots],
     ].filter(([, v]) => v > 0);
     if (chips.length) {
-      ctx.font = "bold 15px Arial, sans-serif";
-      const chipW = chips.map(([ic, v]) => ctx.measureText(`${ic} ${v}`).width + 22);
-      let x = cx - chipW.reduce((s, v) => s + v + 8, -8) / 2;
-      chips.forEach(([ic, v], i) => {
-        ctx.fillStyle = "rgba(0,0,0,0.25)";
-        ctx.strokeStyle = tier.accent + "80";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(x, 862, chipW[i], 30, 15);
-        ctx.fill(); ctx.stroke();
-        ctx.fillStyle = tier.ink;
-        ctx.textAlign = "center";
-        ctx.fillText(`${ic} ${v}`, x + chipW[i] / 2, 882);
-        x += chipW[i] + 8;
+      const R = 32;
+      const gap = 16;
+      const badgeW = R * 2;
+      const maxPerRow = 6;
+      const rowsArr = chips.length <= maxPerRow
+        ? [chips]
+        : [chips.slice(0, Math.ceil(chips.length / 2)), chips.slice(Math.ceil(chips.length / 2))];
+      rowsArr.forEach((row, r) => {
+        const rowW = row.length * badgeW + (row.length - 1) * gap;
+        let x = cx - rowW / 2 + R;
+        const rowY = 826 + r * 96;
+        row.forEach(([ic, v]) => {
+          // Solid, tier-tinted badge — a radial tint keeps it from reading
+          // flat, and the ring is an opaque stroke, not a hairline.
+          const rg = ctx.createRadialGradient(x, rowY - 8, 4, x, rowY, R);
+          rg.addColorStop(0, tier.accent + "3d");
+          rg.addColorStop(1, "rgba(0,0,0,0.55)");
+          ctx.beginPath();
+          ctx.arc(x, rowY, R, 0, Math.PI * 2);
+          ctx.fillStyle = rg;
+          ctx.fill();
+          ctx.strokeStyle = tier.accent;
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+          // Icon — the hero, drawn large and centred in the badge.
+          ctx.textAlign = "center";
+          ctx.font = "26px Arial, sans-serif";
+          ctx.fillStyle = tier.ink;
+          ctx.fillText(ic, x, rowY + 9);
+          // Count — a small corner marker, not the headline number it used to be.
+          const bx = x + R * 0.66, by = rowY + R * 0.66;
+          ctx.beginPath();
+          ctx.arc(bx, by, 13, 0, Math.PI * 2);
+          ctx.fillStyle = tier.accent;
+          ctx.fill();
+          ctx.strokeStyle = tier.bg[2];
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.fillStyle = tier.bg[2];
+          ctx.font = "bold 13px Arial, sans-serif";
+          ctx.fillText(String(v), bx, by + 4);
+          x += badgeW + gap;
+        });
       });
     }
 
@@ -7987,7 +8178,7 @@
     ctx.font = "italic 14px Georgia, serif";
     const tagline = cardTagline();
     wrapCanvasText(ctx, tagline, w - 130, 3).forEach((line, i) => {
-      ctx.fillText(line, cx, 936 + i * 22);
+      ctx.fillText(line, cx, 1000 + i * 24);
     });
 
     // Footer
@@ -8671,7 +8862,8 @@
     startCreation, compilePlayer, simulateSeason, applySeasonalAttributeChanges, playSeason,
     recomputePlayerStats, simulateInternational, computeClubContractOffer, generateOffers, generateForcedDestinationOffers, determineNaturalRole,
     projectLeagueApps, computeAppearanceChance, computeGamesMissed, injurySeasonRisk, durabilityScore, injuryWear,
-    resolveBallonDor, ballonDorScore, simulateBallonDorField, computeCareerRarity, CARD_TIERS, cardFifaStats,
+    resolveBallonDor, ballonDorScore, simulateBallonDorField, computeCareerRarity, CARD_TIERS, cardRadarStats,
+    computeRadarValues, computeRadarValuesFor,
     renderShareCard,
     capturePeak, peakSnapshot, endCareer,
     seasonYear, seasonLabel, eraStartYear, ERA_OPTIONS,
