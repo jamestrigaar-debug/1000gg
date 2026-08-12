@@ -753,6 +753,94 @@ if (require.main === module) {
     return `${st.totalGoals} = ${st.leagueGoals} league + ${st.cupGoals} cup + ${st.europeGoals} Europe + ${st.intlGoals} intl`;
   });
 
+  group("Rating, balance and mentality scales");
+
+  function ratedFrom(attrs) {
+    makeState({ attrs, seed: "scale" });
+    api.recomputePlayerStats();
+    const st = api.getState();
+    return { base: st.baseRating, agility: st.derived.agility, balance: st.derived.balance };
+  }
+
+  check("the overall rating spreads across the scale instead of pinning at 99", () => {
+    // calculateStrikerRating already returns a value on the final 40-99 scale;
+    // multiplying THAT by the synergy multiplier (up to 1.22) pushed anything
+    // above ~81 through the ceiling and re-clamped it. An elite draft, a merely
+    // very good draft and a theoretical all-99 draft all displayed 99, which is
+    // why the card always read 99 and only moved once age decay pulled it down.
+    const elite = ratedFrom({ heading: 92, fitness: 92, strength: 90, height: 185, weight: 82, leftFoot: 88, rightFoot: 94, speed: 93 });
+    const veryGood = ratedFrom({ heading: 86, fitness: 86, strength: 84, height: 184, weight: 80, leftFoot: 80, rightFoot: 88, speed: 87 });
+    const good = ratedFrom({ heading: 80, fitness: 80, strength: 78, height: 183, weight: 79, leftFoot: 74, rightFoot: 82, speed: 80 });
+    const average = ratedFrom({ heading: 72, fitness: 74, strength: 72, height: 182, weight: 78, leftFoot: 68, rightFoot: 76, speed: 73 });
+
+    assert(veryGood.base < elite.base, `a very good draft (${veryGood.base}) did not rate below an elite one (${elite.base})`);
+    assert(good.base < veryGood.base, `a good draft (${good.base}) did not rate below a very good one (${veryGood.base})`);
+    assert(average.base < good.base, `an average draft (${average.base}) did not rate below a good one (${good.base})`);
+    assert(veryGood.base <= 95, `a merely very good draft still rates ${veryGood.base}`);
+    assert(average.base <= 80, `an average draft rates ${average.base}`);
+    return `${average.base} / ${good.base} / ${veryGood.base} / ${elite.base} across four draft qualities`;
+  });
+
+  check("99 overall has to be earned by the attributes, not handed out by synergy", () => {
+    // Synergy is now a bounded point swing rather than a multiplier, so it can
+    // lift a strong build without flattening the top of the scale.
+    const strongBuild = { heading: 84, fitness: 86, strength: 82, height: 184, weight: 80, leftFoot: 78, rightFoot: 86, speed: 86 };
+    makeState({ attrs: strongBuild, seed: "syn" });
+    api.recomputePlayerStats();
+    const st = api.getState();
+    const raw = api.calculateStrikerRating(st.attrs);
+    assert(Math.abs(st.baseRating - raw) <= 9,
+      `synergy moved the rating from ${raw} to ${st.baseRating} — more than the intended point swing`);
+    // A mid build must not reach the ceiling however well it synergises.
+    assert(st.baseRating < 99, `a mid-80s build reached ${st.baseRating} overall`);
+    return `raw ${raw} -> ${st.baseRating} after synergy (swing ${st.baseRating - raw >= 0 ? "+" : ""}${st.baseRating - raw})`;
+  });
+
+  check("balance rewards a low centre of gravity as hard as height rewards aerial", () => {
+    // Balance is a centre-of-gravity stat but moved only 0.5 per cm off a low
+    // base, so a 170cm player showed ~92 agility and ~67 balance — the short,
+    // low-slung build the stat exists to reward barely registered.
+    const same = { heading: 80, fitness: 82, strength: 78, leftFoot: 78, rightFoot: 86, speed: 86 };
+    const short = ratedFrom(Object.assign({}, same, { height: 168, weight: 66 }));
+    const mid = ratedFrom(Object.assign({}, same, { height: 182, weight: 78 }));
+    const tall = ratedFrom(Object.assign({}, same, { height: 195, weight: 90 }));
+
+    assert(short.balance > mid.balance && mid.balance > tall.balance,
+      `balance does not fall with height: ${short.balance} / ${mid.balance} / ${tall.balance}`);
+    const spread = short.balance - tall.balance;
+    assert(spread >= 25, `balance only spans ${spread} points from 168cm to 195cm — height barely registers`);
+    // And it should track agility's responsiveness, not lag far behind it.
+    const agilitySpread = short.agility - tall.agility;
+    assert(spread >= agilitySpread * 0.8,
+      `balance spans ${spread} across the height range while agility spans ${agilitySpread}`);
+    return `balance ${short.balance}@168cm -> ${tall.balance}@195cm (${spread} spread, agility ${agilitySpread})`;
+  });
+
+  check("a high-mentality player is actually obtainable", () => {
+    // mentalityRating used to be `donor * 0.8 + averageOfOtherDonors * 0.2`.
+    // The average of unrelated donors sits near the database mean (~62) almost
+    // every time, so that 20% acted as a constant drag toward the mean, not an
+    // influence: drafting the single best mentality in the game (95) produced
+    // ~88, and a realistic 86 donor produced ~81. Now the donor's own rating is
+    // the rating, nudged by how far the rest of the DNA sits from an ordinary 60.
+    const mentalityFor = (donorRating, otherRatings) => {
+      const avg = otherRatings.length ? otherRatings.reduce((s, r) => s + r, 0) / otherRatings.length : 60;
+      const influence = Math.max(-8, Math.min(8, (avg - 60) * 0.25));
+      return Math.round(Math.max(15, Math.min(99, donorRating + influence)));
+    };
+    const ordinaryDna = [60, 62, 58, 64, 61];
+    assert(mentalityFor(95, ordinaryDna) >= 93,
+      `drafting the best mentality in the game still only yields ${mentalityFor(95, ordinaryDna)}`);
+    assert(mentalityFor(86, ordinaryDna) >= 84,
+      `an 86 mentality donor yields only ${mentalityFor(86, ordinaryDna)}`);
+    // The rest of the DNA still matters, in both directions, but only as a nudge.
+    const lifted = mentalityFor(80, [88, 90, 86, 92, 89]);
+    const dragged = mentalityFor(80, [40, 38, 44, 42, 41]);
+    assert(lifted > 80 && lifted <= 88, `strong supporting DNA moved 80 to ${lifted}`);
+    assert(dragged < 80 && dragged >= 72, `weak supporting DNA moved 80 to ${dragged}`);
+    return `95 donor -> ${mentalityFor(95, ordinaryDna)}, 80 donor -> ${lifted} (strong DNA) / ${dragged} (weak DNA)`;
+  });
+
   group("Design items");
 
   check("the hidden international archetype surfaces as commentary", () => {

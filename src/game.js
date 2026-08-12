@@ -317,7 +317,14 @@
   // Derived stats formula coefficients — tune these to adjust how attributes combine
   const DERIVED_STATS_WEIGHTS = {
     agility: { speed: 0.55, heightInverse: 0.9, base: 22 },
-    balance: { strength: 0.4, heightInverse: 0.5, base: 30 },
+    // Balance is a centre-of-gravity stat, so height should drive it at least
+    // as hard as it drives agility — and as hard as it drives Aerial in the
+    // other direction. It used to move only 0.5 per cm off a base of 30, so a
+    // 170cm player landed on ~67 balance while showing ~92 agility: the short,
+    // low-slung build the stat is meant to reward barely registered. Height
+    // now moves it 1.1 per cm, with the base and strength weight retuned so
+    // the midpoint is unchanged and tall frames lose what short frames gain.
+    balance: { strength: 0.34, heightInverse: 1.1, base: 36 },
     dribbling: { speed: 0.4, foot: 0.35, agility: 0.2 },
     finishing: { bestFoot: 0.7, weakFoot: 0.3 },
   };
@@ -1917,11 +1924,14 @@
     // Similar heights across DNA donors = better agility
     if (heightVariance <= 5) agilityBonus += 3;
     else if (heightVariance <= 10) agilityBonus += 1;
-    // Smaller players are naturally more agile and balanced
-    if (h <= 172) { agilityBonus += 4; balanceBonus += 2; }
-    else if (h <= 176) { agilityBonus += 2; balanceBonus += 1; }
-    else if (h >= 192) { balanceBonus -= 2; } // Tall, heavy players lose balance
-    else if (h >= 188) { balanceBonus -= 1; }
+    // Smaller players are naturally more agile and balanced. Balance now gets
+    // the larger share of the short-build bonus, since a low centre of gravity
+    // is more a balance trait than an agility one.
+    if (h <= 168) { agilityBonus += 5; balanceBonus += 6; }
+    else if (h <= 172) { agilityBonus += 4; balanceBonus += 5; }
+    else if (h <= 176) { agilityBonus += 2; balanceBonus += 3; }
+    else if (h >= 192) { balanceBonus -= 4; } // Tall, heavy players lose balance
+    else if (h >= 188) { balanceBonus -= 2; }
     if (agilityBonus > 0 || balanceBonus !== 0) {
       state.derivedBonuses = state.derivedBonuses || { agility: 0, balance: 0 };
       state.derivedBonuses.agility = (state.derivedBonuses.agility || 0) + agilityBonus;
@@ -1944,10 +1954,30 @@
       chosenMentality = balancedTraits.includes(mSource.mentality) ? mSource.mentality : choice(balancedTraits);
     }
     state.mentality = chosenMentality;
-    // The numeric rating remains hidden from the UI; keep it for simulation impact.
+    /* The numeric rating remains hidden from the UI; keep it for simulation
+     * impact.
+     *
+     * This is the mentality DONOR's rating, nudged by the rest of the DNA —
+     * not a blend of the two. The old form was
+     *   mSource.mentalityRating * 0.8 + avgOthers * 0.2
+     * and because avgOthers is an average of unrelated donors it sits near the
+     * database mean (~62) almost every time. That 20% share therefore acted as
+     * a constant drag toward the mean rather than an influence: drafting the
+     * best mentality in the game (95) still only produced ~88, and a realistic
+     * 86 donor produced ~81. High-mentality players were effectively
+     * unobtainable no matter who you drafted.
+     *
+     * Now the donor's own rating IS the rating, and the other DNA shifts it by
+     * how far that DNA sits from an ordinary 60 — a supporting cast of strong
+     * personalities lifts it a few points, a weak one costs a few. Draft a 95
+     * mentality and you keep a 95.
+     */
     const otherRatings = donors.filter((d) => d !== mSource).map((d) => d.mentalityRating);
-    const avgMent = otherRatings.reduce((s, r) => s + r, 0) / (otherRatings.length || 1);
-    state.mentalityRating = Math.round(clamp(mSource.mentalityRating * 0.8 + avgMent * 0.2, 15, 99));
+    const avgMent = otherRatings.length
+      ? otherRatings.reduce((s, r) => s + r, 0) / otherRatings.length
+      : 60;
+    const dnaInfluence = clamp((avgMent - 60) * 0.25, -8, 8);
+    state.mentalityRating = Math.round(clamp(mSource.mentalityRating + dnaInfluence, 15, 99));
 
     // Hidden international trait based on mentality, country and a roll of the dice.
     state.intlTrait = deriveInternationalTrait();
@@ -1975,7 +2005,7 @@
     // deep synergy scoring
     const syn2 = computeSynergyMultiplier(state.attrs);
     state.synergyMultiplier = syn2.multiplier;
-    state.baseRating = Math.round(clamp(state.baseRating * syn2.multiplier, 40, 99));
+    state.baseRating = applySynergyToRating(state.baseRating, syn2.multiplier);
     state.synergyNotes = state.synergyNotes.concat(syn2.notes);
 
     // hidden traits and potential
@@ -2142,6 +2172,27 @@
       dim(finishing) * 0.28 + dim(a.heading) * 0.14 + dim(a.speed) * 0.20 +
       dim(a.strength) * 0.12 + dim(a.fitness) * 0.12 + dim((a.leftFoot + a.rightFoot) / 2) * 0.14;
     return Math.round(clamp(rating, 40, 99));
+  }
+
+  /* Synergy adjusts the overall rating, but it must NOT be applied as a raw
+   * multiplier to the finished rating.
+   *
+   * calculateStrikerRating already returns a value on the final 40-99 scale.
+   * Multiplying that by the synergy multiplier (which reaches 1.22) pushed any
+   * rating above ~81 straight through the ceiling, so it re-clamped to 99:
+   * an elite draft, a merely very good draft, and a theoretical all-99 draft
+   * all displayed the same 99 overall. That is why the card always read 99 and
+   * only ever moved once age decay pulled it back down.
+   *
+   * The multiplier is instead converted to a bounded POINT adjustment. A 1.22
+   * multiplier becomes +8 points, 0.75 becomes -8, and 1.0 stays flat — so
+   * synergy still clearly rewards a well-matched build without flattening the
+   * top of the scale. 99 now has to be earned by the attributes themselves.
+   */
+  const SYNERGY_POINT_SWING = 8;
+  function applySynergyToRating(rating, multiplier) {
+    const swing = clamp((multiplier - 1) / 0.22, -1, 1) * SYNERGY_POINT_SWING;
+    return Math.round(clamp(rating + swing, 40, 99));
   }
 
   function inferPlaystyle(a) {
@@ -3555,7 +3606,7 @@
     state.baseRating = calculateStrikerRating(state.attrs);
     const syn2 = computeSynergyMultiplier(state.attrs);
     state.synergyMultiplier = syn2.multiplier;
-    state.baseRating = Math.round(clamp(state.baseRating * syn2.multiplier, 40, 99));
+    state.baseRating = applySynergyToRating(state.baseRating, syn2.multiplier);
     state.synergyNotes = state.synergyNotes.concat(syn2.notes);
     state.playstyle = inferPlaystyle(state.attrs);
     // Recalculate derived durability values when core physicals change
@@ -9092,6 +9143,7 @@
     renderCareerStats, renderSeasonResult, renderContractOffer, renderCareerHeader, presentTransfer,
     renderSeasonReady, playSeason, advanceToNextSeason, handleContractPhase, beginRetirement, handleEndChoice,
     decideRetirement, presentEndEvent, resolveEventText, resolveChoices, pickSeasonEvents, buildContext,
+    calculateStrikerRating, applySynergyToRating, deriveStats, computeSynergyMultiplier,
     renderSquadInfo, renderCareerSummary, renderClubsPlayed, generateCareerSummary, cardTagline, plural, bodyLoadLabel,
     renderLeaderboard, renderLeaderboardSubmit, currentCareerRow, getLeaderboard, eraTagFor,
     renderWelcomeLeaderboard, leaderboardRowsHtml, init, newCareerId, ensureCareerId,
