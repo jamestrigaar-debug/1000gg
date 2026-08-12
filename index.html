@@ -217,7 +217,6 @@
   .copy-row { display: flex; gap: 8px; align-items: center; }
   .copy-row input { flex: 1; }
   .copy-row .btn { padding: 10px 12px; font-size: 13px; }
-  #achievements-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
   .ach-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; font-size: 13px; border: 1px solid var(--line); background: var(--bg2); }
   .ach-row.unlocked { border-color: var(--gold); background: #2a1c00; }
   .ach-row.locked { opacity: .55; }
@@ -225,6 +224,22 @@
   .ach-row.unlocked .ach-name { color: var(--gold); }
   .ach-desc { flex: 1; color: var(--muted); }
   .ach-rare { background: var(--rare); color: #fff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; }
+
+  /* ---- Trophy Room ---- */
+  .trophy-wrap { max-width: 900px; margin: 0 auto; text-align: left; }
+  .trophy-heading { font-size: 16px; color: var(--gold); margin: 30px 0 12px; }
+  .trophy-heading:first-child { margin-top: 8px; }
+  #trophy-cabinet { display: flex; flex-direction: column; gap: 6px; }
+  .trophy-empty { color: var(--muted); font-size: 14px; padding: 22px 16px; text-align: center;
+                  background: var(--bg2); border: 1px dashed var(--line); border-radius: 10px; }
+  .trophy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+  .trophy-card { background: var(--card); border: 2px solid var(--line); border-radius: 10px;
+                 overflow: hidden; text-align: center; }
+  .trophy-card img { width: 100%; display: block; }
+  .trophy-card-noimg { padding: 40px 0; font-size: 28px; color: var(--muted); background: var(--bg2); }
+  .trophy-card .tc-name { font-weight: 700; font-size: 13px; padding: 8px 8px 2px; white-space: nowrap;
+                           overflow: hidden; text-overflow: ellipsis; }
+  .trophy-card .tc-meta { font-size: 11px; color: var(--muted); padding: 0 8px 10px; }
   .features { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 30px; }
   .feature { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
     padding: 14px 16px; width: 220px; text-align: left; }
@@ -1029,6 +1044,7 @@
       <div class="welcome-actions">
         <button class="btn" id="btn-challenge-friend">⚔️ Challenge a friend</button>
         <a class="btn" href="challenge.html">🔎 Search challenges</a>
+        <button class="btn" id="btn-trophy-room">🏆 Trophy Room</button>
       </div>
 
       <!-- The leaderboard, visible before you have played anything. It sits
@@ -1213,38 +1229,24 @@
     </div>
   </section>
 
-  <!-- ================= ACCOUNT MODAL ================= -->
-  <div id="account-modal" class="modal" style="display:none">
-    <div class="modal-backdrop"></div>
-    <div class="modal-panel">
-      <h3>Account</h3>
-      <p class="muted">No email needed. We generate a unique username and password for you. Save these somewhere safe.</p>
-      <div id="account-create" style="display:none">
-        <button class="btn primary" id="btn-create-account">Create Account</button>
-      </div>
-      <div id="account-info" style="display:none">
-        <div class="field">
-          <label>Username</label>
-          <div class="copy-row"><input type="text" id="acc-username" readonly /><button class="btn" id="btn-copy-user">Copy</button></div>
-        </div>
-        <div class="field">
-          <label>Password</label>
-          <div class="copy-row"><input type="password" id="acc-password" readonly /><button class="btn" id="btn-show-pass">Show</button></div>
-        </div>
-        <div class="field">
-          <label>Login</label>
-          <div class="copy-row"><input type="text" id="acc-login-user" placeholder="Username" /><input type="password" id="acc-login-pass" placeholder="Password" /></div>
-          <button class="btn primary" id="btn-login" style="margin-top:8px">Log in</button>
-        </div>
-      </div>
-      <div id="account-status" class="muted" style="margin-top:10px"></div>
-      <div id="account-achievements" style="margin-top:14px; display:none">
-        <h4>Achievements</h4>
-        <div id="achievements-list"></div>
-      </div>
-      <div style="margin-top:14px"><button class="btn" id="btn-close-account">Close</button></div>
+  <!-- ================= TROPHY ROOM =================
+       The no-account answer to "save my achievements and my cards": every
+       finished career's card and achievements are saved straight to this
+       browser's localStorage (src/game.js: recordCareerToTrophyRoom) —
+       nothing here has ever asked for a username or password. -->
+  <section id="screen-trophy-room" class="screen">
+    <div class="hero">
+      <h2>🏆 TROPHY ROOM</h2>
+      <div class="sub">Every card you've played on this device, and everything you've earned along the way — saved right here in this browser. No account, no login.</div>
     </div>
-  </div>
+    <div class="trophy-wrap">
+      <h3 class="trophy-heading">Achievement Cabinet</h3>
+      <div id="trophy-cabinet"></div>
+      <h3 class="trophy-heading">Saved Careers</h3>
+      <div id="trophy-cards"></div>
+    </div>
+    <div style="text-align:center;margin-top:24px"><button class="btn" id="btn-trophy-back">← Back</button></div>
+  </section>
 </main>
 
 <details class="about-footer">
