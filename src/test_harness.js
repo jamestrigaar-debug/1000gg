@@ -1277,6 +1277,206 @@ if (require.main === module) {
     return `top 2 (${topTwo.join(", ")}) promoted, as the real table said they should be`;
   });
 
+  group("End-of-career events");
+
+  const H0 = (o) => Object.assign({ leagueTitles: 0, domesticCups: 0, europeanCups: 0, intlTrophies: 0,
+    ballonDors: 0, goldenBoots: 0, playerOfSeason: 0, youngPlayer: 0, tots: 0 }, o || {});
+
+  // Six career shapes, each a fresh object per call — the engine mutates
+  // clubsPlayed (moveToClub) and age, so a shared fixture leaks between runs.
+  const ENDING_PROFILES = {
+    journeyman: () => ({ age: 36, season: 18, totalGoals: 420, reputation: 65, fame: 55, wealth: 60,
+      yearsAtClub: 2, contractYears: 0, injuryProneness: 55, intlCaps: 60, intlGoals: 18,
+      honours: H0({ leagueTitles: 1, domesticCups: 1 }), clubsPlayed: new Set(["Arsenal", "Chelsea", "Real Madrid", "PSG", "Inter Miami"]) }),
+    oneClubLegend: () => ({ age: 35, season: 16, totalGoals: 380, reputation: 72, fame: 40, wealth: 50,
+      yearsAtClub: 14, contractYears: 1, honours: H0({ leagueTitles: 3, domesticCups: 2, europeanCups: 1, youngPlayer: 1 }),
+      clubsPlayed: new Set(["Arsenal"]) }),
+    modestPro: () => ({ age: 33, season: 13, totalGoals: 120, reputation: 42, fame: 30, wealth: 35,
+      yearsAtClub: 1, contractYears: 0, injuryProneness: 60, honours: H0({}),
+      clubsPlayed: new Set(["Burnley", "Luton Town", "Bolton Wanderers"]) }),
+    superstar: () => ({ age: 37, season: 20, totalGoals: 860, reputation: 92, fame: 88, wealth: 90,
+      yearsAtClub: 6, contractYears: 0, intlCaps: 120, intlGoals: 60, intlCaptain: true,
+      honours: H0({ leagueTitles: 6, domesticCups: 3, europeanCups: 3, intlTrophies: 2, youngPlayer: 1 }),
+      clubsPlayed: new Set(["Arsenal", "Real Madrid"]) }),
+    brokenYoung: () => ({ age: 29, season: 9, totalGoals: 150, reputation: 58, fame: 45, wealth: 40,
+      yearsAtClub: 3, contractYears: 2, injuryProneness: 78, injuryProneSeasons: 2,
+      honours: H0({ domesticCups: 1 }), clubsPlayed: new Set(["Everton", "Leeds United"]) }),
+    famousButDisliked: () => ({ age: 34, season: 14, totalGoals: 260, reputation: 46, fame: 75, wealth: 70,
+      yearsAtClub: 2, contractYears: 0, honours: H0({ domesticCups: 1 }),
+      clubsPlayed: new Set(["Chelsea", "PSG", "Marseille"]) }),
+  };
+
+  function endingsSeen(profileFn, runs, tag) {
+    const counts = {};
+    for (let r = 0; r < runs; r++) {
+      makeState(Object.assign({ seed: `${tag}-${r}` }, profileFn()));
+      const res = api.resolveEndOfCareerEvent();
+      if (res && res.event) counts[res.event] = (counts[res.event] || 0) + 1;
+    }
+    return counts;
+  }
+
+  check("every career ending is actually reachable — none are dead code", () => {
+    // Nine of sixteen endings could never fire: they gated on
+    // `s.pillars?.X || 50` and state.pillars is permanently null, so the
+    // expression was a constant 50 against thresholds of 55/65/70/75. A tenth
+    // (released_on_free) read s.contractLength, which is not a state field at
+    // all — it is contractYears. Players saw the same handful every career.
+    const seen = new Set();
+    for (const [name, fn] of Object.entries(ENDING_PROFILES)) {
+      for (const id of Object.keys(endingsSeen(fn, 300, `reach-${name}`))) seen.add(id);
+    }
+    const all = api.CAREER_ENDINGS.map((e) => e.id);
+    const dead = all.filter((id) => !seen.has(id));
+    assert(dead.length === 0, `${dead.length} ending(s) can never fire: ${dead.join(", ")}`);
+    return `all ${all.length} endings fired across ${Object.keys(ENDING_PROFILES).length} career profiles`;
+  });
+
+  check("no single ending dominates a rich career's retirement", () => {
+    // last_dance_abroad used to take ~32% of all retirements simply because so
+    // few rivals were eligible. With the dead gates fixed the field is wide
+    // enough that no one outcome is the default.
+    for (const key of ["journeyman", "oneClubLegend", "superstar"]) {
+      const counts = endingsSeen(ENDING_PROFILES[key], 400, `dom-${key}`);
+      const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      const share = entries[0][1] / 400;
+      assert(entries.length >= 8, `${key}: only ${entries.length} distinct endings available`);
+      assert(share <= 0.30, `${key}: "${entries[0][0]}" takes ${(share * 100).toFixed(0)}% of retirements`);
+    }
+    return "3 rich profiles, 8+ distinct endings each, none above 30%";
+  });
+
+  check("an ending's gate reflects the career it is written for", () => {
+    // Spot-check that the rewritten gates track the right signal rather than
+    // firing indiscriminately: the one-club servant can become an ambassador,
+    // a five-club journeyman cannot; the well-travelled pro can go into
+    // agency work, the one-club man cannot.
+    const oneClub = endingsSeen(ENDING_PROFILES.oneClubLegend, 300, "gate-oc");
+    const journey = endingsSeen(ENDING_PROFILES.journeyman, 300, "gate-jm");
+    assert(oneClub.club_ambassador > 0, "a 14-year one-club servant never became club ambassador");
+    assert(!journey.club_ambassador, "a five-club journeyman was made a one-club ambassador");
+    assert(journey.agent_scout > 0, "a five-club journeyman never moved into agency work");
+    assert(!oneClub.agent_scout, "a one-club man became a well-travelled agent");
+    assert(!oneClub.quiet_release, "a 72-reputation legend slipped quietly out of the game");
+    return "ambassador/agent/quiet-release gates all track the right career shape";
+  });
+
+  check("a second end-of-career event is always a guaranteed retirement", () => {
+    // The spec: at most two end-of-career events. The first may offer one
+    // more season; once one has fired, the next is retirement, full stop.
+    makeState({ age: 36, season: 18, totalGoals: 400, reputation: 70, retirementAge: 38, seed: "two-events" });
+    const st = api.getState();
+    api.beginRetirement("age");
+    assert(st.endOfCareerTriggered === true, "the first end-of-career event did not set endOfCareerTriggered");
+    assert(st.retired !== true, "the first end-of-career event retired the player outright, with no choice offered");
+    api.beginRetirement("age");
+    assert(st.retired === true, "a second end-of-career event did not force retirement");
+    return "first event offers a choice, second always retires";
+  });
+
+  check("a player is never offered a new contract in the same breath as retiring", () => {
+    // The retirement roll used to run AFTER contract negotiation, so a
+    // 37-year-old could sign a three-year deal and be told they were retiring
+    // moments later. The roll now happens first and gates the offer.
+    let dangled = 0, retired = 0;
+    for (let r = 0; r < 300; r++) {
+      makeState({ age: 37, season: 19, retirementAge: 38, contractYears: 1, reputation: 70,
+        totalGoals: 400, club: "Arsenal", role: "Star", contractRole: "Star", seed: `dangle-${r}` });
+      api.handleContractPhase({ perfTier: "Met Expectation", trajectory: "Mid-table", pos: 10, goals: 12, apps: 30 }, null);
+      const s = api.getState();
+      if (s.pendingContractOffer && (s.endOfCareerTriggered || s.retired)) dangled++;
+      if (s.endOfCareerTriggered || s.retired) retired++;
+    }
+    assert(dangled === 0, `${dangled} careers were offered a contract and retired in the same season`);
+    assert(retired > 0, "no career retired at all — the fixture is not exercising the retirement path");
+    return `${retired}/300 retired past the retirement age, 0 dangled a contract first`;
+  });
+
+  check("a career that is already ending never negotiates another deal", () => {
+    makeState({ age: 35, season: 17, contractYears: 0, club: "Arsenal", reputation: 70, seed: "ending-deal" });
+    const st = api.getState();
+    st.endOfCareerTriggered = true;
+    api.handleContractPhase({ perfTier: "Met Expectation", trajectory: "Mid-table", pos: 10, goals: 12, apps: 30 }, null);
+    assert(!api.getState().pendingContractOffer, "a contract was offered to a career that had already ended");
+    assert(api.getState().retired === true, "a career past its end-of-career event did not finish");
+    return "endOfCareerTriggered short-circuits the contract phase";
+  });
+
+  group("Event variety");
+
+  check("an event's wording varies while its mechanics stay fixed", () => {
+    // `text` may be an array of interchangeable phrasings. Same event, same
+    // choices, different words — this is what stops a twenty-season career
+    // reading the same handful of sentences over and over.
+    const withVariants = api.CAREER_ENDINGS.filter((e) => Array.isArray(e.text));
+    assert(withVariants.length >= 15, `only ${withVariants.length} endings carry wording variants`);
+    for (const e of withVariants) {
+      assert(e.text.length >= 2, `${e.id}: a variant array with ${e.text.length} entry is pointless`);
+    }
+    // Resolving must produce a real sentence for every variant of every ending.
+    makeState({ age: 35, season: 16, totalGoals: 400, reputation: 70, seed: "variant-text" });
+    const st = api.getState();
+    for (const e of api.CAREER_ENDINGS) {
+      const variants = Array.isArray(e.text) ? e.text : [e.text];
+      for (const v of variants) {
+        const out = api.resolveEventText(v, st.player.name, st);
+        assert(typeof out === "string" && out.length > 10, `${e.id}: a variant resolved to "${out}"`);
+        assert(!/undefined|NaN|\[object/.test(out), `${e.id}: variant rendered badly — "${out}"`);
+      }
+    }
+    return `${withVariants.length} endings carry 2+ wordings each, all resolve cleanly`;
+  });
+
+  check("the same seed always produces the same wording", () => {
+    // Variants are drawn from the seeded career stream, so two players on a
+    // shared challenge seed must read exactly the same text.
+    const readOnce = (seed) => {
+      makeState({ age: 35, season: 16, totalGoals: 400, reputation: 70, fame: 50, seed });
+      const st = api.getState();
+      const ev = api.CAREER_ENDINGS.find((e) => e.id === "normal_retirement");
+      return api.resolveEventText(ev.text, st.player.name, st);
+    };
+    assert(readOnce("same-seed") === readOnce("same-seed"), "the same seed produced two different wordings");
+    const spread = new Set(["a", "b", "c", "d", "e", "f", "g", "h"].map((s) => readOnce(`spread-${s}`)));
+    assert(spread.size >= 2, "every seed produced identical wording — the variant pick is not actually varying");
+    return `stable per seed, ${spread.size} distinct wordings across 8 seeds`;
+  });
+
+  check("a long career sees far more distinct wordings than it has events", () => {
+    const ids = new Set(), texts = new Set();
+    for (let r = 0; r < 25; r++) {
+      makeState({ club: "Arsenal", age: 20, season: 1, baseRating: 85, reputation: 60,
+        role: "Star", contractRole: "Star", intlDebut: true, seed: `variety-${r}` });
+      const st = api.getState();
+      for (let s = 0; s < 16 && st.age < 38; s++) {
+        const sd = api.simulateSeason();
+        const ctx = api.buildContext(sd);
+        for (const ev of api.pickSeasonEvents(ctx, 1)) {
+          ids.add(ev.id);
+          texts.add(api.resolveEventText(ev.text, st.player.name, ctx));
+        }
+        st.season++; st.age++;
+        for (const k of Object.keys(st.cooldowns)) if (st.cooldowns[k] > 0) st.cooldowns[k]--;
+      }
+    }
+    assert(ids.size >= 20, `only ${ids.size} distinct season events fired across 25 careers`);
+    assert(texts.size > ids.size * 1.8,
+      `${texts.size} wordings for ${ids.size} events — barely more varied than one line each`);
+    return `${ids.size} events, ${texts.size} distinct wordings`;
+  });
+
+  check("the event picker survives a career with no academy on record", () => {
+    // getEventWeight read state.academy.tier unguarded; a save without one
+    // (mid-creation, or a legacy save) crashed the whole picker mid-season.
+    makeState({ club: "Arsenal", age: 26, season: 6, reputation: 60, seed: "no-academy" });
+    const st = api.getState();
+    st.academy = null;
+    const sd = api.simulateSeason();
+    const events = api.pickSeasonEvents(api.buildContext(sd), 1);
+    assert(Array.isArray(events), "pickSeasonEvents did not return a list for an academy-less career");
+    return "no academy on file, picker still runs";
+  });
+
   group("Career achievements");
 
   // Three achievements were checked against the wrong thing entirely and

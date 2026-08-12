@@ -1036,6 +1036,9 @@
       endCareerReason: null,
       endOfCareerTriggered: false,
       finalSeasonForced: false,
+      // Cached answer from decideRetirement for the season currently being
+      // wrapped up, so the contract phase and advanceToNextSeason agree.
+      retirementDecided: null,
       finalSeason: null,
       // Loan system: null when not out on loan, otherwise
       // { parentClub, parentRole, parentYearsAtClub, dueBackSeason }.
@@ -1189,6 +1192,9 @@
     // Saves retired before the Trophy Room existed get backfilled into it
     // the next time they're viewed, rather than being excluded forever.
     s.trophyRoomSaved = !!s.trophyRoomSaved;
+    // Only ever "retire"/"continue"/null — a stale or hand-edited value must
+    // not be able to force or block a retirement on the next save load.
+    if (s.retirementDecided !== "retire" && s.retirementDecided !== "continue") s.retirementDecided = null;
     if (typeof s.careerId !== "string" || !s.careerId) s.careerId = null;
     if (typeof s.challengeId !== "string" || !s.challengeId) s.challengeId = null;
     s.challengeSubmitted = !!s.challengeSubmitted;
@@ -5088,7 +5094,11 @@
     if (ev.tag === "Development") {
       const prof = getPillar("Professionalism");
       w += (prof - 50) / 20;
-      const academyTrainingMod = { "World Class": 4, "Strong": 2, "Average": 0, "Weak": -1 }[state.academy.tier] || 0;
+      // state.academy is null on a career that has not finished creation, and
+      // on some legacy saves — reading .tier off it threw and took the whole
+      // event picker down mid-season.
+      const academyTier = (state.academy && state.academy.tier) || state.academyTier;
+      const academyTrainingMod = { "World Class": 4, "Strong": 2, "Average": 0, "Weak": -1 }[academyTier] || 0;
       w += academyTrainingMod;
     }
     if (ev.tag === "Transfer or Loan") {
@@ -5174,6 +5184,27 @@
       events.push(ev);
     }
     return events;
+  }
+
+  /* An event's `text` (and a choice's `label`) may be a single string, a
+   * function, or an ARRAY of either. An array is a set of interchangeable
+   * phrasings for the SAME event: identical mechanics and identical choices,
+   * different words. Without this, a career that runs twenty seasons reads
+   * the same handful of sentences over and over, which is what made the
+   * event rotation feel recycled even when the underlying pick was random.
+   *
+   * The variant is drawn from the seeded career stream, so a challenge played
+   * on a shared seed still reads identically for both players. */
+  function resolveEventText(text, name, ctx) {
+    const pick = Array.isArray(text) ? (text.length ? choice(text) : "") : text;
+    return typeof pick === "function" ? pick(name, ctx) : pick;
+  }
+  // Resolve an event's choices once, so the label shown on the button is the
+  // same string later written into the career log.
+  function resolveChoices(choices, name, ctx) {
+    return (choices || []).map((c) => (Array.isArray(c.label)
+      ? Object.assign({}, c, { label: resolveEventText(c.label, name, ctx) })
+      : c));
   }
 
   function applyEffects(fx, multiplier = 1) {
@@ -6590,8 +6621,8 @@
     const box = document.getElementById("season-action");
     const name = state.player.name;
     const ctx2 = ctx || buildContext(sd);
-    const text = typeof ev.text === "function" ? ev.text(name, ctx2) : ev.text;
-    const choices = typeof ev.choices === "function" ? ev.choices(ctx2) : ev.choices;
+    const text = resolveEventText(ev.text, name, ctx2);
+    const choices = resolveChoices(typeof ev.choices === "function" ? ev.choices(ctx2) : ev.choices, name, ctx2);
     const eventNum = events.length > 1 ? ` (${idx + 1}/${events.length})` : "";
     const choicesHtml = choices.map((c, i) => `<button class="btn choice" data-i="${i}">${c.label}</button>`).join("");
     box.innerHTML = `
@@ -6687,6 +6718,26 @@
       state.lastContractedRole = state.contractRole;
     }
     state.contractYears = Math.max(0, state.contractYears - 1);
+
+    // A career that is already ending never negotiates another deal. Without
+    // this, a player granted a farewell season by an end-of-career event could
+    // still be handed a fresh multi-year contract on the way into it.
+    if (state.endOfCareerTriggered || state.finalSeasonForced) {
+      advanceToNextSeason();
+      return;
+    }
+
+    // Decide retirement BEFORE offering a new contract. The roll used to live
+    // in advanceToNextSeason, i.e. AFTER this negotiation, so a player could
+    // sign a three-year deal and be told they were retiring in the very next
+    // breath. A club does not offer, and a player does not sign, a contract
+    // neither of them intends to honour. decideRetirement caches its answer so
+    // advanceToNextSeason honours this same roll rather than re-rolling.
+    if (decideRetirement() === "retire") {
+      advanceToNextSeason();
+      return;
+    }
+
     if (state.contractYears <= 0) {
       presentContractNegotiation(sd, intl);
       return;
@@ -7040,18 +7091,42 @@
     }));
   }
 
+  /* Will this career end rather than play another season?
+   *
+   * Rolled against the age the player WILL be next season, and cached on
+   * state, because two different points in the post-season flow need the same
+   * answer: handleContractPhase (which must know before deciding whether to
+   * offer a new contract) and advanceToNextSeason (which acts on it). Rolling
+   * twice would let a player be spared a contract offer and then survive the
+   * roll anyway, or vice versa. The cache is cleared as soon as it is acted
+   * on, so each season gets exactly one roll.
+   */
+  function decideRetirement() {
+    if (state.retirementDecided) return state.retirementDecided;
+    const nextAge = state.age + 1;
+    const ra = state.retirementAge || 40;
+    let retireChance = 0;
+    if (nextAge >= ra) retireChance = 1;
+    else if (nextAge >= ra - 2) retireChance = 0.15 + (nextAge - (ra - 2)) * 0.20;
+    else if (nextAge >= ra - 4) retireChance = 0.03;
+    state.retirementDecided = rand() < retireChance * contractRetireModifier() ? "retire" : "continue";
+    return state.retirementDecided;
+  }
+
   function advanceToNextSeason() {
     decayFlags();
     if (state.injuryProneSeasons > 0) state.injuryProneSeasons--;
-    if (state.endOfCareerTriggered && !state.finalSeasonForced) { endCareer(false); return; }
+    // Once an end-of-career event has fired, the career is over. The single
+    // farewell season some endings grant is played out from handleEndChoice,
+    // never from here — so reaching this point with the flag set means the
+    // last season has been played and there is nothing left but the card.
+    if (state.endOfCareerTriggered) { endCareer(false); return; }
     state.age++; state.season++;
-    const ra = state.retirementAge || 40;
-    let retireChance = 0;
-    if (state.age >= ra) retireChance = 1;
-    else if (state.age >= ra - 2) retireChance = 0.15 + (state.age - (ra - 2)) * 0.20;
-    else if (state.age >= ra - 4) retireChance = 0.03;
-    const retireMod = contractRetireModifier();
-    if (rand() < retireChance * retireMod) { beginRetirement("age"); return; }
+    // Honours the roll made in handleContractPhase when the contract phase ran
+    // first; rolls fresh for the paths that skip it (loans, forced moves).
+    const decision = decideRetirement();
+    state.retirementDecided = null;
+    if (decision === "retire") { beginRetirement("age"); return; }
     renderCareerHeader();
     document.getElementById("season-result").innerHTML = "";
     renderSeasonReady();
@@ -7420,8 +7495,9 @@
   function presentEndEvent(ev) {
     const box = document.getElementById("season-action");
     document.getElementById("season-result").innerHTML = "";
-    const text = typeof ev.text === "function" ? ev.text(state.player.name, state) : ev.text;
-    const choicesHtml = ev.choices.map((c, i) => `<button class="btn choice" data-i="${i}">${c.label}</button>`).join("");
+    const text = resolveEventText(ev.text, state.player.name, state);
+    const choices = resolveChoices(ev.choices, state.player.name, state);
+    const choicesHtml = choices.map((c, i) => `<button class="btn choice" data-i="${i}">${c.label}</button>`).join("");
     box.innerHTML = `
       <div class="decision endcareer">
         <div class="decision-tag">END OF CAREER</div>
@@ -7430,7 +7506,7 @@
       </div>`;
     box.querySelectorAll(".choice").forEach((btn) => {
       btn.addEventListener("click", withFailsafe(() => {
-        const c = ev.choices[parseInt(btn.dataset.i, 10)];
+        const c = choices[parseInt(btn.dataset.i, 10)];
         handleEndChoice(c.fx, text, c.label, ev);
       }));
     });
@@ -8983,8 +9059,9 @@
     const eligible = CAREER_ENDINGS.filter((e) => !e.req || e.req(state)).map((e) => ({ item: e, weight: getCareerOutcomeScore(state, e) }));
     if (!eligible.length) return { extended: false, event: "none" };
     const ev = weightedRandomPick(eligible);
-    const c = weightedRandomPick(ev.choices.map((ch) => ({ item: ch, weight: ch.weight || 1 })));
-    handleEndChoice(c.fx, ev.text(state.player.name, state), c.label, ev);
+    const choices = resolveChoices(ev.choices, state.player.name, state);
+    const c = weightedRandomPick(choices.map((ch) => ({ item: ch, weight: ch.weight || 1 })));
+    handleEndChoice(c.fx, resolveEventText(ev.text, state.player.name, state), c.label, ev);
     if (c.fx && (c.fx.finalSeason || c.fx.extend || c.fx.returnHome)) return { extended: true, event: ev.id };
     return { extended: false, event: ev.id };
   }
@@ -9005,6 +9082,8 @@
     currentEuropeanEntry, makeKnockoutScorer, EURO_COMPETITIONS,
     TEAM_SQUADS, MANAGER_TENURE, initializeTeamSquad, simulateSquadTransfers, restoreWorldState,
     renderCareerStats, renderSeasonResult, renderContractOffer, renderCareerHeader, presentTransfer,
+    renderSeasonReady, playSeason, advanceToNextSeason, handleContractPhase, beginRetirement, handleEndChoice,
+    decideRetirement, presentEndEvent, resolveEventText, resolveChoices, pickSeasonEvents, buildContext,
     renderSquadInfo, renderCareerSummary, renderClubsPlayed, generateCareerSummary, cardTagline, plural, bodyLoadLabel,
     renderLeaderboard, renderLeaderboardSubmit, currentCareerRow, getLeaderboard, eraTagFor,
     renderWelcomeLeaderboard, leaderboardRowsHtml, init, newCareerId, ensureCareerId,

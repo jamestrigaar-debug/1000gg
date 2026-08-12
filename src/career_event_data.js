@@ -343,28 +343,44 @@
     // Development
     { id: "preseason_training", tag: "Development", tone: "neutral", base: 4,
       req: { perf: ["Met Expectation", "Overperformed", "Sensational"], ageMax: 34 },
-      text: (n) => `Pre-season is brutal. The coaching staff push ${n} harder than ever.`,
+      text: [
+        (n) => `Pre-season is brutal. The coaching staff push ${n} harder than ever.`,
+        (n) => `The new fitness coach has ideas. ${n}'s pre-season is the hardest of their career.`,
+        (n) => `Double sessions, heat, and a lactate monitor. ${n} is being pushed to a limit.`,
+      ],
       choices: [
         { label: "Embrace the workload — build the engine", fx: { attrChange: { key: "fitness", delta: 2 }, carryOver: true, carryOverLog: "Pre-season graft pays off — fitness is up next season." } },
         { label: "Pace yourself — longevity matters", fx: { attrChange: { key: "fitness", delta: 1 } } },
       ] },
     { id: "personal_trainer", tag: "Development", tone: "neutral", base: 3,
       req: { repMin: 40 },
-      text: (n) => `${n} hires a specialist finishing coach for the summer.`,
+      text: [
+        (n) => `${n} hires a specialist finishing coach for the summer.`,
+        (n) => `${n} spends the summer with a private finishing coach and a bag of balls.`,
+        (n) => `A former striker is hired to work with ${n} one-on-one through July.`,
+      ],
       choices: [
         { label: "Improve left foot", fx: { attrChange: { key: "leftFoot", delta: 2 }, carryOver: true, carryOverLog: "Summer finishing work on the left foot pays off next season." } },
         { label: "Improve right foot", fx: { attrChange: { key: "rightFoot", delta: 2 }, carryOver: true, carryOverLog: "Summer finishing work on the right foot pays off next season." } },
       ] },
     { id: "sports_science", tag: "Development", tone: "neutral", base: 3,
       req: { repMin: 35 },
-      text: (n) => `The club invests in a new sports science department and targets ${n}.`,
+      text: [
+        (n) => `The club invests in a new sports science department and targets ${n}.`,
+        (n) => `New GPS vests, new data, new targets — and ${n} is the test case.`,
+        (n) => `The club's sports science overhaul lands on ${n}'s programme first.`,
+      ],
       choices: [
         { label: "Prioritise speed", fx: { attrChange: { key: "speed", delta: 2 }, carryOver: true, carryOverLog: "Sports science programme boosts pace for next season." } },
         { label: "Prioritise strength", fx: { attrChange: { key: "strength", delta: 2 }, carryOver: true, carryOverLog: "Strength programme shows dividends next season." } },
       ] },
     { id: "career_position_training", tag: "Development", tone: "neutral", base: 4,
       req: { perf: ["Met Expectation", "Overperformed", "Sensational"], ageMax: 32 },
-      text: (n) => `${n}'s coach suggests a summer position camp to sharpen one specific area.`,
+      text: [
+        (n) => `${n}'s coach suggests a summer position camp to sharpen one specific area.`,
+        (n) => `A specialist camp is booked for the summer. ${n} picks one thing to fix.`,
+        (n) => `${n} is told to choose: one area, six weeks, real improvement.`,
+      ],
       choices: [
         { label: "Focus on heading", fx: { attrChange: { key: "heading", delta: 3 }, carryOver: true, carryOverLog: "Heading camp pays off next season." } },
         { label: "Focus on finishing", fx: { attrChange: { key: "leftFoot", delta: 2 }, carryOver: true, carryOverLog: "Finishing camp sharpens the left foot next season." } },
@@ -373,7 +389,11 @@
       ] },
     { id: "tactical_evolution", tag: "Development", tone: "neutral", base: 4,
       req: { traj: ["Mid-table", "Europe", "Title", "Auto Promotion", "Playoffs"], yearsMin: 1 },
-      text: (n) => `The manager wants to evolve the system — ${n} will have to adapt.`,
+      text: [
+        (n) => `The manager wants to evolve the system — ${n} will have to adapt.`,
+        (n) => `A new system arrives over the summer, and ${n}'s role in it is unclear.`,
+        (n) => `The manager redraws the shape. ${n} will have to learn it or lose the shirt.`,
+      ],
       choices: [
         { label: "Learn the new role inside-out", fx: { attrChange: { key: "fitness", delta: 1 }, carryOver: true, rep: 2, carryOverLog: "Tactical flexibility improves match fitness next season." } },
         { label: "Stick to what you know", fx: { flag: "managerConflict" } },
@@ -394,7 +414,11 @@
       ] },
     { id: "nutritionist", tag: "Development", tone: "neutral", base: 3,
       req: { perf: ["Sensational", "Overperformed"] },
-      text: (n) => `A nutritionist overhauls ${n}'s diet to squeeze out extra performance.`,
+      text: [
+        (n) => `A nutritionist overhauls ${n}'s diet to squeeze out extra performance.`,
+        (n) => `A nutritionist arrives with body-fat calipers and strong opinions about ${n}'s diet.`,
+        (n) => `Every meal ${n} eats is now weighed, logged and argued about.`,
+      ],
       choices: [
         { label: "Follow the strict plan", fx: { attrChange: { key: "strength", delta: 2 }, carryOver: true, carryOverLog: "Lean muscle gains from the new diet show next season." } },
         { label: "Enjoy the odd cheat meal", fx: { attrChange: { key: "strength", delta: 1 } } },
@@ -403,13 +427,21 @@
     // Injury
     { id: "minor_injury", tag: "Injury", tone: "negative", base: 4,
       req: { ageMin: 25 },
-      text: (n) => `${n} picks up a minor hamstring strain — nothing serious, but timing is frustrating.`,
+      text: [
+        (n) => `${n} picks up a minor hamstring strain — nothing serious, but timing is frustrating.`,
+        (n) => `A tight hamstring pulls ${n} out of training. The scan says days, not weeks.`,
+        (n) => `${n} feels something go in the warm-up. It is minor — but the timing is awful.`,
+      ],
       choices: [
         { label: "Rush back to help the team", fx: { flag: "injuryProne", injuryProne: 1 } },
         { label: "Take full time to recover properly", fx: { rep: 1 } },
       ] },
     { id: "training_injury", tag: "Injury", tone: "negative", base: 3,
-      text: (n) => `A freak training-ground accident leaves ${n} sidelined for weeks.`,
+      text: [
+        (n) => `A freak training-ground accident leaves ${n} sidelined for weeks.`,
+        (n) => `A stray challenge in a five-a-side leaves ${n} on crutches. Nobody meant it.`,
+        (n) => `${n} lands awkwardly in a routine drill and does not get up.`,
+      ],
       choices: [
         { label: "Work hard in rehab", fx: { rep: 1, flag: "redemptionArc" } },
         { label: "Come back too fast and risk it", fx: { flag: "injuryProne", injuryProne: 2 } },
@@ -430,7 +462,11 @@
       ] },
     { id: "concussion", tag: "Injury", tone: "negative", base: 3,
       req: { ageMin: 24 },
-      text: (n) => `${n} takes a heavy blow to the head. The medical team recommends a cautious protocol.`,
+      text: [
+        (n) => `${n} takes a heavy blow to the head. The medical team recommends a cautious protocol.`,
+        (n) => `A clash of heads leaves ${n} on the turf and the doctor sprinting on.`,
+        (n) => `${n} does not remember the second half. The protocol starts immediately.`,
+      ],
       choices: [
         { label: "Follow the full protocol", fx: { rep: 2 } },
         { label: "Return early — the team needs you", fx: { attrChange: { key: "fitness", delta: -1 }, flag: "injuryProne", injuryProne: 1 } },
@@ -527,100 +563,395 @@
       ] },
     { id: "world_cup_call", tag: "Roleplay", tone: "positive", base: 4,
       req: { repMin: 50, ageMin: 20, ageMax: 34, intlRetired: false },
-      text: (n) => `${n} is called up for a major international tournament.`,
+      text: [
+        (n) => `${n} is called up for a major international tournament.`,
+        (n, c) => `The squad is announced and ${n} is on the list.`,
+        (n) => `${n} gets the call: a major tournament, and a place on the plane.`,
+      ],
       choices: [
         { label: "Give everything for the country", fx: { rep: 5, intlCaps: 1, intlGoals: () => deps.randInt(0, 2), flag: "inForm" } },
         { label: "Focus on club fitness", fx: { rep: -2 } },
       ] },
+
+    /* ---- Added to widen the rotation ----
+     * The pool was 26 events with a 3-season cooldown, so a long career cycled
+     * the same handful in a near-fixed order. These are new situations rather
+     * than re-skins, spread across all four tags so every career stage has
+     * more it can draw from. */
+    { id: "set_piece_duty", tag: "Development", tone: "neutral", base: 3,
+      req: { repMin: 45 },
+      text: [
+        (n) => `The regular penalty taker has left. The manager asks who wants the ball on the spot.`,
+        (n) => `Free-kicks and penalties are up for grabs in pre-season. ${n} fancies it.`,
+      ],
+      choices: [
+        { label: "Take the responsibility", fx: { attrChange: { key: "rightFoot", delta: 2 }, rep: 2, carryOver: true, carryOverLog: "Owning set pieces sharpens the shooting next season." } },
+        { label: "Leave it to someone else", fx: { attrChange: { key: "fitness", delta: 1 } } },
+      ] },
+    { id: "video_analysis", tag: "Development", tone: "neutral", base: 3,
+      req: { perf: ["Underperformed", "Flop", "Met Expectation"] },
+      text: [
+        (n) => `The analyst has cut together every chance ${n} missed last season. It is not comfortable viewing.`,
+        (n) => `${n} is handed a tablet with ninety minutes of their own worst moments on it.`,
+      ],
+      choices: [
+        { label: "Study every clip honestly", fx: { attrChange: { key: "leftFoot", delta: 2 }, rep: 1, carryOver: true, carryOverLog: "The video work shows in next season's finishing." } },
+        { label: "Trust your instincts instead", fx: { rep: -1, flag: "inForm" } },
+      ] },
+    { id: "veteran_mentor", tag: "Development", tone: "positive", base: 3,
+      req: { ageMax: 24, repMin: 30 },
+      text: [
+        (n) => `A veteran in the dressing room takes ${n} aside and offers to help.`,
+        (n) => `The club captain, twelve years older, starts staying behind after training with ${n}.`,
+      ],
+      choices: [
+        { label: "Listen to every word", fx: { attrChange: { key: "heading", delta: 2 }, rep: 2, carryOver: true, carryOverLog: "The veteran's coaching shows up in next season's game." } },
+        { label: "Learn your own way", fx: { attrChange: { key: "speed", delta: 1 } } },
+      ] },
+    { id: "back_spasm", tag: "Injury", tone: "negative", base: 3,
+      req: { ageMin: 30 },
+      text: [
+        (n) => `${n}'s back locks up in the warm-up. It is the third time this year.`,
+        (n) => `A recurring back problem starts costing ${n} training days every week.`,
+      ],
+      choices: [
+        { label: "Manage the load carefully", fx: { attrChange: { key: "fitness", delta: -1 }, rep: 1 } },
+        { label: "Play every game regardless", fx: { attrChange: { key: "fitness", delta: -2 }, flag: "injuryProne", injuryProne: 1, rep: 2 } },
+      ] },
+    { id: "illness_layoff", tag: "Injury", tone: "negative", base: 2,
+      text: [
+        (n) => `A virus goes through the squad and hits ${n} hardest — two weeks of nothing.`,
+        (n) => `${n} loses half a stone to illness and comes back weaker than they left.`,
+      ],
+      choices: [
+        { label: "Rebuild slowly and properly", fx: { attrChange: { key: "strength", delta: -1 }, rep: 1 } },
+        { label: "Force your way straight back in", fx: { attrChange: { key: "strength", delta: -2 }, flag: "injuryProne", injuryProne: 1 } },
+      ] },
+    { id: "contract_standoff", tag: "Transfer or Loan", tone: "mixed", base: 4,
+      req: { repMin: 55, yearsMin: 2 },
+      text: [
+        (n) => `Talks over a new deal have stalled. The club's offer is well short of what the agent wants for ${n}.`,
+        (n) => `${n}'s agent goes public about the contract negotiations. The club is not pleased.`,
+      ],
+      choices: [
+        { label: "Sit tight and let the club move", fx: { rep: -1, flag: "unsettled" } },
+        { label: "Sign what is on the table", fx: { rep: 2, flag: "fanFavorite" } },
+      ] },
+    { id: "loan_interest", tag: "Transfer or Loan", tone: "mixed", base: 4,
+      req: { ageMax: 26, roleIn: ["Bench", "Rotation"] },
+      text: [
+        (n) => `A club a division below wants ${n} on loan for regular football.`,
+        (n) => `${n} is training well but not playing. A loan offer arrives with a guarantee of minutes.`,
+      ],
+      choices: [
+        { label: "Go and play every week", fx: { rep: 2, forceTransfer: true } },
+        { label: "Stay and fight for the shirt", fx: { rep: 1, flag: "redemptionArc" } },
+      ] },
+    { id: "release_clause_leak", tag: "Transfer or Loan", tone: "mixed", base: 3,
+      req: { repMin: 65 },
+      text: [
+        (n) => `${n}'s release clause is leaked to the press, and suddenly every big club knows the number.`,
+        (n) => `A journalist prints the exact figure it would take to sign ${n}. The phone starts ringing.`,
+      ],
+      choices: [
+        { label: "Let the club handle it", fx: { rep: 1 } },
+        { label: "Tell the world you are available", fx: { rep: -2, forceTransfer: true } },
+      ] },
+    { id: "captaincy_offer", tag: "Roleplay", tone: "positive", base: 4,
+      req: { repMin: 60, yearsMin: 2, ageMin: 26 },
+      text: [
+        (n) => `The armband is free, and the manager thinks ${n} should wear it.`,
+        (n) => `The squad votes. ${n} is asked to captain the club.`,
+      ],
+      choices: [
+        { label: "Lead from the front", fx: { rep: 5, flag: "fanFavorite" } },
+        { label: "Decline — just focus on goals", fx: { rep: -1, flag: "inForm" } },
+      ] },
+    { id: "fan_backlash", tag: "Roleplay", tone: "negative", base: 3,
+      req: { perf: ["Flop", "Underperformed"], repMin: 40 },
+      text: [
+        (n) => `A section of the crowd turns on ${n} during a home defeat.`,
+        (n) => `${n}'s name is booed when the team sheet is read out.`,
+      ],
+      choices: [
+        { label: "Front up and apologise publicly", fx: { rep: 2 } },
+        { label: "Point at the badge and say nothing", fx: { rep: -2, flag: "mediaTarget" } },
+      ] },
+    { id: "charity_work", tag: "Roleplay", tone: "positive", base: 3,
+      req: { repMin: 45 },
+      text: [
+        (n) => `A children's hospital near the ground asks ${n} to become a patron.`,
+        (n) => `${n} is invited to fund a community pitch in the area they grew up in.`,
+      ],
+      choices: [
+        { label: "Give the time and the money", fx: { rep: 4, wealth: -5 } },
+        { label: "Send a signed shirt and stay focused", fx: { rep: -1, flag: "inForm" } },
+      ] },
+    { id: "documentary_offer", tag: "Roleplay", tone: "mixed", base: 3,
+      req: { repMin: 65, fame: 50 },
+      text: [
+        (n) => `A streaming service wants to follow ${n} for a full season, cameras in the house and all.`,
+        (n) => `${n} is offered a documentary deal — total access, total exposure.`,
+      ],
+      choices: [
+        { label: "Let the cameras in", fx: { fame: 12, rep: -2, flag: "mediaTarget" } },
+        { label: "Keep your private life private", fx: { rep: 3 } },
+      ] },
   ];
+  /* ---------------------------- CAREER ENDINGS ----------------------------
+   * How a career closes. One of these fires when retirement is triggered.
+   *
+   * IMPORTANT — why these gates look the way they do: every ending here used
+   * to be gated on `s.pillars?.X || 50`, and `state.pillars` is permanently
+   * null (pillars were removed from gameplay; see migrateState). That made
+   * the expression a hard-coded 50 in every ending, so nine of the sixteen
+   * could NEVER fire — `>= 55`, `>= 65`, `>= 70` and `>= 75` are all false
+   * against a constant 50 — and `released_on_free` read `s.contractLength`,
+   * a field that does not exist on state at all (it is `contractYears`).
+   * Players saw the same handful of endings every single career.
+   *
+   * Every gate below now reads a field the career actually maintains:
+   * reputation, fame, wealth, yearsAtClub, clubsPlayed, honours, intlCaps,
+   * intlCaptain, totalGoals, age, contractYears. The SPIRIT of each ending is
+   * preserved — the loyal one-club servant still becomes an ambassador, the
+   * well-travelled pro still moves into agency work — the signal is just one
+   * the game genuinely tracks.
+   *
+   * `text` may be a single function/string OR an array of variants; the
+   * renderer picks one per firing (see resolveEventText in game.js), so the
+   * same ending does not read word-for-word identically every time.
+   */
   const CAREER_ENDINGS = [
     { id: "injury_retirement", base: 2,
       req: (s) => s.injuryProneSeasons > 0 || s.injuryProneness > 60 || s.age >= 35,
       score: (s) => (s.injuryProneSeasons * 4) + ((s.injuryProneness - 50) / 10) + (s.age >= 35 ? 3 : 0),
-      text: (n, s) => `A cruel injury forces ${n} into an early, unwanted retirement at ${s.age}.`,
+      text: [
+        (n, s) => `A cruel injury forces ${n} into an early, unwanted retirement at ${s.age}.`,
+        (n, s) => `The specialist is blunt: the knee will not take another season. ${n} is done at ${s.age}.`,
+        (n, s) => `One challenge too many. At ${s.age}, ${n}'s body finally refuses to answer.`,
+      ],
       choices: [{ label: "Bow out with head held high", fx: { rep: -2 } }] },
     { id: "last_dance_abroad", base: 3,
       req: (s) => s.age >= 33 && s.reputation >= 55 && s.totalGoals >= 300,
-      score: (s) => ((s.reputation - 50) / 10) + (s.totalGoals / 100) + (s.clubsPlayed.size >= 3 ? 2 : 0) + ((s.pillars?.Ambition || 50) >= 60 ? 2 : 0),
-      text: (n, s) => `${n} signs one final sunset deal abroad — a last adventure to close the story.`,
+      score: (s) => ((s.reputation - 50) / 10) + (s.totalGoals / 100) + (s.clubsPlayed.size >= 3 ? 2 : 0),
+      text: [
+        (n) => `${n} signs one final sunset deal abroad — a last adventure to close the story.`,
+        (n) => `An offer arrives from overseas: big money, warm weather, one more year of football for ${n}.`,
+        (n) => `A league on the other side of the world wants a marquee name. ${n} is the name.`,
+      ],
       choices: [
         { label: "One final adventure", fx: { finalSeason: { destination: "abroad", note: "Final season abroad" } } },
         { label: "Retire at home", fx: {} },
       ] },
     { id: "lower_league_final", base: 3,
       req: (s) => s.age >= 35 && s.reputation >= 40 && s.totalGoals >= 250,
-      score: (s) => ((s.pillars?.Loyalty || 50) >= 60 ? 3 : 0) + ((s.pillars?.Professionalism || 50) >= 60 ? 2 : 0) + (s.reputation < 60 ? 2 : 0),
-      text: (n, s) => `${n} drops down the leagues for a heroic final season, mentoring the next generation.`,
+      score: (s) => (s.clubsPlayed.size <= 2 ? 3 : 0) + (s.yearsAtClub >= 4 ? 2 : 0) + (s.reputation < 60 ? 2 : 0),
+      text: [
+        (n) => `${n} drops down the leagues for a heroic final season, mentoring the next generation.`,
+        (n) => `A struggling lower-league side asks ${n} for one season — as much for the dressing room as the goals.`,
+        (n) => `No fanfare, no cameras: just a small club, a small crowd, and one more year for ${n}.`,
+      ],
       choices: [
         { label: "One last hurrah in the lower leagues", fx: { finalSeason: { destination: "lower leagues", note: "Final season in the lower leagues" } } },
         { label: "Retire a club legend", fx: {} },
       ] },
     { id: "pundit", base: 2,
       req: (s) => s.reputation >= 60 || s.fame >= 50,
-      score: (s) => ((s.reputation - 60) / 5) + ((s.fame - 40) / 10) + ((s.pillars?.Ego || 50) >= 60 ? 2 : 0),
-      text: (n, s) => `${n} is snapped up by a broadcaster as a star pundit — the face of football analysis.`,
+      score: (s) => ((s.reputation - 60) / 5) + ((s.fame - 40) / 10),
+      text: [
+        (n) => `${n} is snapped up by a broadcaster as a star pundit — the face of football analysis.`,
+        (n) => `The Saturday-night studio wants a new voice. ${n} signs before the boots are even off.`,
+        (n) => `A rival network doubles the offer. ${n} will be on television by August.`,
+      ],
       choices: [{ label: "Head to the studio", fx: { epilogue: "pundit" } }] },
     { id: "manager", base: 2,
-      req: (s) => (s.honours.leagueTitles + s.honours.europeanCups) >= 1 || (s.pillars?.Leadership || 50) >= 60,
-      score: (s) => (((s.pillars?.Leadership || 50) - 50) / 10) + (s.honours.leagueTitles * 3) + (s.honours.europeanCups * 2) + (s.reputation >= 70 ? 2 : 0),
-      text: (n, s) => `${n} moves straight into the dugout, beginning a management career.`,
+      // A dugout job needs proof you can win, or that you led on the pitch.
+      req: (s) => (s.honours.leagueTitles + s.honours.europeanCups) >= 1 || s.intlCaptain,
+      score: (s) => (s.honours.leagueTitles * 3) + (s.honours.europeanCups * 2) + (s.intlCaptain ? 3 : 0) + (s.reputation >= 70 ? 2 : 0),
+      text: [
+        (n) => `${n} moves straight into the dugout, beginning a management career.`,
+        (n) => `The badges are already done. ${n} takes a first job in management within weeks.`,
+        (n) => `A former club comes calling — not for a testimonial, but for a manager.`,
+      ],
       choices: [{ label: "Take the manager's job", fx: { epilogue: "manager" } }] },
     { id: "coach", base: 2,
-      req: (s) => (s.pillars?.Professionalism || 50) >= 50 || (s.pillars?.Loyalty || 50) >= 60,
-      score: (s) => (((s.pillars?.Professionalism || 50) - 50) / 10) + (((s.pillars?.Loyalty || 50) - 50) / 10) + (s.honours.leagueTitles ? 2 : 0),
-      text: (n, s) => `${n} steps back from the spotlight and becomes a respected coach, shaping the next generation.`,
+      // The default backroom path — open to any long professional career.
+      req: (s) => s.season >= 8,
+      score: (s) => (s.season / 4) + (s.honours.leagueTitles ? 2 : 0) + (s.reputation < 65 ? 2 : 0),
+      text: [
+        (n) => `${n} steps back from the spotlight and becomes a respected coach, shaping the next generation.`,
+        (n) => `No cameras, no armband — just a tracksuit, a whistle, and a group of teenagers to teach.`,
+        (n) => `${n} joins the backroom staff, passing on twenty years of hard-won detail.`,
+      ],
       choices: [{ label: "Take the coaching role", fx: { epilogue: "coach" } }] },
     { id: "club_ambassador", base: 2,
-      req: (s) => s.yearsAtClub >= 5 && (s.pillars?.Loyalty || 50) >= 65,
-      score: (s) => (((s.pillars?.Loyalty || 50) - 50) / 8) + (s.yearsAtClub / 2) + (s.honours.leagueTitles * 2),
-      text: (n, s) => `${n} becomes a global ambassador for the club, forever tied to its badge.`,
+      // The loyal servant: a long stay at one club, and few clubs overall.
+      req: (s) => s.yearsAtClub >= 5 && s.clubsPlayed.size <= 3 && s.reputation >= 50,
+      score: (s) => (s.yearsAtClub) + (s.honours.leagueTitles * 2) + (s.clubsPlayed.size <= 2 ? 3 : 0),
+      text: [
+        (n) => `${n} becomes a global ambassador for the club, forever tied to its badge.`,
+        (n) => `There is a statue outside the ground now. ${n} is asked to stay on and represent the club worldwide.`,
+        (n) => `One badge, one story. The club makes ${n} its ambassador for life.`,
+      ],
       choices: [{ label: "Become club ambassador", fx: { epilogue: "ambassador" } }] },
     { id: "agent_scout", base: 2,
-      req: (s) => (s.pillars?.Ambition || 50) >= 55 && s.clubsPlayed.size >= 2,
-      score: (s) => (((s.pillars?.Ambition || 50) - 50) / 10) + (s.clubsPlayed.size) + (s.reputation >= 60 ? 2 : 0),
-      text: (n, s) => `${n} moves into the business side of the game, becoming a sharp agent and scout.`,
+      // The well-travelled pro who knows every dressing room and every market.
+      req: (s) => s.clubsPlayed.size >= 4,
+      score: (s) => (s.clubsPlayed.size * 1.5) + (s.reputation >= 60 ? 2 : 0) + (s.wealth >= 55 ? 2 : 0),
+      text: [
+        (n) => `${n} moves into the business side of the game, becoming a sharp agent and scout.`,
+        (n) => `Five dressing rooms, five markets, a contacts book nobody else has — ${n} turns it into a business.`,
+        (n) => `${n} starts representing young players, having learned the hard way how the deals really work.`,
+      ],
       choices: [{ label: "Enter the agent world", fx: { epilogue: "agent" } }] },
     { id: "academy_director", base: 2,
-      req: (s) => (s.pillars?.Leadership || 50) >= 55 && (s.pillars?.Professionalism || 50) >= 55,
-      score: (s) => (((s.pillars?.Leadership || 50) - 50) / 8) + (((s.pillars?.Professionalism || 50) - 50) / 10),
-      text: (n, s) => `${n} takes charge of a club academy, dedicated to developing the next generation.`,
+      // Came through an academy, stayed long enough to owe one something back.
+      req: (s) => s.season >= 10 && (s.honours.youngPlayer >= 1 || s.yearsAtClub >= 4),
+      score: (s) => (s.honours.youngPlayer * 3) + (s.yearsAtClub / 2) + (s.season / 6),
+      text: [
+        (n) => `${n} takes charge of a club academy, dedicated to developing the next generation.`,
+        (n) => `The academy that made ${n} asks for a director. There is only one answer.`,
+        (n) => `${n} takes over youth development, determined that the next one gets a better run at it.`,
+      ],
       choices: [{ label: "Run the academy", fx: { epilogue: "academyDirector" } }] },
     { id: "business_mogul", base: 2,
-      req: (s) => s.wealth >= 60 && (s.pillars?.Ego || 50) >= 55,
-      score: (s) => ((s.wealth - 50) / 10) + (((s.pillars?.Ego || 50) - 50) / 10) + (s.fame >= 60 ? 2 : 0),
-      text: (n, s) => `${n} pivots into business, building a commercial empire off the back of a football fortune.`,
+      req: (s) => s.wealth >= 60 && s.fame >= 50,
+      score: (s) => ((s.wealth - 50) / 8) + ((s.fame - 40) / 10),
+      text: [
+        (n) => `${n} pivots into business, building a commercial empire off the back of a football fortune.`,
+        (n) => `The boots come off and the suits go on: ${n} turns a fortune into an empire.`,
+        (n) => `Property, media, a clothing label — ${n}'s second career is bigger business than the first.`,
+      ],
       choices: [{ label: "Build the business empire", fx: { epilogue: "businessMogul" } }] },
     { id: "hometown_hero", base: 3,
-      req: (s) => (s.pillars?.Loyalty || 50) >= 70 && s.reputation >= 50,
-      score: (s) => (((s.pillars?.Loyalty || 50) - 50) / 8) + ((s.reputation - 40) / 10),
-      text: (n, s) => `${n} returns home to grassroots football, giving back to the community that raised them.`,
+      // Never chased the money: few clubs, modest fame, real standing.
+      req: (s) => s.clubsPlayed.size <= 2 && s.reputation >= 50 && s.fame < 70,
+      score: (s) => ((s.reputation - 40) / 10) + (s.clubsPlayed.size === 1 ? 4 : 2),
+      text: [
+        (n) => `${n} returns home to grassroots football, giving back to the community that raised them.`,
+        (n) => `A local pitch, a set of donated kits, and ${n} running sessions on a Sunday morning.`,
+        (n) => `${n} goes back to where it started — the same club, the same park, thirty years on.`,
+      ],
       choices: [{ label: "Give back to the community", fx: { epilogue: "hometownHero" } }] },
     { id: "released_on_free", base: 2,
-      req: (s) => s.age >= 32 && s.contractLength === 0,
-      score: (s) => (s.age >= 35 ? 3 : 1) + ((s.pillars?.Durability || 50) < 50 ? 2 : 0),
-      text: (n, s) => `${n}'s contract expires and the club decides not to renew. Released on a free transfer at ${s.age}.`,
+      // NB contractYears, not contractLength — the latter is not a state field.
+      req: (s) => s.age >= 32 && (s.contractYears || 0) <= 0,
+      score: (s) => (s.age >= 35 ? 3 : 1) + (s.reputation < 55 ? 2 : 0) + (s.injuryProneness > 55 ? 2 : 0),
+      text: [
+        (n, s) => `${n}'s contract expires and the club decides not to renew. Released on a free transfer at ${s.age}.`,
+        (n, s) => `The email arrives in June: no new deal. At ${s.age}, ${n} is a free agent nobody is rushing to sign.`,
+        (n) => `The club thanks ${n} for their service in a two-line statement, and moves on.`,
+      ],
       choices: [
         { label: "Sign with a smaller club for one last season", fx: { finalSeason: { destination: "lower leagues", note: "Final season after release" } } },
         { label: "Retire with dignity", fx: {} },
       ] },
     { id: "club_director_path", base: 2,
-      req: (s) => (s.pillars?.Leadership || 50) >= 65 && s.yearsAtClub >= 5,
-      score: (s) => (((s.pillars?.Leadership || 50) - 50) / 8) + (s.yearsAtClub / 2) + ((s.pillars?.Professionalism || 50) >= 60 ? 2 : 0),
-      text: (n, s) => `${n} transitions from player to director, taking charge of the club's future strategy and academy development.`,
+      // Boardroom, not touchline: needs standing at a club AND silverware.
+      req: (s) => s.yearsAtClub >= 5 && (s.honours.leagueTitles + s.honours.europeanCups + s.honours.domesticCups) >= 2,
+      score: (s) => (s.yearsAtClub / 2) + (s.honours.leagueTitles * 2) + (s.reputation >= 70 ? 3 : 0),
+      text: [
+        (n) => `${n} transitions from player to director, taking charge of the club's future strategy and academy development.`,
+        (n) => `${n} swaps the training ground for the boardroom, with a say over everything from transfers to the academy.`,
+        (n) => `The owners want someone who understands the dressing room. ${n} is made a director.`,
+      ],
       choices: [{ label: "Become club director", fx: { epilogue: "clubDirector" } }] },
     { id: "conspiracy_theorist", base: 1,
-      req: (s) => (s.pillars?.Ego || 50) >= 75 && s.fame >= 60,
-      score: (s) => (((s.pillars?.Ego || 50) - 50) / 5) + ((s.fame - 40) / 10),
-      text: (n, s) => `${n} retires from football and becomes an internet personality, posting conspiracy theories and hot takes on social media.`,
+      // Famous, but the reputation never matched the noise.
+      req: (s) => s.fame >= 60 && s.reputation < 60,
+      score: (s) => ((s.fame - 50) / 8) + ((60 - s.reputation) / 8),
+      text: [
+        (n) => `${n} retires from football and becomes an internet personality, posting conspiracy theories and hot takes on social media.`,
+        (n) => `${n}'s account starts posting at 3am about what "they" don't want you to know. The engagement is enormous.`,
+        (n) => `The podcast launches within a month. The takes get worse, and more popular, every week.`,
+      ],
       choices: [{ label: "Become a social media provocateur", fx: { epilogue: "conspiracyTheorist" } }] },
     { id: "rural_farmer", base: 1,
-      req: (s) => (s.pillars?.Loyalty || 50) >= 70 && (s.pillars?.Consistency || 50) >= 65,
-      score: (s) => (((s.pillars?.Loyalty || 50) - 50) / 8) + (((s.pillars?.Consistency || 50) - 50) / 10),
-      text: (n, s) => `${n} leaves football behind entirely, buying a farm in the countryside to live a quiet, simple life away from the spotlight.`,
+      // Walked away quietly: low fame, no interest in the circus.
+      req: (s) => s.fame < 45 && s.season >= 8,
+      score: (s) => ((45 - s.fame) / 6) + (s.clubsPlayed.size <= 2 ? 2 : 0),
+      text: [
+        (n) => `${n} leaves football behind entirely, buying a farm in the countryside to live a quiet, simple life away from the spotlight.`,
+        (n) => `No book, no podcast, no farewell tour. ${n} buys a smallholding and stops answering the phone.`,
+        (n) => `${n} is spotted a year later at a country market, and politely declines to talk about football.`,
+      ],
       choices: [{ label: "Become a rural farmer", fx: { epilogue: "ruralFarmer" } }] },
+
+    /* ---- Endings added to widen the pool beyond the same handful ---- */
+    { id: "testimonial_farewell", base: 3,
+      // A full house says goodbye — earned by staying somewhere long enough.
+      req: (s) => s.yearsAtClub >= 4 && s.reputation >= 55,
+      score: (s) => (s.yearsAtClub) + ((s.reputation - 50) / 8),
+      text: [
+        (n) => `A packed house turns out for ${n}'s testimonial. The old team-mates come back for one night.`,
+        (n) => `The club announces a testimonial. It sells out in under an hour.`,
+      ],
+      choices: [
+        { label: "Take the applause and retire", fx: { rep: 3 } },
+        { label: "Sign on for one more year off the back of it", fx: { extend: true, note: "One more season after the testimonial" } },
+      ] },
+    { id: "national_farewell", base: 3,
+      // The international send-off, for a career that meant something to a country.
+      req: (s) => s.intlCaps >= 40 && s.intlGoals >= 10,
+      score: (s) => (s.intlCaps / 12) + (s.intlGoals / 8) + (s.honours.intlTrophies * 3) + (s.intlCaptain ? 2 : 0),
+      text: [
+        (n, s) => `${s.country} gives ${n} a farewell cap — a full stadium, an armband, and ninety minutes to say goodbye.`,
+        (n, s) => `The national federation schedules a friendly purely so ${n} can walk off to an ovation.`,
+      ],
+      choices: [{ label: "Walk off to an ovation", fx: { rep: 4, epilogue: "nationalIcon" } }] },
+    { id: "media_meltdown", base: 1,
+      // A famous name and a poor final season: the press smells blood.
+      req: (s) => s.fame >= 55 && s.reputation < 55 && s.age >= 32,
+      score: (s) => ((s.fame - 50) / 8) + ((55 - s.reputation) / 8),
+      text: [
+        (n) => `A leaked dressing-room row ends ${n}'s season, and the club's patience, in the same week.`,
+        (n) => `The back pages run the story for six days straight. ${n} never plays for the club again.`,
+      ],
+      choices: [
+        { label: "Retire rather than answer the questions", fx: { rep: -4 } },
+        { label: "Rebuild the name somewhere smaller", fx: { rep: -1, finalSeason: { destination: "lower leagues", note: "Final season rebuilding a reputation" } } },
+      ] },
+    { id: "goal_record_chase", base: 2,
+      // Retiring within touching distance of the number the whole game is about.
+      req: (s) => s.totalGoals >= 700 && s.totalGoals < 1000,
+      score: (s) => (s.totalGoals - 650) / 25,
+      text: [
+        (n, s) => `${n} finishes on ${s.totalGoals} career goals — close enough to the thousand to feel it, far enough to hurt.`,
+        (n, s) => `The record stays out of reach by ${1000 - s.totalGoals}. ${n} has to decide whether one more year is worth it.`,
+      ],
+      choices: [
+        { label: "Chase it for one more season", fx: { extend: true, note: "One more season chasing the record" } },
+        { label: "Accept the number and retire", fx: { rep: 2 } },
+      ] },
+    { id: "player_coach", base: 2,
+      // The veteran who is already half a coach in the dressing room.
+      req: (s) => s.age >= 34 && s.season >= 12,
+      score: (s) => (s.age - 32) + (s.honours.leagueTitles ? 2 : 0),
+      text: [
+        (n) => `The club offers ${n} a player-coach role: train the kids, and start a handful of games.`,
+        (n) => `${n} is handed a clipboard as often as a shirt now. The club makes it official.`,
+      ],
+      choices: [
+        { label: "Take the hybrid role for one more year", fx: { extend: true, note: "Final season as player-coach" } },
+        { label: "Go into coaching full time", fx: { epilogue: "coach" } },
+      ] },
+    { id: "quiet_release", base: 2,
+      // The unremarkable ending — no statue, no studio, no farewell.
+      req: (s) => s.reputation < 50 && s.age >= 31,
+      score: (s) => ((50 - s.reputation) / 6) + (s.totalGoals < 200 ? 3 : 0),
+      text: [
+        (n) => `There is no announcement. ${n} simply stops being named in a squad, and that is that.`,
+        (n) => `The retirement makes a single paragraph on the club website, below the youth-team results.`,
+      ],
+      choices: [{ label: "Slip quietly out of the game", fx: {} }] },
+
     { id: "normal_retirement", base: 4,
       score: (s) => 0,
-      text: (n, s) => `${n} calls time on a storied career, hanging up the boots for good at ${s.age}.`,
+      text: [
+        (n, s) => `${n} calls time on a storied career, hanging up the boots for good at ${s.age}.`,
+        (n, s) => `At ${s.age}, ${n} announces it: one last handshake with the manager, and it is over.`,
+        (n, s) => `${n} retires at ${s.age}, on their own terms and at a time of their own choosing.`,
+      ],
       choices: [{ label: "Retire a legend", fx: {} }] },
   ];
 
