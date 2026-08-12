@@ -721,6 +721,39 @@
    * renderer picks one per firing (see resolveEventText in game.js), so the
    * same ending does not read word-for-word identically every time.
    */
+  /* Helpers for the game-specific endings at the bottom of this table. They
+   * read the career's own draft, so the text names the real legends this
+   * particular striker was actually built from. All are null-safe: a career
+   * resumed from an older save may have no slots recorded. */
+  function donorPool(s) {
+    const slots = (s && s.player && s.player.slots) || {};
+    const fromSlots = Object.keys(slots)
+      .map((k) => slots[k] && slots[k].donor)
+      .filter(Boolean);
+    if (fromSlots.length) return fromSlots;
+    return ((s && s.player && s.player.usedDonors) || []).filter(Boolean);
+  }
+  function firstDonor(s) {
+    const pool = donorPool(s);
+    return pool.length ? pool[0] : null;
+  }
+  function pickDonor(s) {
+    const pool = donorPool(s);
+    if (!pool.length) return "the legends they were drafted from";
+    return pool[Math.floor(deps.rand() * pool.length) % pool.length];
+  }
+  const ERA_NAMES = {
+    all: "the modern game", classic: "the nineties", modern: "the 2000s",
+    recent: "the 2010s", current: "the present day",
+  };
+  function eraName(s) { return ERA_NAMES[s && s.era] || "the modern game"; }
+  // "500th", "600th" — the round number their boots are remembered for.
+  function ordinalGoal(s) {
+    const g = (s && s.totalGoals) || 0;
+    const round = g >= 1000 ? 1000 : Math.floor(g / 100) * 100;
+    return `${round}th`;
+  }
+
   const CAREER_ENDINGS = [
     { id: "injury_retirement", base: 2,
       req: (s) => s.injuryProneSeasons > 0 || s.injuryProneness > 60 || s.age >= 35,
@@ -733,7 +766,7 @@
       choices: [{ label: "Bow out with head held high", fx: { rep: -2 } }] },
     { id: "last_dance_abroad", base: 3,
       req: (s) => s.age >= 33 && s.reputation >= 55 && s.totalGoals >= 300,
-      score: (s) => ((s.reputation - 50) / 10) + (s.totalGoals / 100) + (s.clubsPlayed.size >= 3 ? 2 : 0),
+      score: (s) => Math.max(0, s.reputation - 50) / 12 + Math.min(s.totalGoals, 700) / 150 + (s.clubsPlayed.size >= 3 ? 2 : 0),
       text: [
         (n) => `${n} signs one final sunset deal abroad — a last adventure to close the story.`,
         (n) => `An offer arrives from overseas: big money, warm weather, one more year of football for ${n}.`,
@@ -767,7 +800,7 @@
     { id: "manager", base: 2,
       // A dugout job needs proof you can win, or that you led on the pitch.
       req: (s) => (s.honours.leagueTitles + s.honours.europeanCups) >= 1 || s.intlCaptain,
-      score: (s) => (s.honours.leagueTitles * 3) + (s.honours.europeanCups * 2) + (s.intlCaptain ? 3 : 0) + (s.reputation >= 70 ? 2 : 0),
+      score: (s) => Math.min(s.honours.leagueTitles, 4) * 1.5 + Math.min(s.honours.europeanCups, 3) + (s.intlCaptain ? 2 : 0) + (s.reputation >= 70 ? 1.5 : 0),
       text: [
         (n) => `${n} moves straight into the dugout, beginning a management career.`,
         (n) => `The badges are already done. ${n} takes a first job in management within weeks.`,
@@ -777,7 +810,7 @@
     { id: "coach", base: 2,
       // The default backroom path — open to any long professional career.
       req: (s) => s.season >= 8,
-      score: (s) => (s.season / 4) + (s.honours.leagueTitles ? 2 : 0) + (s.reputation < 65 ? 2 : 0),
+      score: (s) => Math.min(s.season, 16) / 8 + (s.honours.leagueTitles ? 1 : 0) + (s.reputation < 65 ? 1.5 : 0),
       text: [
         (n) => `${n} steps back from the spotlight and becomes a respected coach, shaping the next generation.`,
         (n) => `No cameras, no armband — just a tracksuit, a whistle, and a group of teenagers to teach.`,
@@ -787,7 +820,7 @@
     { id: "club_ambassador", base: 2,
       // The loyal servant: a long stay at one club, and few clubs overall.
       req: (s) => s.yearsAtClub >= 5 && s.clubsPlayed.size <= 3 && s.reputation >= 50,
-      score: (s) => (s.yearsAtClub) + (s.honours.leagueTitles * 2) + (s.clubsPlayed.size <= 2 ? 3 : 0),
+      score: (s) => Math.min(s.yearsAtClub, 10) / 2 + Math.min(s.honours.leagueTitles, 4) + (s.clubsPlayed.size <= 2 ? 2 : 0),
       text: [
         (n) => `${n} becomes a global ambassador for the club, forever tied to its badge.`,
         (n) => `There is a statue outside the ground now. ${n} is asked to stay on and represent the club worldwide.`,
@@ -797,7 +830,7 @@
     { id: "agent_scout", base: 2,
       // The well-travelled pro who knows every dressing room and every market.
       req: (s) => s.clubsPlayed.size >= 4,
-      score: (s) => (s.clubsPlayed.size * 1.5) + (s.reputation >= 60 ? 2 : 0) + (s.wealth >= 55 ? 2 : 0),
+      score: (s) => Math.min(s.clubsPlayed.size, 6) + (s.reputation >= 60 ? 1.5 : 0) + (s.wealth >= 55 ? 1.5 : 0),
       text: [
         (n) => `${n} moves into the business side of the game, becoming a sharp agent and scout.`,
         (n) => `Five dressing rooms, five markets, a contacts book nobody else has — ${n} turns it into a business.`,
@@ -807,7 +840,7 @@
     { id: "academy_director", base: 2,
       // Came through an academy, stayed long enough to owe one something back.
       req: (s) => s.season >= 10 && (s.honours.youngPlayer >= 1 || s.yearsAtClub >= 4),
-      score: (s) => (s.honours.youngPlayer * 3) + (s.yearsAtClub / 2) + (s.season / 6),
+      score: (s) => Math.min(s.honours.youngPlayer, 2) * 2 + Math.min(s.yearsAtClub, 10) / 4 + Math.min(s.season, 20) / 8,
       text: [
         (n) => `${n} takes charge of a club academy, dedicated to developing the next generation.`,
         (n) => `The academy that made ${n} asks for a director. There is only one answer.`,
@@ -826,7 +859,7 @@
     { id: "hometown_hero", base: 3,
       // Never chased the money: few clubs, modest fame, real standing.
       req: (s) => s.clubsPlayed.size <= 2 && s.reputation >= 50 && s.fame < 70,
-      score: (s) => ((s.reputation - 40) / 10) + (s.clubsPlayed.size === 1 ? 4 : 2),
+      score: (s) => Math.max(0, s.reputation - 40) / 14 + (s.clubsPlayed.size === 1 ? 3 : 1.5),
       text: [
         (n) => `${n} returns home to grassroots football, giving back to the community that raised them.`,
         (n) => `A local pitch, a set of donated kits, and ${n} running sessions on a Sunday morning.`,
@@ -849,7 +882,7 @@
     { id: "club_director_path", base: 2,
       // Boardroom, not touchline: needs standing at a club AND silverware.
       req: (s) => s.yearsAtClub >= 5 && (s.honours.leagueTitles + s.honours.europeanCups + s.honours.domesticCups) >= 2,
-      score: (s) => (s.yearsAtClub / 2) + (s.honours.leagueTitles * 2) + (s.reputation >= 70 ? 3 : 0),
+      score: (s) => Math.min(s.yearsAtClub, 10) / 4 + Math.min(s.honours.leagueTitles, 4) + (s.reputation >= 70 ? 2 : 0),
       text: [
         (n) => `${n} transitions from player to director, taking charge of the club's future strategy and academy development.`,
         (n) => `${n} swaps the training ground for the boardroom, with a say over everything from transfers to the academy.`,
@@ -881,7 +914,7 @@
     { id: "testimonial_farewell", base: 3,
       // A full house says goodbye — earned by staying somewhere long enough.
       req: (s) => s.yearsAtClub >= 4 && s.reputation >= 55,
-      score: (s) => (s.yearsAtClub) + ((s.reputation - 50) / 8),
+      score: (s) => Math.min(s.yearsAtClub, 10) / 2 + Math.max(0, s.reputation - 55) / 12,
       text: [
         (n) => `A packed house turns out for ${n}'s testimonial. The old team-mates come back for one night.`,
         (n) => `The club announces a testimonial. It sells out in under an hour.`,
@@ -893,7 +926,7 @@
     { id: "national_farewell", base: 3,
       // The international send-off, for a career that meant something to a country.
       req: (s) => s.intlCaps >= 40 && s.intlGoals >= 10,
-      score: (s) => (s.intlCaps / 12) + (s.intlGoals / 8) + (s.honours.intlTrophies * 3) + (s.intlCaptain ? 2 : 0),
+      score: (s) => Math.min(s.intlCaps, 90) / 30 + Math.min(s.intlGoals, 40) / 20 + Math.min(s.honours.intlTrophies, 2) * 1.5 + (s.intlCaptain ? 1.5 : 0),
       text: [
         (n, s) => `${s.country} gives ${n} a farewell cap — a full stadium, an armband, and ninety minutes to say goodbye.`,
         (n, s) => `The national federation schedules a friendly purely so ${n} can walk off to an ovation.`,
@@ -926,7 +959,7 @@
     { id: "player_coach", base: 2,
       // The veteran who is already half a coach in the dressing room.
       req: (s) => s.age >= 34 && s.season >= 12,
-      score: (s) => (s.age - 32) + (s.honours.leagueTitles ? 2 : 0),
+      score: (s) => Math.min(Math.max(s.age - 32, 0), 6) / 1.5 + (s.honours.leagueTitles ? 1 : 0),
       text: [
         (n) => `The club offers ${n} a player-coach role: train the kids, and start a handful of games.`,
         (n) => `${n} is handed a clipboard as often as a shirt now. The club makes it official.`,
@@ -944,6 +977,62 @@
         (n) => `The retirement makes a single paragraph on the club website, below the youth-team results.`,
       ],
       choices: [{ label: "Slip quietly out of the game", fx: {} }] },
+
+    /* ---- Endings specific to THIS game ----
+     * Everything above could close a career in any football sim. These close a
+     * career in a game whose whole premise is drafting DNA from real Premier
+     * League legends and chasing 1000 goals — they name the donors the player
+     * actually drafted from, the era they chose, and the number the game is
+     * built around. They are the endings that could not belong to anything else.
+     */
+    { id: "dna_bequeathed", base: 3,
+      // The loop closes: the player becomes donor material for the next draft.
+      req: (s) => s.totalGoals >= 350 && s.reputation >= 60,
+      score: (s) => Math.min(s.totalGoals, 800) / 130 + Math.max(0, s.reputation - 60) / 12,
+      text: [
+        (n) => `The scouts start describing the next generation's prospects as "the next ${n}". The DNA has come full circle.`,
+        (n, s) => `Somewhere an academy is building a striker around ${n}'s numbers — ${s.totalGoals} goals is a template now, not a career.`,
+        (n) => `${n} spends a final week in the lab that measures everything: the attributes that made the career, catalogued for whoever comes next.`,
+      ],
+      choices: [
+        { label: "Let them build the next one from your blueprint", fx: { rep: 4, epilogue: "dnaLegacy" } },
+        { label: "Some things should not be copied", fx: { rep: 1 } },
+      ] },
+    { id: "donor_tribute", base: 3,
+      // Names an actual player from this career's own draft.
+      req: (s) => !!firstDonor(s) && s.reputation >= 50,
+      score: (s) => Math.max(0, s.reputation - 50) / 12 + Math.min(s.totalGoals, 600) / 150,
+      text: [
+        (n, s) => `A testimonial dinner puts ${n} on the same table as ${pickDonor(s)} — the player whose game ${n} was built from.`,
+        (n, s) => `${pickDonor(s)} is asked about the retirement and says only: "I saw a bit of myself in that one."`,
+        (n, s) => `On the last day, ${n} is handed a shirt signed by ${pickDonor(s)}. The circle closes.`,
+      ],
+      choices: [{ label: "Thank the ones you were made from", fx: { rep: 3, epilogue: "donorTribute" } }] },
+    { id: "era_icon", base: 2,
+      // The defining striker of the era the player chose to be drafted into.
+      req: (s) => s.reputation >= 75 && s.totalGoals >= 450,
+      score: (s) => Math.max(0, s.reputation - 70) / 8 + Math.min(s.totalGoals, 800) / 200,
+      text: [
+        (n, s) => `When they write the history of ${eraName(s)}, ${n} is the striker the chapter is named after.`,
+        (n, s) => `${n} retires as the defining forward of ${eraName(s)} — the one every highlight reel opens with.`,
+      ],
+      choices: [{ label: "Retire as the face of an era", fx: { rep: 4, epilogue: "eraIcon" } }] },
+    { id: "shirt_retired", base: 2,
+      req: (s) => s.yearsAtClub >= 6 && s.reputation >= 70,
+      score: (s) => Math.min(s.yearsAtClub, 12) / 3 + Math.min(s.honours.leagueTitles, 4),
+      text: [
+        (n, s) => `${s.club} announce that no one will wear the number again. It goes up on the wall instead.`,
+        (n, s) => `The shirt ${n} wore for ${s.yearsAtClub} years is retired, framed, and hung above the tunnel.`,
+      ],
+      choices: [{ label: "Watch them raise the shirt", fx: { rep: 5, epilogue: "shirtRetired" } }] },
+    { id: "boot_museum", base: 2,
+      req: (s) => s.totalGoals >= 500,
+      score: (s) => Math.min(s.totalGoals, 900) / 130,
+      text: [
+        (n, s) => `The National Football Museum asks for the boots ${n} scored the ${ordinalGoal(s)} in. They go behind glass.`,
+        (n, s) => `${s.totalGoals} goals is enough to be an exhibit. ${n}'s boots are collected in a velvet-lined case.`,
+      ],
+      choices: [{ label: "Hand over the boots", fx: { rep: 3, epilogue: "museum" } }] },
 
     { id: "normal_retirement", base: 4,
       score: (s) => 0,

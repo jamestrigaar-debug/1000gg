@@ -1304,6 +1304,19 @@ if (require.main === module) {
     famousButDisliked: () => ({ age: 34, season: 14, totalGoals: 260, reputation: 46, fame: 75, wealth: 70,
       yearsAtClub: 2, contractYears: 0, honours: H0({ domesticCups: 1 }),
       clubsPlayed: new Set(["Chelsea", "PSG", "Marseille"]) }),
+    // Carries a real draft on record, which is what the DNA-flavoured endings
+    // read to name the legends this striker was actually built from.
+    draftedIcon: () => ({ age: 36, season: 19, totalGoals: 620, reputation: 84, fame: 60, wealth: 65,
+      yearsAtClub: 8, contractYears: 0, intlCaps: 90, intlGoals: 35, era: "recent",
+      honours: H0({ leagueTitles: 4, domesticCups: 2, europeanCups: 2, youngPlayer: 1 }),
+      clubsPlayed: new Set(["Arsenal", "Real Madrid"]),
+      player: { name: "Test Striker", position: "ST", build: "Balanced", origin: null, academy: null,
+        usedDonors: ["T. Henry", "A. Shearer", "D. Drogba"],
+        slots: {
+          speed: { donor: "T. Henry", team: "Arsenal", year: 2004 },
+          heading: { donor: "A. Shearer", team: "Newcastle United", year: 1996 },
+          strength: { donor: "D. Drogba", team: "Chelsea", year: 2010 },
+        } } }),
   };
 
   function endingsSeen(profileFn, runs, tag) {
@@ -1359,6 +1372,83 @@ if (require.main === module) {
     assert(!oneClub.agent_scout, "a one-club man became a well-travelled agent");
     assert(!oneClub.quiet_release, "a 72-reputation legend slipped quietly out of the game");
     return "ambassador/agent/quiet-release gates all track the right career shape";
+  });
+
+  check("no ending's weight can run away with a long career", () => {
+    // Several endings score off counters that only grow — years at a club,
+    // seasons, caps. Uncapped, a 20-year one-club servant scored 30 for
+    // club_ambassador against 4 for a plain retirement, so the long-service
+    // endings between them took over half of all retirements.
+    makeState(Object.assign({ seed: "weights" }, ENDING_PROFILES.oneClubLegend(), {
+      yearsAtClub: 25, season: 25, intlCaps: 200, intlGoals: 90, totalGoals: 900,
+      honours: H0({ leagueTitles: 10, europeanCups: 6, domesticCups: 6, intlTrophies: 4, youngPlayer: 3 }),
+    }));
+    const st = api.getState();
+    const weights = api.CAREER_ENDINGS
+      .filter((e) => !e.req || e.req(st))
+      .map((e) => ({ id: e.id, w: e.base + Math.min(e.score ? e.score(st) : 0, 8) }));
+    const top = weights.slice().sort((a, b) => b.w - a.w)[0];
+    const total = weights.reduce((s, x) => s + x.w, 0);
+    assert(top.w <= 12, `${top.id} weighs ${top.w.toFixed(1)} on an extreme career — the cap is not holding`);
+    assert(top.w / total <= 0.20,
+      `${top.id} takes ${((top.w / total) * 100).toFixed(0)}% of the weight even at the extreme`);
+    return `heaviest ending ${top.id} at ${top.w.toFixed(1)} (${((top.w / total) * 100).toFixed(0)}% of the field)`;
+  });
+
+  check("the coaching fallback does not become the default ending for long careers", () => {
+    // Reported from real play: "stay on as a coach came up mostly". It scored
+    // off season count, so the longer the career the more it was favoured —
+    // exactly backwards for what is meant to be the quiet fallback.
+    for (const key of ["oneClubLegend", "superstar", "draftedIcon"]) {
+      const counts = endingsSeen(ENDING_PROFILES[key], 400, `coach-${key}`);
+      const share = (counts.coach || 0) / 400;
+      assert(share <= 0.12, `${key}: coach took ${(share * 100).toFixed(0)}% of retirements`);
+    }
+    return "coach stays under 12% on every accomplished career profile";
+  });
+
+  check("endings unique to this game fire, and name the legends actually drafted", () => {
+    // The DNA draft and the 1000-goal chase are what make this game itself —
+    // these endings close the loop by naming the real donors this striker was
+    // built from, rather than being generic football-sim retirements.
+    const counts = endingsSeen(ENDING_PROFILES.draftedIcon, 600, "flavour");
+    const flavour = ["donor_tribute", "dna_bequeathed", "era_icon", "shirt_retired", "boot_museum"];
+    for (const id of flavour) {
+      assert(counts[id] > 0, `${id} never fired for a career built from a real draft`);
+    }
+    const share = flavour.reduce((s, id) => s + (counts[id] || 0), 0) / 600;
+    assert(share >= 0.15, `game-specific endings only took ${(share * 100).toFixed(0)}% of retirements`);
+
+    // The donor endings must name a real drafted player, not a placeholder.
+    makeState(Object.assign({ seed: "donor-text" }, ENDING_PROFILES.draftedIcon()));
+    const st = api.getState();
+    const ev = api.CAREER_ENDINGS.find((e) => e.id === "donor_tribute");
+    const drafted = ["T. Henry", "A. Shearer", "D. Drogba"];
+    let named = 0;
+    for (let i = 0; i < 30; i++) {
+      const line = api.resolveEventText(ev.text, st.player.name, st);
+      if (drafted.some((d) => line.includes(d))) named++;
+      assert(!/undefined|null|\[object/.test(line), `donor line rendered badly: "${line}"`);
+    }
+    assert(named > 0, "donor_tribute never named an actual drafted legend");
+    return `all 5 game-specific endings fire (${(share * 100).toFixed(0)}% of this profile's retirements)`;
+  });
+
+  check("the DNA endings degrade safely on a save with no draft on record", () => {
+    // A career resumed from an older save may have no slots recorded; the
+    // donor helpers must not throw or print "undefined" into the prompt.
+    makeState({ age: 36, season: 19, totalGoals: 620, reputation: 84, seed: "no-draft",
+      player: { name: "Legacy Save", slots: {}, usedDonors: [], position: "ST", build: null, origin: null, academy: null } });
+    const st = api.getState();
+    for (const id of ["donor_tribute", "dna_bequeathed", "era_icon", "boot_museum"]) {
+      const ev = api.CAREER_ENDINGS.find((e) => e.id === id);
+      const line = api.resolveEventText(ev.text, st.player.name, st);
+      assert(!/undefined|null|\[object/.test(line), `${id} rendered badly with no draft: "${line}"`);
+    }
+    // With no donors recorded at all, donor_tribute must not be offered.
+    assert(!api.CAREER_ENDINGS.find((e) => e.id === "donor_tribute").req(st),
+      "donor_tribute was offered to a career with no drafted donors on record");
+    return "no draft on file: text stays clean and donor_tribute is not offered";
   });
 
   check("a second end-of-career event is always a guaranteed retirement", () => {

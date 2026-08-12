@@ -9047,10 +9047,18 @@
   }
 
 
+  /* An ending's weight is its base plus a fitness bonus. The bonus is CAPPED
+   * because several endings score off counters that only ever grow over a
+   * career — years at a club, seasons played, caps won. Uncapped, a 20-year
+   * one-club servant scored 30 for club_ambassador against 4 for a plain
+   * retirement, so the long-service endings between them took over half of all
+   * retirements and the rest of the table barely appeared. Capping the bonus
+   * keeps a fitting ending clearly favoured without letting it become the
+   * default: the spread stays roughly 1-12 instead of 2-31. */
+  const ENDING_BONUS_CAP = 8;
   function getCareerOutcomeScore(s, ending) {
-    let score = ending.base;
-    if (ending.score) score += ending.score(s);
-    return Math.max(0, score);
+    const bonus = ending.score ? ending.score(s) : 0;
+    return Math.max(0, ending.base + Math.min(bonus, ENDING_BONUS_CAP));
   }
 
   function resolveEndOfCareerEvent() {
