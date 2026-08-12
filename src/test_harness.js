@@ -1288,9 +1288,9 @@ if (require.main === module) {
     // elsewhere in this file), so this always evaluated to 0.
     makeState({ clubStats: { Arsenal: { apps: 300, goals: 120, assists: 40, seasons: 10, titles: 2 } } });
     assert(api.getMaxYearsAtClub() === 10, `getMaxYearsAtClub() returned ${api.getMaxYearsAtClub()}, not the 10 seasons on record`);
-    const ids = api.checkCareerAchievements();
+    const ids = api.earnedAchievements().map((a) => a.id);
     assert(ids.includes("one_club_man"), `expected one_club_man among [${ids.join(", ")}]`);
-    return `${ids.length} achievements unlocked from this state, including one_club_man`;
+    return `${ids.length} achievements earned from this state, including one_club_man`;
   });
 
   check("Perfect 10 fires at the rating scale's actual ceiling (9.9), not an unreachable literal 10", () => {
@@ -1298,9 +1298,9 @@ if (require.main === module) {
     // so bestRating can never reach 10 — checking >= 10 meant this achievement
     // could never unlock no matter how good a season was.
     makeState({ bestRating: 9.9 });
-    assert(api.checkCareerAchievements().includes("perfect_10"), "9.9, the rating scale's own ceiling, did not unlock Perfect 10");
+    assert(api.earnedAchievements().map((a) => a.id).includes("perfect_10"), "9.9, the rating scale's own ceiling, did not unlock Perfect 10");
     makeState({ bestRating: 9.8 });
-    assert(!api.checkCareerAchievements().includes("perfect_10"), "9.8 wrongly unlocked Perfect 10");
+    assert(!api.earnedAchievements().map((a) => a.id).includes("perfect_10"), "9.8 wrongly unlocked Perfect 10");
     return "9.9 unlocks it, 9.8 does not — matches the documented 5.3-9.9 scale";
   });
 
@@ -1315,16 +1315,16 @@ if (require.main === module) {
     assert(api.getClubCountry("Arsenal") === "England", `Arsenal counted as ${api.getClubCountry("Arsenal")}`);
     makeState({ clubsPlayed: new Set(["Arsenal", "Al Hilal", "Inter Miami"]) });
     assert(api.getCountriesPlayed() === 3, `expected 3 distinct countries, got ${api.getCountriesPlayed()}`);
-    const ids = api.checkCareerAchievements();
+    const ids = api.earnedAchievements().map((a) => a.id);
     assert(ids.includes("world_traveller"), `expected world_traveller among [${ids.join(", ")}]`);
     return "England + Saudi Arabia + United States correctly counted as 3 distinct countries";
   });
 
-  check("a career's own achievements show up on ITS card whether or not an account exists", () => {
+  check("a career's own achievements show up on ITS card regardless of Trophy Room history", () => {
     // earnedAchievements is what the card reads, and it must not depend on
-    // the (optional, separate) account system at all — neither requiring
-    // one to exist, nor hiding a milestone this career earned just because
-    // some earlier career already banked the same id account-wide.
+    // what's already saved in the Trophy Room — neither requiring a saved
+    // history to exist, nor hiding a milestone this career earned just
+    // because an earlier career already banked the same id.
     makeState({ totalGoals: 1000, bestRating: 9.9, honours: { ballonDors: 1, leagueTitles: 0, domesticCups: 0, europeanCups: 0, intlTrophies: 0, goldenBoots: 0, playerOfSeason: 0, youngPlayer: 0, tots: 0 } });
     const earned = api.earnedAchievements();
     const earnedIds = earned.map((a) => a.id);
@@ -1334,14 +1334,83 @@ if (require.main === module) {
     // Each entry is the full ACHIEVEMENTS record (name/desc/rare), not a bare id.
     const goalAch = earned.find((a) => a.id === "1000_goals");
     assert(goalAch && goalAch.name === "1000 Club" && goalAch.rare === true, `1000_goals entry malformed: ${JSON.stringify(goalAch)}`);
-    // Simulate an account that already has 1000_goals banked from an earlier
-    // career — checkCareerAchievements (the account-notification path)
-    // should go quiet on it, but earnedAchievements (the card) must not.
-    api.saveAccount({ username: "u", password: "p", achievements: ["1000_goals"] });
-    assert(!api.checkCareerAchievements().includes("1000_goals"), "checkCareerAchievements should not re-announce an already-banked id");
+    // Simulate a Trophy Room that already has 1000_goals banked from an
+    // earlier career — earnedAchievements (what the card reads) must still
+    // show it for THIS career.
+    api.saveTrophyRoom({ achievements: ["1000_goals"], cards: [] });
     assert(api.earnedAchievements().map((a) => a.id).includes("1000_goals"),
-      "earnedAchievements hid a milestone this career earned just because an account had already banked it");
-    return `${earned.length} achievements earned this career, unaffected by account history`;
+      "earnedAchievements hid a milestone this career earned just because the Trophy Room already had it");
+    return `${earned.length} achievements earned this career, unaffected by Trophy Room history`;
+  });
+
+  group("Trophy Room — local card + achievement history, no account");
+
+  check("recordCareerToTrophyRoom saves a card and merges achievements, with no duplicate ids", () => {
+    api.saveTrophyRoom({ achievements: [], cards: [] });
+    makeState({ club: "Arsenal", country: "England", position: "ST", totalGoals: 340, totalApps: 500,
+      totalAssists: 60, season: 12, player: { name: "Room Test", slots: {}, usedDonors: [] },
+      honours: { leagueTitles: 2, domesticCups: 1, europeanCups: 0, intlTrophies: 0, ballonDors: 0,
+                 goldenBoots: 0, playerOfSeason: 0, youngPlayer: 0, tots: 0 } });
+    const newly = api.recordCareerToTrophyRoom();
+    const room = api.loadTrophyRoom();
+    assert(room.cards.length === 1, `expected 1 saved card, got ${room.cards.length}`);
+    const c = room.cards[0];
+    assert(c.name === "Room Test" && c.totalGoals === 340 && c.trophies === 3,
+      `card record malformed: ${JSON.stringify(c)}`);
+    assert(Array.isArray(newly) && newly.length === room.achievements.length,
+      "a fresh Trophy Room should report every earned achievement as newly unlocked");
+    return `1 card saved (${c.trophies} trophies), ${newly.length} achievements newly unlocked`;
+  });
+
+  check("a milestone already in the Trophy Room is not re-announced as newly unlocked", () => {
+    api.saveTrophyRoom({ achievements: ["journeyman"], cards: [] });
+    makeState({ clubsPlayed: new Set(["Arsenal", "Chelsea", "Liverpool", "Everton", "Fulham"]),
+      player: { name: "Repeat Test", slots: {}, usedDonors: [] } });
+    const newly = api.recordCareerToTrophyRoom();
+    assert(!newly.map((a) => a.id).includes("journeyman"),
+      "journeyman was already in the Trophy Room and should not be reported as newly unlocked again");
+    const room = api.loadTrophyRoom();
+    assert(room.achievements.filter((id) => id === "journeyman").length === 1,
+      "journeyman appears more than once in the cumulative achievement list");
+    return "an already-banked achievement stays quiet on a repeat career";
+  });
+
+  check("the card gallery is capped so it can't grow without bound", () => {
+    const cards = [];
+    for (let i = 0; i < 70; i++) cards.push({ id: `c${i}`, savedAt: i, name: `Player ${i}`, totalGoals: i, trophies: 0 });
+    api.saveTrophyRoom({ achievements: [], cards });
+    makeState({ player: { name: "Overflow Test", slots: {}, usedDonors: [] } });
+    api.recordCareerToTrophyRoom();
+    const room = api.loadTrophyRoom();
+    assert(room.cards.length <= 60, `expected the gallery capped at 60, got ${room.cards.length}`);
+    // The newest entry (just recorded) must survive the cap, not an old one.
+    assert(room.cards[room.cards.length - 1].name === "Overflow Test",
+      "the just-recorded card was dropped instead of an older one");
+    assert(room.cards[0].name !== "Player 0", "the cap did not drop the oldest cards first");
+    return `capped at ${room.cards.length}, newest card kept`;
+  });
+
+  check("renderTrophyRoom does not throw on an empty room or a populated one", () => {
+    api.saveTrophyRoom({ achievements: [], cards: [] });
+    api.renderTrophyRoom();
+    api.saveTrophyRoom({ achievements: ["1000_goals", "captain"], cards: [{ id: "x", savedAt: 1, name: "Grid Test", tier: "Gold", label: "CLUB LEGEND", accent: "#e6b955", totalGoals: 400, trophies: 2 }] });
+    api.renderTrophyRoom();
+    return "renders cleanly empty and populated";
+  });
+
+  check("endCareer records a career into the Trophy Room exactly once, even if resumed", () => {
+    api.saveTrophyRoom({ achievements: [], cards: [] });
+    makeState({ club: "Arsenal", age: 30, season: 12, baseRating: 86, reputation: 80, role: "Star",
+      contractRole: "Star", intlDebut: true, seed: "trophy-once", player: { name: "Once Test", slots: {}, usedDonors: [] } });
+    const st = api.getState();
+    for (let i = 0; i < 3; i++) { api.simulateSeason(); api.simulateInternational(); st.season++; st.age++; }
+    api.endCareer(false);
+    assert(st.trophyRoomSaved === true, "trophyRoomSaved was not set after endCareer");
+    api.endCareer(true, true); // simulates resuming an already-retired save
+    const room = api.loadTrophyRoom();
+    assert(room.cards.filter((c) => c.name === "Once Test").length === 1,
+      `expected exactly 1 saved card for a resumed retired career, got ${room.cards.filter((c) => c.name === "Once Test").length}`);
+    return "a resumed retired career does not create a second Trophy Room entry";
   });
 
   check("rare achievement badges render on the card without throwing", () => {

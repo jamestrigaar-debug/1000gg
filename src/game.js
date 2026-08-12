@@ -1007,6 +1007,9 @@
       // only a UX shortcut — the real guard is the database keying entries by
       // careerId, since anything in localStorage is the player's to edit.
       leaderboardSubmitted: false,
+      // Set once this career has been saved into the local Trophy Room, so a
+      // resumed or reloaded retired save doesn't add a duplicate entry.
+      trophyRoomSaved: false,
       // Stable per-career identity, used as the leaderboard row key.
       careerId: null,
       // Set when this career was started from a shared challenge link. The
@@ -1183,6 +1186,9 @@
     if (!s.europeanEntry || typeof s.europeanEntry !== "object") s.europeanEntry = null;
     if (!s.peak || typeof s.peak !== "object" || !s.peak.attrs) s.peak = null;
     s.leaderboardSubmitted = !!s.leaderboardSubmitted;
+    // Saves retired before the Trophy Room existed get backfilled into it
+    // the next time they're viewed, rather than being excluded forever.
+    s.trophyRoomSaved = !!s.trophyRoomSaved;
     if (typeof s.careerId !== "string" || !s.careerId) s.careerId = null;
     if (typeof s.challengeId !== "string" || !s.challengeId) s.challengeId = null;
     s.challengeSubmitted = !!s.challengeSubmitted;
@@ -7488,11 +7494,6 @@
     state.bioClosing = generateBioClosing();
     showScreen("screen-legacy");
     const won = reachedGoal || state.totalGoals >= LEVERS.goalTarget;
-    const newAchievements = unlockAchievements(checkCareerAchievements());
-    if (newAchievements.length) {
-      const names = newAchievements.map((id) => (ACHIEVEMENTS.find((a) => a.id === id) || {}).name || id);
-      log(`Unlocked ${newAchievements.length} account achievement${newAchievements.length > 1 ? "s" : ""}: ${names.join(", ")}`, "achievement");
-    }
     const statusEl = document.getElementById("legacy-status");
     statusEl.textContent = won ? "⚽ FOOTBALL GOD — 1000 GOALS!" : (state.totalGoals >= 500 ? "LEGENDARY CAREER!" : "CAREER COMPLETE");
     statusEl.className = "legacy-status " + (won ? "god" : (state.totalGoals >= 500 ? "legend" : ""));
@@ -7525,6 +7526,20 @@
     renderChallengeResult();
     renderLeaderboardSubmit();
     renderShareTagline();
+
+    // Trophy Room: save this finished career's card and merge its
+    // achievements into the device's cumulative cabinet — after the card has
+    // rendered, since the thumbnail is captured from that canvas. Guarded so
+    // reloading or resuming an already-retired save doesn't add it twice.
+    if (!state.trophyRoomSaved) {
+      const newlyUnlocked = recordCareerToTrophyRoom();
+      state.trophyRoomSaved = true;
+      if (newlyUnlocked.length) {
+        const names = newlyUnlocked.map((a) => a.name);
+        log(`Unlocked ${newlyUnlocked.length} achievement${newlyUnlocked.length > 1 ? "s" : ""}: ${names.join(", ")}`, "achievement");
+      }
+    }
+
     saveState();
   }
 
@@ -8259,6 +8274,15 @@
     ctx.fillStyle = tier.accent;
     ctx.font = "bold 13px Arial, sans-serif";
     ctx.fillText("1000GOALS.CO.UK", cx, h - 26);
+
+    // Download Card / Share-Copy — the buttons live in static markup right
+    // next to this canvas, but nothing ever wired them to their handlers.
+    // .onclick (not addEventListener) so re-rendering the card on a resumed
+    // session replaces the handler instead of stacking a second one.
+    const downloadBtn = document.getElementById("btn-download-card");
+    if (downloadBtn) downloadBtn.onclick = guardUi(downloadShareCard, "downloading the card");
+    const shareBtn = document.getElementById("btn-share-card");
+    if (shareBtn) shareBtn.onclick = guardUi(shareShareCard, "sharing the card");
   }
 
   function downloadShareCard() {
@@ -8652,8 +8676,13 @@
     return { Sensational: "great", Overperformed: "good", "Met Expectation": "ok", Underperformed: "bad", Flop: "awful" }[tier] || "";
   }
 
-  /* ----------------------------- ACCOUNT SYSTEM ------------------------- */
-  const ACC_KEY = "football-dna-account";
+  /* --------------------------- ACHIEVEMENTS ------------------------------
+   * No accounts, on purpose (see the Trophy Room below): every achievement
+   * is evaluated fresh from a finished career's own state, and persistence
+   * — the cumulative, all-time record of what's been earned on this device
+   * — lives in the Trophy Room's own localStorage entry, not behind a
+   * generated username and password nobody was ever going to remember.
+   */
   const ACHIEVEMENTS = [
     { id: "1000_goals", name: "1000 Club", desc: "Reach 1000 career goals", rare: true },
     { id: "50_season", name: "Half-Century Season", desc: "Score 50+ goals in a single season", rare: true },
@@ -8671,42 +8700,6 @@
     { id: "statue_worthy", name: "Statue Worthy", desc: "Reach 90+ reputation at one club", rare: true },
     { id: "perfect_10", name: "Perfect 10", desc: "Achieve a 10.0 season rating", rare: true },
   ];
-  function generateId(len) {
-    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-    let out = "";
-    for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
-    return out;
-  }
-  function generatePassword() {
-    return generateId(4) + "-" + generateId(4) + "-" + generateId(4);
-  }
-  function generateUsername() {
-    return "striker_" + generateId(8);
-  }
-  function createAccount() {
-    const account = { username: generateUsername(), password: generatePassword(), achievements: [] };
-    try { localStorage.setItem(ACC_KEY, JSON.stringify(account)); } catch (e) {}
-    return account;
-  }
-  function loadAccount() {
-    try {
-      const raw = localStorage.getItem(ACC_KEY);
-      if (!raw) return null;
-      const acc = JSON.parse(raw);
-      acc.achievements = acc.achievements || [];
-      return acc;
-    } catch (e) { return null; }
-  }
-  function saveAccount(acc) {
-    try { localStorage.setItem(ACC_KEY, JSON.stringify(acc)); } catch (e) {}
-  }
-  function loginAccount(username, password) {
-    const acc = loadAccount();
-    if (!acc) return { ok: false, message: "No account found. Create one first." };
-    if (acc.username === username && acc.password === password) return { ok: true, message: "Logged in successfully." };
-    return { ok: false, message: "Invalid username or password." };
-  }
-
   function getClubCountry(club) {
     const league = (TEAM_DATABASE[club] || {}).league;
     if (league === "LaLiga") return "Spain";
@@ -8761,101 +8754,123 @@
     };
   }
 
-  // Newly-unlocked-for-the-account ids — used for the account achievements
-  // list and its "you just unlocked N achievements" log line. Filtered
-  // against account history, so a milestone this career re-clears after an
-  // earlier career already banked it correctly stays quiet here.
-  function checkCareerAchievements() {
-    const tests = evaluateAchievements();
-    const acc = loadAccount();
-    const unlocked = acc ? acc.achievements : [];
-    const newIds = [];
-    for (const [id, ok] of Object.entries(tests)) {
-      if (ok && !unlocked.includes(id)) newIds.push(id);
-    }
-    return newIds;
-  }
-
-  // Every achievement THIS finished career actually earned, full stop — no
-  // account needed, and not filtered against one even if it exists. The
-  // account system is optional and separate; the card is not, so what it
-  // shows can't depend on whether the player ever bothered creating one.
+  // Every achievement THIS finished career actually earned, full stop —
+  // computed fresh from its own final state, nothing to unlock or log in to.
   function earnedAchievements() {
     const tests = evaluateAchievements();
     return ACHIEVEMENTS.filter((a) => tests[a.id]);
   }
-  function unlockAchievements(ids) {
-    if (!ids || !ids.length) return [];
-    const acc = loadAccount();
-    if (!acc) return ids;
-    const before = new Set(acc.achievements);
-    for (const id of ids) before.add(id);
-    acc.achievements = [...before];
-    saveAccount(acc);
-    return ids;
-  }
-  function renderAchievements() {
-    const acc = loadAccount();
-    const unlocked = acc ? acc.achievements : [];
-    const list = ACHIEVEMENTS.map((a) => {
-      const got = unlocked.includes(a.id);
-      return `<div class="ach-row ${got ? "unlocked" : "locked"}"><span class="ach-name">${got ? "✓" : "○"} ${a.name}</span><span class="ach-desc">${a.desc}</span>${a.rare ? '<span class="ach-rare">RARE</span>' : ""}</div>`;
-    }).join("");
-    return list;
-  }
-  function renderAccountModal() {
-    const modal = document.getElementById("account-modal");
-    const createBox = document.getElementById("account-create");
-    const infoBox = document.getElementById("account-info");
-    const status = document.getElementById("account-status");
-    const acc = loadAccount();
-    modal.style.display = "flex";
-    if (acc) {
-      createBox.style.display = "none";
-      infoBox.style.display = "block";
-      document.getElementById("acc-username").value = acc.username;
-      document.getElementById("acc-password").value = acc.password;
-      document.getElementById("achievements-list").innerHTML = renderAchievements();
-      document.getElementById("account-achievements").style.display = "block";
-      status.textContent = "Account loaded. Use the credentials below to log in on this device.";
-    } else {
-      createBox.style.display = "block";
-      infoBox.style.display = "none";
-      status.textContent = "No account yet. Create one to save your credentials on this browser.";
+
+  /* ----------------------------- TROPHY ROOM -----------------------------
+   * The no-account answer to "save my achievements and my cards": every
+   * finished career's card and its achievements get saved straight to this
+   * browser's localStorage, keyed to the device the same way the career
+   * save itself already is. Nothing here asks for a username, a password,
+   * or an email — recordCareerToTrophyRoom is called once per finished
+   * career, and renderTrophyRoom reads it back into a gallery + a
+   * cumulative, all-time achievement cabinet.
+   */
+  const TROPHY_ROOM_KEY = "football-dna-trophy-room";
+  const TROPHY_ROOM_MAX_CARDS = 60; // bounds localStorage growth; oldest drop off first
+
+  function loadTrophyRoom() {
+    try {
+      const raw = localStorage.getItem(TROPHY_ROOM_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return {
+        achievements: Array.isArray(parsed && parsed.achievements) ? parsed.achievements : [],
+        cards: Array.isArray(parsed && parsed.cards) ? parsed.cards : [],
+      };
+    } catch (e) {
+      return { achievements: [], cards: [] };
     }
   }
-  function closeAccountModal() {
-    document.getElementById("account-modal").style.display = "none";
+  function saveTrophyRoom(room) {
+    try { localStorage.setItem(TROPHY_ROOM_KEY, JSON.stringify(room)); }
+    catch (e) { console.warn("Trophy Room save failed:", e); }
   }
-  function wireAccount() {
-    // Account feature removed from UI; guard against missing elements
-    const btnAccount = document.getElementById("btn-account");
-    if (!btnAccount) return;
-    btnAccount.addEventListener("click", renderAccountModal);
-    document.getElementById("btn-close-account").addEventListener("click", closeAccountModal);
-    document.querySelector("#account-modal .modal-backdrop").addEventListener("click", closeAccountModal);
-    document.getElementById("btn-create-account").addEventListener("click", () => {
-      const acc = createAccount();
-      renderAccountModal();
-      document.getElementById("account-status").textContent = "Account created! Copy and save your username and password.";
+
+  // A small thumbnail of the just-rendered card — cheap enough to keep
+  // dozens in localStorage. Full resolution is still one click away via
+  // Download Card; the gallery only ever needs a preview.
+  function cardThumbnail() {
+    const canvas = document.getElementById("share-card-canvas");
+    if (!canvas || typeof canvas.getContext !== "function" || !canvas.width) return null;
+    try {
+      const THUMB_W = 240;
+      const scale = THUMB_W / canvas.width;
+      const thumb = document.createElement("canvas");
+      thumb.width = THUMB_W;
+      thumb.height = Math.round(canvas.height * scale);
+      const tctx = thumb.getContext("2d");
+      if (!tctx || typeof tctx.drawImage !== "function") return null;
+      tctx.drawImage(canvas, 0, 0, thumb.width, thumb.height);
+      return thumb.toDataURL("image/png");
+    } catch (e) {
+      return null; // e.g. a canvas stub in a headless test — never fatal
+    }
+  }
+
+  // Called once per finished career (endCareer guards on state.trophyRoomSaved
+  // so a resume/reload never re-adds it). Saves this career into the gallery
+  // and merges its achievements into the cumulative cabinet. Returns the
+  // achievement records new to the cabinet — not seen on any earlier saved
+  // career on this device — for the "unlocked" log line.
+  function recordCareerToTrophyRoom() {
+    const room = loadTrophyRoom();
+    const earned = earnedAchievements();
+    const alreadyKnown = new Set(room.achievements);
+    const newlyUnlocked = earned.filter((a) => !alreadyKnown.has(a.id));
+
+    const h = state.honours;
+    const trophies = h.leagueTitles + h.domesticCups + h.europeanCups + h.intlTrophies;
+    const tier = computeCareerRarity();
+    room.cards.push({
+      id: state.careerId || `local-${Date.now()}`,
+      savedAt: Date.now(),
+      name: state.player.name,
+      tier: tier.name,
+      label: tier.label,
+      accent: tier.accent,
+      country: state.country,
+      position: state.position,
+      totalGoals: state.totalGoals,
+      totalApps: state.totalApps,
+      totalAssists: state.totalAssists,
+      trophies,
+      seasons: state.season,
+      achievementIds: earned.map((a) => a.id),
+      thumbnail: cardThumbnail(),
     });
-    document.getElementById("btn-copy-user").addEventListener("click", () => {
-      const el = document.getElementById("acc-username");
-      el.select();
-      document.execCommand("copy");
-      document.getElementById("account-status").textContent = "Username copied to clipboard.";
-    });
-    document.getElementById("btn-show-pass").addEventListener("click", () => {
-      const el = document.getElementById("acc-password");
-      el.type = el.type === "password" ? "text" : "password";
-      document.getElementById("btn-show-pass").textContent = el.type === "password" ? "Show" : "Hide";
-    });
-    document.getElementById("btn-login").addEventListener("click", () => {
-      const user = document.getElementById("acc-login-user").value.trim();
-      const pass = document.getElementById("acc-login-pass").value.trim();
-      const res = loginAccount(user, pass);
-      document.getElementById("account-status").textContent = res.message;
-    });
+    if (room.cards.length > TROPHY_ROOM_MAX_CARDS) room.cards = room.cards.slice(-TROPHY_ROOM_MAX_CARDS);
+    room.achievements = [...alreadyKnown, ...newlyUnlocked.map((a) => a.id)];
+    saveTrophyRoom(room);
+    return newlyUnlocked;
+  }
+
+  function renderTrophyRoom() {
+    const cabinetEl = document.getElementById("trophy-cabinet");
+    const cardsEl = document.getElementById("trophy-cards");
+    if (!cabinetEl || !cardsEl) return;
+    const room = loadTrophyRoom();
+
+    const unlockedIds = new Set(room.achievements);
+    cabinetEl.innerHTML = ACHIEVEMENTS.map((a) => {
+      const got = unlockedIds.has(a.id);
+      return `<div class="ach-row ${got ? "unlocked" : "locked"}"><span class="ach-name">${got ? "✓" : "○"} ${esc(a.name)}</span><span class="ach-desc">${esc(a.desc)}</span>${a.rare ? '<span class="ach-rare">RARE</span>' : ""}</div>`;
+    }).join("");
+
+    if (!room.cards.length) {
+      cardsEl.innerHTML = '<div class="trophy-empty">No careers saved here yet — finish one and it shows up in this gallery.</div>';
+      return;
+    }
+    const cards = room.cards.slice().reverse().map((c) => `
+      <div class="trophy-card" style="border-color:${esc(c.accent || "#888")}">
+        ${c.thumbnail ? `<img src="${c.thumbnail}" alt="${esc(c.name)} career card, ${esc(c.tier)} tier" loading="lazy" />` : '<div class="trophy-card-noimg">🃏</div>'}
+        <div class="tc-name">${esc(c.name)}</div>
+        <div class="tc-meta">${esc(c.label)} · ${c.totalGoals} goals</div>
+      </div>`).join("");
+    cardsEl.innerHTML = `<div class="trophy-grid">${cards}</div>`;
   }
 
   /* ----------------------------- WIRING --------------------------------- */
@@ -8934,7 +8949,13 @@
       switchCareerTab("season");
       showScreen("screen-welcome");
     }));
-    wireAccount();
+    const btnTrophyRoom = document.getElementById("btn-trophy-room");
+    if (btnTrophyRoom) btnTrophyRoom.addEventListener("click", guardUi(() => {
+      renderTrophyRoom();
+      showScreen("screen-trophy-room");
+    }, "opening the Trophy Room"));
+    const btnTrophyBack = document.getElementById("btn-trophy-back");
+    if (btnTrophyBack) btnTrophyBack.addEventListener("click", () => showScreen("screen-welcome"));
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
@@ -9006,8 +9027,9 @@
     getForeignLeagueClubs, runPromotionRelegation, updateTeamStrengths,
     generateLoanOffers, goOnLoan, returnFromLoanIfDue,
     FOREIGN_LEAGUES, TEAM_DATABASE, SEASON_EVENTS, CAREER_ENDINGS, CAREER_SECTIONS,
-    checkCareerAchievements, unlockAchievements, ACHIEVEMENTS, getMaxYearsAtClub,
+    ACHIEVEMENTS, getMaxYearsAtClub,
     evaluateAchievements, earnedAchievements,
-    getCountriesPlayed, getClubCountry, getSeasonBestGoals, loadAccount, saveAccount, createAccount,
+    getCountriesPlayed, getClubCountry, getSeasonBestGoals,
+    loadTrophyRoom, saveTrophyRoom, recordCareerToTrophyRoom, renderTrophyRoom, cardThumbnail,
   };
 })();
