@@ -138,6 +138,37 @@
     return -(steep) * (1 - fitness * 0.25) * (1 - coach * 0.15) + rng.gauss() * 0.6;
   }
 
+  /* ------------------------------ INJURIES --------------------------------
+   * Rolled once per season, before a ball is kicked, as a share of the campaign
+   * the player misses. A season-at-a-time game cannot model a hamstring in
+   * October, but it can model "your first-choice centre half was fit for nine
+   * games", which is the part a manager actually feels: the squad you planned
+   * around is not the squad you get.
+   *
+   * Risk rises with age and falls with fitness, and `clubRisk` is the hook the
+   * decision layer pulls on — a manager who ran a brutal pre-season or refused
+   * to rotate carries a higher number into every roll. */
+  function rollInjury(rng, player, clubRisk) {
+    const age = player.age;
+    const fitness = player.attrs.fitness || 60;
+    let risk = 0.16 + Math.max(0, age - 28) * 0.022 + Math.max(0, 20 - age) * 0.01;
+    risk *= 1 - (fitness - 60) / 240;
+    risk *= clubRisk == null ? 1 : clubRisk;
+    risk = clamp(risk, 0.02, 0.7);
+    if (!rng.chance(risk)) return 0;
+    // Most knocks cost a few weeks; a small tail wrecks the year.
+    const roll = rng.next();
+    const share = roll > 0.94 ? rng.between(0.6, 1.0)
+      : roll > 0.75 ? rng.between(0.3, 0.6)
+        : rng.between(0.05, 0.3);
+    return Math.round(share * 100) / 100;
+  }
+
+  /** 0-1: how much of the season this player is actually available for. */
+  function availability(player) {
+    return clamp(1 - (player.season.injured || 0), 0, 1);
+  }
+
   /* --------------------------- VALUE & WAGES ------------------------------ */
   /* Keyed by league ID — the value clubs.leagueId actually holds. It was
    * originally keyed by the four Premier League prestige bands from
@@ -213,7 +244,7 @@
       // Career totals, so a fifteen-season save can show you who the world's
       // record scorer became.
       career: { apps: 0, goals: 0, assists: 0, seasons: 0, clubs: [] },
-      season: { apps: 0, goals: 0, assists: 0, minutesShare: 0 },
+      season: { apps: 0, goals: 0, assists: 0, minutesShare: 0, injured: 0 },
       retired: false,
     }, fields);
     p.value = marketValue(p);
@@ -291,7 +322,12 @@
       if (p.pos === "GK") continue;
       const w = POSITIONS[p.pos].unit[unit];
       if (w <= 0.05) continue;
-      scored.push({ q: p.overall * w + p.overall * 0.0, w, ov: p.overall });
+      /* An injured player is worth less to the side than his rating says, and
+       * the man behind him gets picked instead. Discounting him here — rather
+       * than removing him — is what makes squad depth matter: a club with a
+       * good replacement barely notices, a club without one falls apart. */
+      const ov = p.overall * (0.45 + 0.55 * availability(p));
+      scored.push({ q: ov * w, w, ov });
     }
     if (!scored.length) return 40;
     // Rank by contribution: the four biggest contributors to this unit are the
@@ -307,9 +343,11 @@
   }
 
   function keeperRating(players) {
-    const gks = players.filter((p) => p.pos === "GK").sort((a, b) => b.overall - a.overall);
+    const gks = players.filter((p) => p.pos === "GK")
+      .map((p) => ({ p, ov: p.overall * (0.45 + 0.55 * availability(p)) }))
+      .sort((a, b) => b.ov - a.ov);
     if (!gks.length) return 45;
-    return gks[0].overall * 0.9 + (gks[1] ? gks[1].overall * 0.1 : gks[0].overall * 0.1);
+    return gks[0].ov * 0.9 + (gks[1] ? gks[1].ov * 0.1 : gks[0].ov * 0.1);
   }
 
   /** All four derived numbers for a squad, before manager/board modifiers. */
@@ -353,7 +391,7 @@
     POSITIONS, POSITION_KEYS, SQUAD_TARGET,
     firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta,
     marketValue, expectedWage, ageValueFactor, LEAGUE_WAGE_FACTOR,
-    makePlayer, fromDatabase, generate, resetIds,
+    makePlayer, fromDatabase, generate, resetIds, rollInjury, availability,
     unitRating, keeperRating, squadRatings, squadNeeds, weakestUnit,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -106,7 +106,10 @@
    *                   (negative = demands better than the squad deserves)
    * tolerance         how many places either side of target counts as "met"
    * reactivity        multiplier on every confidence swing
-   * patience          seasons of grace a new manager is given
+   * patience          seasons of grace a new manager is given. Never below 2:
+   *                   every manager in the world gets a full season to be
+   *                   judged on before the axe can fall, which is both fair
+   *                   and what stops a career ending before it starts.
    * sackFloor         confidence at which the axe falls
    * drift             random noise added to expectations each season
    * weights           how the season's metrics are weighted into the verdict
@@ -125,12 +128,12 @@
     },
     Chaotic: {
       label: "Chaotic", blurb: "Moves the goalposts. Nobody is ever quite safe.",
-      expectationShift: -1, tolerance: 2, reactivity: 1.25, patience: 1, sackFloor: 34, drift: 3.2,
+      expectationShift: -1, tolerance: 2, reactivity: 1.25, patience: 2, sackFloor: 34, drift: 3.2,
       weights: { league: 0.40, cup: 0.20, finance: 0.15, youth: 0.25 }, backing: 0.6,
     },
     Aggressive: {
       label: "Aggressive", blurb: "Demands more than the squad deserves, and demands it now.",
-      expectationShift: -1.5, tolerance: 1, reactivity: 1.55, patience: 1, sackFloor: 36, drift: 0.8,
+      expectationShift: -1.5, tolerance: 1, reactivity: 1.55, patience: 2, sackFloor: 36, drift: 0.8,
       weights: { league: 0.60, cup: 0.20, finance: 0.10, youth: 0.10 }, backing: 0.75,
     },
   };
@@ -184,6 +187,20 @@
       history: { titles: 0, cups: 0, promotions: 0, relegations: 0, europeanTitles: 0, seasons: [] },
       form: 0,
       lastPosition: null,
+      /* Levers the decision layer pulls. Everything here is applied by the
+       * simulation and then decayed at the end of the season, so a choice made
+       * in the summer shapes the campaign that follows it and no more —
+       * unless it set a multi-season boost, which is what makes long-term
+       * decisions distinguishable from quick fixes. */
+      modifiers: {
+        form: 0,            // season-long form swing, read by the match engine
+        injuryRisk: 1,      // multiplier on every injury roll in this squad
+        unit: { attack: 0, midfield: 0, defence: 0 },   // rating shifts, in points
+        unitSeasons: 0,     // how many more seasons the unit shifts survive
+        youthBias: 0,       // pushes minutes toward under-21s
+        wageStrain: 0,      // extra wage cost agreed in a decision
+      },
+      flags: {},            // narrative flags with a season countdown
     };
     return club;
   }
@@ -213,12 +230,14 @@
   }
 
   /** Recompute the three unit ratings from the squad plus the fixed identity
-   *  offset. Called after every transfer window and every development pass. */
+   *  offset and whatever the manager's decisions did. Called after every
+   *  transfer window and every development pass. */
   function refreshRatings(club) {
     const r = MG.players.squadRatings(club.squad);
-    club.ratings.attack   = clamp(r.attack   + club.identity.attack,   20, 99);
-    club.ratings.midfield = clamp(r.midfield + club.identity.midfield, 20, 99);
-    club.ratings.defence  = clamp(r.defence  + club.identity.defence,  20, 99);
+    const mod = (club.modifiers && club.modifiers.unit) || { attack: 0, midfield: 0, defence: 0 };
+    club.ratings.attack   = clamp(r.attack   + club.identity.attack   + mod.attack,   20, 99);
+    club.ratings.midfield = clamp(r.midfield + club.identity.midfield + mod.midfield, 20, 99);
+    club.ratings.defence  = clamp(r.defence  + club.identity.defence  + mod.defence,  20, 99);
     club.ratings.keeper   = clamp(r.keeper, 20, 99);
     return club.ratings;
   }
@@ -466,6 +485,22 @@
     const w = cfg.weights;
     let total = league * w.league + cup * w.cup + finance * w.finance + youth * w.youth;
 
+    /* Headline results override the arithmetic. A weighted average let a club
+     * win its division and come out at "met expectations" because the wage
+     * bill was high and the kids did not play — which is not how any boardroom
+     * on earth reacts to a trophy. Winning, going up or going down is the
+     * story of the season and the verdict has to say so. */
+    if (result.champion || result.promoted) total = Math.max(total, 0.55);
+    if (result.relegated) total = Math.min(total, -0.55);
+
+    /* A promise made in the summer is called in now. Beating the brief after
+     * promising to is worth more; missing it after promising to costs more.
+     * This is the only thing that makes the boardroom promise card a gamble
+     * rather than free confidence. */
+    if (club.flags && club.flags.promised) {
+      total *= total >= 0 ? 1.25 : 1.6;
+    }
+
     // A chaotic board sometimes simply decides it does not like you.
     if (club.board.style === "Chaotic") total += rng.between(-0.45, 0.45);
 
@@ -528,6 +563,28 @@
     club.board.report = null;
   }
 
+  /** Wind decision effects down at the end of a season. Unit boosts last as
+   *  many seasons as the decision bought; everything else is a one-year lever
+   *  and resets, so a manager has to keep making choices. */
+  function decayModifiers(club) {
+    const m = club.modifiers;
+    if (!m) return;
+    m.form = 0;
+    m.injuryRisk = 1;
+    m.youthBias = 0;
+    m.wageStrain = 0;
+    if (m.unitSeasons > 0) {
+      m.unitSeasons--;
+      if (m.unitSeasons <= 0) m.unit = { attack: 0, midfield: 0, defence: 0 };
+    } else {
+      m.unit = { attack: 0, midfield: 0, defence: 0 };
+    }
+    for (const k of Object.keys(club.flags || {})) {
+      club.flags[k]--;
+      if (club.flags[k] <= 0) delete club.flags[k];
+    }
+  }
+
   /** Reputation drifts with what the club actually achieves. */
   function adjustReputation(club, delta) {
     club.reputation = clamp(Math.round(club.reputation + delta), 3, 99);
@@ -540,6 +597,6 @@
     computeRevenue, wageBill, setBudgets, settleFinances, reinvestSurplus, OPERATING_COST_SHARE,
     LEAGUE_PLAYER_LEVEL, playerLevelFor,
     createBoard, standingIn, setSeasonTargets, describeTargets, evaluateSeason, wantsSacking,
-    onManagerAppointed, adjustReputation, CUP_ROUND_RANK,
+    onManagerAppointed, adjustReputation, CUP_ROUND_RANK, decayModifiers,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -331,9 +331,17 @@
       // it, so a relegated club's recruitment drops to its new level and a
       // promoted one's rises — over transfer windows, not overnight.
       club.level = MG.clubs.playerLevelFor(club);
+      /* Injuries are rolled here, before the ratings are computed, so the
+       * attack rating a club carries into the season is the attack it can
+       * actually field. This is the one place the squad you planned and the
+       * squad you get come apart, and it is what makes depth worth paying for. */
+      const risk = (club.modifiers && club.modifiers.injuryRisk) || 1;
+      for (const p of club.squad) {
+        p.season = { apps: 0, goals: 0, assists: 0, minutesShare: 0, injured: 0 };
+        p.season.injured = MG.players.rollInjury(world.rng, p, risk);
+      }
       MG.clubs.refreshRatings(club);
       MG.clubs.setBudgets(club, world.rng);
-      for (const p of club.squad) p.season = { apps: 0, goals: 0, assists: 0, minutesShare: 0 };
     }
     // Targets need every club's ratings to be current, so they come second.
     for (const club of world.clubs) {
@@ -363,8 +371,12 @@
         // board with a short fuse.
         const threshold = style.tolerance + 4;
         if (behind <= threshold) continue;
+        // Grace is absolute in the winter window: a manager appointed last
+        // summer is not sacked in his first December, however bad it looks.
+        // Without this a career could end before its first board review.
+        if (club.board.grace > 0) continue;
         const pressure = (behind - threshold) / 10;
-        const odds = clamp(pressure * style.reactivity * 0.55, 0, 0.75) * (club.board.grace > 0 ? 0.35 : 1);
+        const odds = clamp(pressure * style.reactivity * 0.5, 0, 0.7);
         if (!rng.chance(odds)) continue;
         const out = removeManager(world, club, "sacked mid-season");
         club.board.confidence = clamp(club.board.confidence - 20, 0, 100);
@@ -469,6 +481,8 @@
     for (const club of world.clubs) {
       if (!club._outcome) continue;
       boardReports[club.id] = MG.clubs.evaluateSeason(club, club._outcome, rng);
+      // The board judges the season the modifiers produced, then they expire.
+      MG.clubs.decayModifiers(club);
       const manager = world.managerById(club.managerId);
       if (manager) {
         manager.tenure++;

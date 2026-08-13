@@ -412,8 +412,118 @@
     return news;
   }
 
+  /* ------------------- DIRECTED DEALS (the decision layer) -----------------
+   * The window above is the AI acting on its own. These two are what a DECISION
+   * calls when the player says "sign a striker" or "cash in on him" — the same
+   * market, the same prices, but a single deal made deliberately rather than a
+   * whole window simulated. */
+
+  /** Sign the best player the club can afford in a given mould. */
+  function findAndSign(world, club, opts) {
+    const rng = world.rng;
+    const o = opts || {};
+    const index = indexPlayers(world);
+    const budget = o.maxFee != null ? o.maxFee : club.finances.transferBudget;
+    const level = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
+
+    // Which position: asked for, or whatever the squad is thinnest in.
+    let pos = o.pos;
+    if (!pos) {
+      const needs = clubNeeds(club);
+      pos = needs[0] ? needs[0].pos : rng.pick(MG.players.POSITION_KEYS);
+    }
+    // What calibre: a marquee signing reaches above the club's level, a squad
+    // player sits under it, a prospect is young and unfinished.
+    const bar = o.quality === "star" ? level + 6
+      : o.quality === "prospect" ? level - 6
+        : level + 1;
+
+    let best = null, bestFee = 0, bestScore = -Infinity;
+    for (const entry of (index[pos] || [])) {
+      const { player, seller } = { player: entry.player, seller: entry.club };
+      if (seller.id === club.id || player.retired || player.clubId !== seller.id) continue;
+      if (seller.squad.length <= MIN_SQUAD) continue;
+      if (o.quality === "prospect" && player.age > 22) continue;
+      if (o.quality === "star" && player.overall < level + 2) continue;
+      const fee = askingPrice({ player, club: seller }, club, new Set());
+      if (fee > budget) continue;
+      const wage = MG.players.expectedWage(player, club.leagueId);
+      // Closeness to the calibre asked for, minus what it costs.
+      const score = -Math.abs(player.overall - bar) * 3
+        + (o.quality === "prospect" ? (player.potential - player.overall) * 2 : 0)
+        - fee * 0.12;
+      if (score > bestScore) { best = { player, seller, wage }; bestScore = score; bestFee = fee; }
+    }
+    if (!best) return null;
+
+    const { player, seller, wage } = best;
+    seller.squad = seller.squad.filter((p) => p.id !== player.id);
+    seller.finances.balance = round1(seller.finances.balance + bestFee);
+    seller.finances.received = round1(seller.finances.received + bestFee);
+    club.squad.push(player);
+    club.finances.balance = round1(club.finances.balance - bestFee);
+    club.finances.spent = round1(club.finances.spent + bestFee);
+    club.finances.transferBudget = round1(Math.max(0, club.finances.transferBudget - bestFee));
+    player.clubId = club.id;
+    player.contract = { years: rng.int(3, 5), wage: round1(wage * rng.between(1.0, 1.2)) };
+    player.career.clubs.push(club.name);
+    player.value = MG.players.marketValue(player);
+    // He arrives for pre-season fit. Without this he carries the injury rolled
+    // for him at his old club and a marquee signing could lower the very rating
+    // he was bought to raise.
+    player.season.injured = 0;
+    MG.clubs.refreshRatings(club);
+    return { player, fee: bestFee, from: seller.name };
+  }
+
+  /** Cash in on someone. `which`: "star" | "veteran" | "fringe". */
+  function sellOne(world, club, which) {
+    if (club.squad.length <= MIN_SQUAD) return null;
+    const ranked = club.squad.slice().sort((a, b) => b.overall - a.overall);
+    let player;
+    if (which === "star") player = ranked[0];
+    else if (which === "veteran") player = club.squad.slice().sort((a, b) => b.age - a.age)[0];
+    else player = ranked[ranked.length - 1];
+    if (!player) return null;
+
+    const fee = round1(player.value * (which === "star" ? 1.25 : 0.9));
+
+    /* Somebody has to buy him. Handing the selling club the money and deleting
+     * the player would leak a footballer out of the world every time a manager
+     * cashed in — so the richest club that can afford him and has room takes
+     * him, and the fee moves between two real balance sheets. If nobody can
+     * afford him, the sale does not happen, which is itself the honest answer. */
+    /* The buyer has to be a club that would plausibly want him: good enough
+     * that he improves them is not required, but he cannot be twenty rating
+     * points below their level or Barcelona ends up buying League Two squad
+     * players because they happen to have the most money. */
+    const buyer = world.clubs
+      .filter((c) => c.id !== club.id
+        && c.finances.balance >= fee
+        && c.squad.length < MG.players.SQUAD_TARGET + 3
+        && (c.level || 50) >= player.overall - 12
+        && player.overall >= (c.level || 50) - 13)
+      .sort((a, b) => b.finances.transferBudget - a.finances.transferBudget)[0];
+    if (!buyer) return null;
+
+    club.squad = club.squad.filter((p) => p.id !== player.id);
+    club.finances.balance = round1(club.finances.balance + fee);
+    club.finances.received = round1(club.finances.received + fee);
+    club.finances.transferBudget = round1(club.finances.transferBudget + fee);
+
+    buyer.squad.push(player);
+    buyer.finances.balance = round1(buyer.finances.balance - fee);
+    buyer.finances.spent = round1(buyer.finances.spent + fee);
+    player.clubId = buyer.id;
+    player.contract = { years: 3, wage: MG.players.expectedWage(player, buyer.leagueId) };
+    player.career.clubs.push(buyer.name);
+    MG.clubs.refreshRatings(club);
+    MG.clubs.refreshRatings(buyer);
+    return { player, fee, to: buyer.name };
+  }
+
   MG.transfers = {
-    MIN_SQUAD, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
+    MIN_SQUAD, findAndSign, sellOne, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
     askingPrice, targetScore, clubNeeds, runWindow, signFreeAgents, topUpSquads, youthIntake,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

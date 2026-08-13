@@ -87,7 +87,9 @@
       homeAdvantage: (club.homeAdvantage || 5) * mods.home,
       managerQuality: mods.quality * 100,
       variance: mods.variance,
-      form: club.form || 0,
+      // club.form is in-season momentum; modifiers.form is the standing swing
+      // a pre-season decision bought (or cost) for the whole campaign.
+      form: (club.form || 0) + ((club.modifiers && club.modifiers.form) || 0),
     };
   }
 
@@ -165,7 +167,9 @@
 
   function buildSelection(club, manager, rng) {
     const squad = club.squad;
-    const youthShare = MG.managers.youthAppetite(manager, club);
+    const youthShare = clamp(
+      MG.managers.youthAppetite(manager, club) + ((club.modifiers && club.modifiers.youthBias) || 0),
+      0.02, 0.6);
     const byPos = {};
     for (const p of squad) (byPos[p.pos] = byPos[p.pos] || []).push(p);
 
@@ -178,7 +182,10 @@
       const ranked = list.slice().sort((a, b) => {
         const youthA = a.age <= 21 ? youthShare * 30 : 0;
         const youthB = b.age <= 21 ? youthShare * 30 : 0;
-        return (b.overall + youthB) - (a.overall + youthA);
+        // Availability sorts the injured down the pecking order, which is how
+        // a squad player gets his season.
+        return (b.overall * MG.players.availability(b) + youthB)
+             - (a.overall * MG.players.availability(a) + youthA);
       });
       ranked.forEach((p, i) => {
         // Starters play most of it, the next man in plays a chunk, the rest
@@ -190,7 +197,9 @@
         else if (i < starters + 2) share = 0.15;
         else share = 0.05;
         share *= rng.between(0.85, 1.12);
-        entries.push({ player: p, share: clamp(share, 0.01, 0.95) });
+        // An injured man plays only the part of the season he is fit for.
+        share *= MG.players.availability(p);
+        entries.push({ player: p, share: clamp(share, 0, 0.95) });
       });
     }
 
