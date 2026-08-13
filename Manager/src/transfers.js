@@ -139,6 +139,10 @@
         if (inDebt) chance += 0.30;
         chance *= policy.churn;
         if (chance > 0 && rng.chance(clamp(chance, 0, 0.85))) {
+          // Tag it on the player too: an AI manager listing someone is the same
+          // act as the human doing it, and the rest of the game should be able
+          // to see it the same way.
+          p.transferListed = true;
           listed.push({ player: p, club, forced: inDebt || overWages });
         }
       }
@@ -522,8 +526,135 @@
     return { player, fee, to: buyer.name };
   }
 
+  /* ===================== THE MANAGER'S TRANSFER MARKET =====================
+   * The player does not execute transfers himself — he tells the boardroom
+   * what he wants and the boardroom does the deal, which is both how a modern
+   * club works and how the AI clubs already behave. Two levers:
+   *
+   *   transferList   players of yours you are willing to lose
+   *   targets        players elsewhere you have asked the board to bid for
+   *
+   * Both are resolved in the summer, before the AI window opens, and the
+   * results are reported back on the end-of-season screen. The board can and
+   * does refuse: a bid above what it will fund simply does not happen.
+   * ====================================================================== */
+
+  /** Everyone a club could plausibly sign, with what it would cost. */
+  function market(world, club, opts) {
+    const o = opts || {};
+    const level = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
+    const budget = o.budget != null ? o.budget : club.finances.transferBudget;
+    const out = [];
+    for (const seller of world.clubs) {
+      if (seller.id === club.id) continue;
+      for (const p of seller.squad) {
+        if (p.retired) continue;
+        // Only show players who would realistically consider the move: within
+        // reach of the club's level, and not so far below it as to be pointless.
+        if (p.overall > level + 12) continue;
+        if (p.overall < level - 14) continue;
+        if (o.pos && p.pos !== o.pos) continue;
+        const fee = askingPrice({ player: p, club: seller }, club, new Set());
+        if (o.affordableOnly && fee > budget) continue;
+        out.push({
+          player: p, club: seller, fee,
+          wage: MG.players.expectedWage(p, club.leagueId),
+          listed: !!p.transferListed,
+        });
+      }
+    }
+    // Listed players first, then quality — the shop window before the rest.
+    out.sort((a, b) => (b.listed - a.listed) || (b.player.overall - a.player.overall));
+    return out.slice(0, o.limit || 60);
+  }
+
+  /** Resolve everything the manager asked the board to do this summer. */
+  function executeManagerRequests(world, club) {
+    const rng = world.rng;
+    const sold = [], bought = [], refused = [];
+
+    /* ---- outgoings first: you sell before you buy ---- */
+    for (const id of (club.transferList || []).slice()) {
+      const player = club.squad.find((p) => p.id === id);
+      if (!player) continue;
+      if (club.squad.length <= MIN_SQUAD) { refused.push({ player, reason: "the squad is already too thin" }); continue; }
+      const fee = round1(player.value * 0.95);
+      const buyer = world.clubs
+        .filter((c) => c.id !== club.id
+          && c.finances.balance >= fee
+          && c.squad.length < MG.players.SQUAD_TARGET + 3
+          && (c.level || 50) >= player.overall - 12
+          && player.overall >= (c.level || 50) - 13)
+        .sort((a, b) => b.finances.transferBudget - a.finances.transferBudget)[0];
+      if (!buyer) { refused.push({ player, reason: "nobody bid" }); continue; }
+
+      club.squad = club.squad.filter((p) => p.id !== player.id);
+      club.finances.balance = round1(club.finances.balance + fee);
+      club.finances.received = round1(club.finances.received + fee);
+      club.finances.transferBudget = round1(club.finances.transferBudget + fee);
+      buyer.squad.push(player);
+      buyer.finances.balance = round1(buyer.finances.balance - fee);
+      buyer.finances.spent = round1(buyer.finances.spent + fee);
+      player.clubId = buyer.id;
+      player.transferListed = false;
+      player.contract = { years: 3, wage: MG.players.expectedWage(player, buyer.leagueId) };
+      player.career.clubs.push(buyer.name);
+      MG.clubs.refreshRatings(buyer);
+      sold.push({ player, fee, to: buyer.name });
+    }
+
+    /* ---- then the bids, best target first, until the money runs out ---- */
+    const targets = (club.targets || []).slice();
+    for (const id of targets) {
+      let entry = null;
+      for (const seller of world.clubs) {
+        const p = seller.squad.find((x) => x.id === id);
+        if (p) { entry = { player: p, club: seller }; break; }
+      }
+      if (!entry) { continue; }                      // already moved elsewhere
+      const { player, club: seller } = entry;
+      const fee = askingPrice(entry, club, new Set());
+      const wage = round1(MG.players.expectedWage(player, club.leagueId) * rng.between(1.0, 1.15));
+      const wageRoom = club.finances.wageBudget - wageBillOf(club);
+
+      if (fee > club.finances.transferBudget) { refused.push({ player, reason: `the board will not fund ${fmtFee(fee)}` }); continue; }
+      if (wage * 52 / 1000 > wageRoom) { refused.push({ player, reason: "his wages break the budget" }); continue; }
+      if (seller.squad.length <= MIN_SQUAD) { refused.push({ player, reason: "his club refused to sell" }); continue; }
+      // A selling club will not sell to a direct rival in its own division for
+      // an ordinary fee — this is where a lot of real bids die.
+      if (seller.leagueId === club.leagueId && seller.reputation >= club.reputation && rng.chance(0.5)) {
+        refused.push({ player, reason: "his club will not sell to a rival" });
+        continue;
+      }
+
+      seller.squad = seller.squad.filter((p) => p.id !== player.id);
+      seller.finances.balance = round1(seller.finances.balance + fee);
+      seller.finances.received = round1(seller.finances.received + fee);
+      club.squad.push(player);
+      club.finances.balance = round1(club.finances.balance - fee);
+      club.finances.spent = round1(club.finances.spent + fee);
+      club.finances.transferBudget = round1(Math.max(0, club.finances.transferBudget - fee));
+      player.clubId = club.id;
+      player.transferListed = false;
+      player.season.injured = 0;
+      player.contract = { years: rng.int(3, 5), wage };
+      player.career.clubs.push(club.name);
+      player.value = MG.players.marketValue(player);
+      MG.clubs.refreshRatings(seller);
+      bought.push({ player, fee, from: seller.name });
+    }
+
+    club.transferList = [];
+    club.targets = [];
+    MG.clubs.refreshRatings(club);
+    return { sold, bought, refused };
+  }
+
+  function wageBillOf(club) { return MG.clubs.wageBill(club); }
+  function fmtFee(f) { return f >= 10 ? `£${Math.round(f)}m` : `£${round1(f)}m`; }
+
   MG.transfers = {
-    MIN_SQUAD, findAndSign, sellOne, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
+    MIN_SQUAD, findAndSign, sellOne, market, executeManagerRequests, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
     askingPrice, targetScore, clubNeeds, runWindow, signFreeAgents, topUpSquads, youthIntake,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

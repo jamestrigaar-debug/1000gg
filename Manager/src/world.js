@@ -117,6 +117,13 @@
     }
     void realSquads;
 
+    /* Give every club a shape that suits its manager's system before the
+     * identity offsets are locked in, or the offsets absorb a mismatch that
+     * the manager would never have picked. */
+    for (const club of world.clubs) {
+      club.formation = formationFor(world.rng, club.tacticalStyle);
+      for (const p of club.squad) MG.tactics.initMorale(p);
+    }
     for (const club of world.clubs) {
       MG.clubs.calibrateIdentity(club);
       club.board = MG.clubs.createBoard(world.rng, club);
@@ -141,6 +148,23 @@
 
     world.prepareSeason();
     return world;
+  }
+
+  /* Which shape a system tends to be played in. Not a hard rule — a third of
+   * clubs pick something else, which is what stops every Possession side in
+   * the world lining up identically. */
+  const STYLE_FORMATION = {
+    Possession: ["4-3-3", "4-2-3-1"],
+    "High Press": ["4-3-3", "4-2-3-1"],
+    Counter: ["4-4-2", "4-5-1"],
+    Direct: ["4-4-2", "3-5-2"],
+    "Park the Bus": ["5-3-2", "4-5-1"],
+    "Route One": ["4-4-2", "5-3-2"],
+  };
+  function formationFor(rng, style) {
+    const list = STYLE_FORMATION[style];
+    if (list && rng.chance(0.7)) return rng.pick(list);
+    return rng.pick(MG.tactics.FORMATION_KEYS);
   }
 
   function academyTierFor(D, clubName) {
@@ -271,16 +295,28 @@
     world.clubsInLeague = (leagueId) => world.clubs.filter((c) => c.leagueId === leagueId);
     world.clubByName = (name) => world.clubs.find((c) => c.name === name);
 
-    world.profile = (clubId) => {
-      let p = world._profiles[clubId];
+    /* Profiles are cached per club AND per competition, because a club that
+     * has pointed its season at the cup is a different side on a Tuesday night
+     * than it is on a Saturday. */
+    world.profile = (clubId, competition) => {
+      const comp = competition || "league";
+      const key = `${clubId}|${comp}`;
+      let p = world._profiles[key];
       if (!p) {
         const club = world.clubIndex[clubId];
-        p = world._profiles[clubId] = MG.match.teamProfile(club, world.managerById(club.managerId));
+        p = MG.match.teamProfile(club, world.managerById(club.managerId));
+        const bonus = MG.clubs.focusBonus(club, comp);
+        p.attack += bonus; p.midfield += bonus; p.defence += bonus;
+        world._profiles[key] = p;
       }
       p.form = world.clubIndex[clubId].form || 0;
       return p;
     };
-    world.invalidateProfile = (clubId) => { delete world._profiles[clubId]; };
+    world.invalidateProfile = (clubId) => {
+      for (const k of Object.keys(world._profiles)) {
+        if (k === String(clubId) || k.startsWith(`${clubId}|`)) delete world._profiles[k];
+      }
+    };
     world.selection = (clubId) => {
       let s = world._selections[clubId];
       if (!s) {
@@ -337,7 +373,13 @@
        * squad you get come apart, and it is what makes depth worth paying for. */
       const risk = (club.modifiers && club.modifiers.injuryRisk) || 1;
       for (const p of club.squad) {
-        p.season = { apps: 0, goals: 0, assists: 0, minutesShare: 0, injured: 0 };
+        MG.tactics.initMorale(p);
+        const lastShare = p.season ? p.season.minutesShare || 0 : 0;
+        p.lastLoad = lastShare;
+        p.season = { apps: 0, goals: 0, assists: 0, minutesShare: 0, injured: 0, form: 1 };
+        // Consistency roll: a metronome lands near 1.00 every year, a maverick
+        // swings between a career season and a write-off.
+        p.season.form = MG.ratings.rollSeasonForm(world.rng, p);
         p.season.injured = MG.players.rollInjury(world.rng, p, risk);
       }
       MG.clubs.refreshRatings(club);
@@ -350,6 +392,28 @@
     // Build selections up front so youth minutes are decided before a ball is
     // kicked — a manager picks his squad, he does not discover it in May.
     for (const club of world.clubs) world.selection(club.id);
+
+    /* Fatigue can only be computed once minutes are known, so it lands here and
+     * feeds the season as a form penalty. A side that leans on eleven men in a
+     * high-pressing system arrives at the run-in tired; a rotated one does not.
+     * This is what makes squad depth worth paying for. */
+    for (const club of world.clubs) {
+      const manager = world.managerById(club.managerId);
+      const press = manager ? MG.managers.pressIntensity(manager.tactic) : 0.5;
+      const xi = MG.tactics.effectiveXI(club);
+      let total = 0, n = 0;
+      for (const p of xi) {
+        if (!p) continue;
+        total += MG.ratings.fatigueFactor(p, press);
+        n++;
+      }
+      const factor = n ? total / n : 1;
+      club.modifiers.fatigue = factor;
+      // A factor of 0.90 is a badly overworked side: worth about two points of
+      // form across a campaign.
+      club.modifiers.form += (factor - 1) * 20;
+      world.invalidateProfile(club.id);
+    }
   }
 
   /* ------------------------------ THE SEASON ------------------------------ */
@@ -416,7 +480,7 @@
     for (const [comp, ids] of Object.entries(qualifiers)) {
       const field = ids.map((cid) => world.clubById(cid)).filter(Boolean);
       if (field.length < 4) continue;
-      const run = MG.competitions.runKnockout(world, field, { name: comp, legs: 2 });
+      const run = MG.competitions.runKnockout(world, field, { name: comp, legs: 2, competition: "europe" });
       if (!run || !run.winner) continue;
       euro[comp] = run.winner.name;
       for (const [cid, label] of Object.entries(run.exits)) {
@@ -481,6 +545,8 @@
     for (const club of world.clubs) {
       if (!club._outcome) continue;
       boardReports[club.id] = MG.clubs.evaluateSeason(club, club._outcome, rng);
+      // Morale settles on what the season delivered and who got to play in it.
+      MG.tactics.settleMorale(club, club._outcome);
       // The board judges the season the modifiers produced, then they expire.
       MG.clubs.decayModifiers(club);
       const manager = world.managerById(club.managerId);
@@ -506,6 +572,14 @@
     const { news: retireNews, freeAgents } = MG.transfers.retirementsAndExpiries(world);
     for (const club of world.clubs) MG.clubs.refreshRatings(club);
     for (const club of world.clubs) MG.clubs.setBudgets(club, rng);
+    /* The managed club's own instructions are executed before the AI window
+     * opens — you get first refusal on your own targets, and the world reacts
+     * to a squad you have already changed. */
+    let managerWindow = null;
+    if (world.playerClubId) {
+      const pc = world.clubById(world.playerClubId);
+      if (pc) managerWindow = MG.transfers.executeManagerRequests(world, pc);
+    }
     const window = MG.transfers.runWindow(world);
     MG.transfers.signFreeAgents(world, freeAgents);
     MG.transfers.topUpSquads(world);
@@ -532,6 +606,7 @@
       awards,
       transferCount: window.deals,
       bigTransfers: window.news.length,
+      managerWindow,
       news: world.news.filter((n) => n.season === world.season),
     };
     world.history.push(summary);

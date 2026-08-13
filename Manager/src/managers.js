@@ -234,6 +234,51 @@
   /* --------------------------- MANAGER EFFECTS ----------------------------
    * How a manager turns into numbers the rest of the engine reads. */
 
+  /* ------------------- THE TACTICAL PARAMETER MATRIX ----------------------
+   * Report formula 4. Rather than adding five sliders to a game whose whole
+   * point is that you make a handful of decisions a year, each of the six
+   * systems is EXPRESSED as a parameter vector, and its effect on the three
+   * ratings is derived from that vector instead of being hand-typed.
+   *
+   *   mentality  -1 defensive .. +1 attacking
+   *   tempo       0 patient    .. 1 frantic
+   *   width       0 narrow     .. 1 wide
+   *   defLine     0 deep       .. 1 high
+   *   pressing    0 contain    .. 1 suffocate
+   *
+   * The pay-off is that pressing now costs something real: it feeds the fatigue
+   * model, so a high-press side burns its legs over a season. */
+  const TACTIC_PARAMS = {
+    Possession:     { mentality: 0.2,  tempo: 0.3, width: 0.6, defLine: 0.7, pressing: 0.5 },
+    Counter:        { mentality: -0.2, tempo: 0.9, width: 0.4, defLine: 0.2, pressing: 0.3 },
+    "High Press":   { mentality: 0.5,  tempo: 0.8, width: 0.5, defLine: 0.9, pressing: 1.0 },
+    Direct:         { mentality: 0.4,  tempo: 0.8, width: 0.5, defLine: 0.5, pressing: 0.5 },
+    "Park the Bus": { mentality: -0.9, tempo: 0.2, width: 0.2, defLine: 0.1, pressing: 0.2 },
+    "Route One":    { mentality: 0.1,  tempo: 0.7, width: 0.3, defLine: 0.3, pressing: 0.4 },
+  };
+
+  /** How hard this system presses, 0-1. Read by the fatigue model. */
+  function pressIntensity(tacticKey) {
+    const p = TACTIC_PARAMS[tacticKey];
+    return p ? p.pressing : 0.5;
+  }
+
+  /* Derive the rating shifts from the parameter vector. The coefficients are
+   * scaled from the report's (which assume multipliers on a 0-1 rating) onto
+   * this engine's 0-99 point scale, and tuned so the six systems land in the
+   * same +/-5 point band they occupied when the numbers were hand-written —
+   * the balance was already right, this just makes it derived rather than
+   * asserted, and keeps pressing and tempo honest against fatigue. */
+  function deriveShift(tacticKey) {
+    const p = TACTIC_PARAMS[tacticKey];
+    if (!p) return { attack: 0, midfield: 0, defence: 0 };
+    return {
+      attack: p.mentality * 3.4 + p.tempo * 1.6 - p.width * 0.8,
+      midfield: (1 - Math.abs(p.mentality)) * 3.0 + p.pressing * 1.8 - p.tempo * 2.2,
+      defence: -p.mentality * 2.6 + (1 - p.defLine) * 2.4 + p.pressing * 0.8,
+    };
+  }
+
   /** How well a squad suits a tactic: 1.0 is neutral, ~0.93-1.07 in practice. */
   function tacticalFit(manager, squad) {
     const tac = TACTICS[manager.tactic];
@@ -263,7 +308,8 @@
     const fit = tacticalFit(manager, club.squad);
     const quality = (manager.reputation * 0.4 + manager.attrs.manManagement * 0.3 + manager.attrs.discipline * 0.3) / 100;
 
-    let attack = tac.shift.attack, midfield = tac.shift.midfield, defence = tac.shift.defence;
+    const shift = deriveShift(manager.tactic) || tac.shift;
+    let attack = shift.attack, midfield = shift.midfield, defence = shift.defence;
     let variance = 1, consistency = 1;
     for (const t of manager.traits) {
       const m = (TRAITS[t] || {}).match;
@@ -391,6 +437,7 @@
     ARCHETYPES, ARCHETYPE_KEYS,
     fromArchetype, generate, resetIds, applyTraitAttrs,
     tacticalFit, matchModifiers, coachingQuality, youthAppetite, recruitmentPolicy,
+    TACTIC_PARAMS, pressIntensity, deriveShift,
     candidateScore, wouldMove,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

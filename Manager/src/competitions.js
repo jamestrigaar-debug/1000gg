@@ -164,7 +164,8 @@
 
   function playCupTie(world, a, b, o) {
     const rng = world.rng;
-    const ap = world.profile(a.id), bp = world.profile(b.id);
+    const comp = o.competition || "cup";
+    const ap = world.profile(a.id, comp), bp = world.profile(b.id, comp);
     if (o.legs === 2) {
       const tie = MG.match.simulateTie(rng, ap, bp, { legs: 2 });
       const winner = tie.winner.id === a.id ? a : b;

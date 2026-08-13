@@ -154,7 +154,16 @@
     let risk = 0.16 + Math.max(0, age - 28) * 0.022 + Math.max(0, 20 - age) * 0.01;
     risk *= 1 - (fitness - 60) / 240;
     risk *= clubRisk == null ? 1 : clubRisk;
-    risk = clamp(risk, 0.02, 0.7);
+    // Hidden injury proneness — some players simply break more often, and the
+    // manager only ever finds out by watching. Carrying last season's workload
+    // into this one is what makes flogging a small squad expensive.
+    if (MG.ratings) {
+      const h = MG.ratings.hidden(player);
+      risk *= h.injuryProneness;
+      const lastLoad = player.lastLoad || 0;
+      risk *= 1 + lastLoad * 0.25;
+    }
+    risk = clamp(risk, 0.02, 0.75);
     if (!rng.chance(risk)) return 0;
     // Most knocks cost a few weeks; a small tail wrecks the year.
     const roll = rng.next();

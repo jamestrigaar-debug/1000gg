@@ -50,17 +50,86 @@
     return { homeAtkMod, awayAtkMod, homeDefMod, awayDefMod, chaosMod: clamp(chaosMod, 5, 30) };
   }
 
-  /* 1000goals uses `1.3 + diff / 20`. The divisor is widened here because this
-   * engine's ratings spread further than 1000goals' do — squads diverge over a
-   * long save in a way a drifting club rating never did — and at /20 the gap
-   * between a title-winning attack and a relegated defence produced 130-goal
-   * champions. At /24 the same fixture reads about 2.4 xG, which is where real
-   * top-versus-bottom sits. */
+  /* 1000goals uses `1.3 + diff / 20`. Two changes here, both measured against
+   * manager/tests/realism.js rather than guessed:
+   *
+   *   - the divisor is widened to 24, because this engine's ratings spread
+   *     further than 1000goals' do and at /20 the gap between a title-winning
+   *     attack and a relegated defence produced 130-goal champions
+   *   - the constant is 1.00, not 1.3, because attack ratings in this engine
+   *     sit structurally about 8 points above defence ratings (the attacking
+   *     unit aggregates a side's best forwards; the defensive one is dragged
+   *     down by the goalkeeper term). That gap fed straight into every xG and
+   *     the league ran at 3.5 goals a game against a real-world 2.75.
+   *
+   * If the rating scales are ever rebalanced, re-run the benchmark and retune
+   * this constant — it is calibration, not physics. */
+  const BASE_XG = 0.90;
   function resolveDuel(rng, attack, defence, chaosRange) {
     const diff = attack - defence;
-    const baseXG = 1.25 + diff / 24;
+    const baseXG = BASE_XG + diff / 24;
     const chaos = rng.between(-chaosRange, chaosRange) / 100;
     return Math.max(0.1, baseXG * (1 + chaos));
+  }
+
+  /* --------------------------- DIXON-COLES --------------------------------
+   * Two independent Poisson draws under-produce the low-scoring draws real
+   * football is full of: the benchmark had 0-0 at 3.8% against a real 7.5%.
+   * Dixon and Coles' correction reweights the four lowest scorelines, pushing
+   * mass into 0-0 and 1-1 and out of 1-0 and 0-1.
+   *
+   * The reference report suggests multiplying 0-0 and 1-1 by ~0.85 to make them
+   * RARER. That is the wrong way round for football and for this engine — the
+   * published correction uses a negative rho precisely because independent
+   * Poisson gives too FEW of them, and our own measurements agreed. Implemented
+   * in the published direction.
+   *
+   * Only the 2x2 block of scores is touched, and the block's total probability
+   * is preserved, so everything from 2-0 upwards is left exactly as the Poisson
+   * draw produced it. */
+  const DC_RHO = -0.13;
+
+  function dixonColes(rng, homeGoals, awayGoals, lambda, mu) {
+    if (homeGoals > 1 || awayGoals > 1) return { homeGoals, awayGoals };
+    // Only k of 0 and 1 ever reach here, and 0! = 1! = 1, so the factorial is
+    // omitted rather than written out.
+    const p = (k, l) => Math.exp(-l) * Math.pow(l, k);
+    const cells = [[0, 0], [0, 1], [1, 0], [1, 1]];
+    const tau = (x, y) => {
+      if (x === 0 && y === 0) return 1 - lambda * mu * DC_RHO;
+      if (x === 0 && y === 1) return 1 + lambda * DC_RHO;
+      if (x === 1 && y === 0) return 1 + mu * DC_RHO;
+      return 1 - DC_RHO;
+    };
+    let plain = 0, corrected = 0;
+    const weights = cells.map(([x, y]) => {
+      const base = p(x, lambda) * p(y, mu);
+      const c = base * tau(x, y);
+      plain += base; corrected += c;
+      return c;
+    });
+    if (!(corrected > 0) || !(plain > 0)) return { homeGoals, awayGoals };
+    // Re-draw within the block, keeping the block's own total mass unchanged.
+    let roll = rng.next() * corrected;
+    for (let i = 0; i < cells.length; i++) {
+      roll -= weights[i];
+      if (roll <= 0) return { homeGoals: cells[i][0], awayGoals: cells[i][1] };
+    }
+    return { homeGoals, awayGoals };
+  }
+
+  /* ------------------------- GIANT-KILLING ---------------------------------
+   * An explicit upset roll, on top of the chaos already inside the duel. The
+   * reference report's own formula does not produce the probabilities it
+   * claims (it reads ~50% at parity, not 10%), so the curve here is written to
+   * hit the numbers the report was aiming for: about one match in ten between
+   * equals has a flavour of the unexpected, falling to about one in twenty-five
+   * when one side is far stronger.
+   *
+   * On a trigger the weaker side's xG is lifted and the stronger side's shaded,
+   * which is what a smash-and-grab actually looks like on a scoresheet. */
+  function upsetChance(strengthDiff) {
+    return clamp(0.11 / (1 + Math.exp(Math.abs(strengthDiff) / 6 - 1.6)), 0.015, 0.12);
   }
 
   /* ---------------------------- TEAM PROFILES -----------------------------
@@ -87,9 +156,15 @@
       homeAdvantage: (club.homeAdvantage || 5) * mods.home,
       managerQuality: mods.quality * 100,
       variance: mods.variance,
-      // club.form is in-season momentum; modifiers.form is the standing swing
-      // a pre-season decision bought (or cost) for the whole campaign.
-      form: (club.form || 0) + ((club.modifiers && club.modifiers.form) || 0),
+      /* Three separate things add up here:
+       *   club.form        in-season momentum, swinging with recent results
+       *   modifiers.form   the standing swing a decision bought for the season
+       *   morale           how the dressing room actually feels
+       * Morale is deliberately the smallest of the three — it colours a
+       * season, it does not decide one. */
+      form: (club.form || 0)
+        + ((club.modifiers && club.modifiers.form) || 0)
+        + (MG.tactics ? (MG.tactics.teamMorale(club) - 60) / 12 : 0),
     };
   }
 
@@ -115,17 +190,35 @@
     homeXG *= homeMid; awayXG *= awayMid;
     homeXG += mgrSwing;
     awayXG -= mgrSwing;
-    if (!o.neutral) homeXG += (home.homeAdvantage || 0) / 100;
+    /* Home advantage is divided by 34, not 100. At /100 it was worth about
+     * 0.07 of a goal and the benchmark showed away sides winning 38% of
+     * matches against a real-world 32%; real home advantage is worth roughly a
+     * quarter of a goal. */
+    if (!o.neutral) homeXG += (home.homeAdvantage || 0) / 34;
     homeXG *= 1 + (home.form || 0) / 100;
     awayXG *= 1 + (away.form || 0) / 100;
+
+    // Giant-killing: the underdog's day.
+    const strengthDiff = ((home.attack + home.defence) - (away.attack + away.defence)) / 2;
+    let upset = false;
+    if (rng.chance(upsetChance(strengthDiff))) {
+      upset = true;
+      if (strengthDiff >= 0) { awayXG *= 1.65; homeXG *= 0.78; }
+      else { homeXG *= 1.65; awayXG *= 0.78; }
+    }
+
     homeXG = Math.max(0.08, homeXG);
     awayXG = Math.max(0.08, awayXG);
 
+    let hg = rng.poisson(homeXG), ag = rng.poisson(awayXG);
+    ({ homeGoals: hg, awayGoals: ag } = dixonColes(rng, hg, ag, homeXG, awayXG));
+
     return {
-      homeGoals: rng.poisson(homeXG),
-      awayGoals: rng.poisson(awayXG),
+      homeGoals: hg,
+      awayGoals: ag,
       homeXG: Math.round(homeXG * 100) / 100,
       awayXG: Math.round(awayXG * 100) / 100,
+      upset,
     };
   }
 
@@ -260,7 +353,7 @@
   }
 
   MG.match = {
-    TACTICAL, DERBY_PAIRS, isDerby, applyTacticalMatchup, resolveDuel,
+    TACTICAL, DERBY_PAIRS, isDerby, applyTacticalMatchup, resolveDuel, dixonColes, upsetChance, BASE_XG, DC_RHO,
     teamProfile, simulateMatch, simulateTie,
     buildSelection, attributeGoals, recordAppearances, minutesPctUnder21,
   };

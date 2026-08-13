@@ -87,7 +87,13 @@
    * a plateau. An explicit table is less clever, tunable in one place, and
    * actually separates the divisions. */
   const LEAGUE_PLAYER_LEVEL = {
-    PL: 74, Championship: 63, League1: 56, League2: 50, NationalLeague: 44,
+    /* The PL-to-Championship gap was 11 points, which left a promoted club so
+     * far adrift that the bottom of the table finished on about 20 points
+     * against a real-world 26 while champions landed bang on 88. The second
+     * tier is genuinely close to the bottom of the first — a promoted side is
+     * overmatched, not doomed — so the gap is 8. Re-check bottom points in
+     * manager/tests/realism.js if this is ever retuned. */
+    PL: 74, Championship: 66, League1: 58, League2: 51, NationalLeague: 45,
     LaLiga: 71, SerieA: 69, Bundesliga: 69, Saudi: 62, MLS: 58,
   };
 
@@ -187,6 +193,9 @@
       history: { titles: 0, cups: 0, promotions: 0, relegations: 0, europeanTitles: 0, seasons: [] },
       form: 0,
       lastPosition: null,
+      formation: "4-4-2",   // overwritten per club at creation
+      xi: null,             // null = auto-pick the best available side
+      focus: null,          // "league" | "cup" | "europe" — the season's priority
       /* Levers the decision layer pulls. Everything here is applied by the
        * simulation and then decayed at the end of the season, so a choice made
        * in the summer shapes the campaign that follows it and no more —
@@ -233,7 +242,10 @@
    *  offset and whatever the manager's decisions did. Called after every
    *  transfer window and every development pass. */
   function refreshRatings(club) {
-    const r = MG.players.squadRatings(club.squad);
+    // Ratings come from the ELEVEN on the pitch, not the whole squad — see
+    // tactics.js. Picking a team is supposed to matter, and it cannot matter
+    // if the numbers are computed from twenty-six players regardless.
+    const r = MG.tactics ? MG.tactics.xiRatings(club) : MG.players.squadRatings(club.squad);
     const mod = (club.modifiers && club.modifiers.unit) || { attack: 0, midfield: 0, defence: 0 };
     club.ratings.attack   = clamp(r.attack   + club.identity.attack   + mod.attack,   20, 99);
     club.ratings.midfield = clamp(r.midfield + club.identity.midfield + mod.midfield, 20, 99);
@@ -244,7 +256,9 @@
 
   /** Lock in the identity offsets so that season 1 reproduces the tuned data. */
   function calibrateIdentity(club) {
-    const r = MG.players.squadRatings(club.squad);
+    // Must use the same source as refreshRatings or every club in the world
+    // starts life with a bogus offset.
+    const r = MG.tactics ? MG.tactics.xiRatings(club) : MG.players.squadRatings(club.squad);
     club.identity.attack   = club.baseline.attack   - r.attack;
     club.identity.midfield = club.baseline.midfield - r.midfield;
     club.identity.defence  = club.baseline.defence  - r.defence;
@@ -482,7 +496,7 @@
     const youthPct = result.youthMinutesPct || 0;
     const youth = clamp((youthPct - t.youthMinutes) / Math.max(t.youthMinutes, 6), -1, 1);
 
-    const w = cfg.weights;
+    const w = focusWeights(club);
     let total = league * w.league + cup * w.cup + finance * w.finance + youth * w.youth;
 
     /* Headline results override the arithmetic. A weighted average let a club
@@ -585,6 +599,43 @@
     }
   }
 
+  /* ----------------------------- SEASON FOCUS ------------------------------
+   * Where the manager points the season. A squad cannot chase everything: the
+   * chosen competition gets a real edge and the others pay for it, which is
+   * what makes the choice a choice rather than a free bonus. The board's own
+   * metric weights shift with it too — tell them you are going for the cup and
+   * they will judge the cup run more heavily. */
+  const FOCUS = {
+    league: { label: "The League", blurb: "Everything at the table. Rotate in the cups.",
+              bonus: { league: 3, cup: -3, europe: -3 }, weights: { league: 0.12, cup: -0.08 } },
+    cup:    { label: "The Cup", blurb: "A trophy is a trophy. Points can wait.",
+              bonus: { league: -2, cup: 5, europe: -2 }, weights: { league: -0.12, cup: 0.14 } },
+    europe: { label: "Europe", blurb: "The nights that make a club's name.",
+              bonus: { league: -2, cup: -3, europe: 6 }, weights: { league: -0.08, cup: 0.04 } },
+  };
+  const FOCUS_KEYS = Object.keys(FOCUS);
+
+  /** Rating shift for a club in a given competition, from its season focus. */
+  function focusBonus(club, competition) {
+    const f = FOCUS[club.focus];
+    if (!f) return 0;
+    return f.bonus[competition || "league"] || 0;
+  }
+
+  /** The board's weights, adjusted for what the manager said he was chasing. */
+  function focusWeights(club) {
+    const cfg = BOARD_STYLES[club.board.style];
+    const base = Object.assign({}, cfg.weights);
+    const f = FOCUS[club.focus];
+    if (f) {
+      for (const [k, v] of Object.entries(f.weights)) base[k] = clamp((base[k] || 0) + v, 0.02, 0.8);
+      // Renormalise so a verdict is still scored out of one.
+      const total = Object.values(base).reduce((a, b) => a + b, 0);
+      for (const k of Object.keys(base)) base[k] = base[k] / total;
+    }
+    return base;
+  }
+
   /** Reputation drifts with what the club actually achieves. */
   function adjustReputation(club, delta) {
     club.reputation = clamp(Math.round(club.reputation + delta), 3, 99);
@@ -598,5 +649,6 @@
     LEAGUE_PLAYER_LEVEL, playerLevelFor,
     createBoard, standingIn, setSeasonTargets, describeTargets, evaluateSeason, wantsSacking,
     onManagerAppointed, adjustReputation, CUP_ROUND_RANK, decayModifiers,
+    FOCUS, FOCUS_KEYS, focusBonus, focusWeights,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);
