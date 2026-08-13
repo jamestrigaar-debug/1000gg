@@ -59,6 +59,7 @@
   .btn.primary { background: var(--accent); border-color: transparent; color: #052211; }
   .btn.primary:hover { background: #4ce29a; }
   .btn.ghost { background: transparent; }
+  .btn.danger { border-color: var(--bad); color: var(--bad); }
   .btn.big { font-size: 16px; padding: 14px 26px; }
   .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); margin-bottom: 12px; }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -226,6 +227,8 @@
   .slot .slot-flag { font-size: 10px; color: var(--gold); }
   .slot .slot-flag.bad { color: var(--bad); }
   .chooser { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; max-height: 300px; overflow-y: auto; }
+  .chooser-list { display: flex; flex-direction: column; gap: 6px; max-height: 56vh; overflow-y: auto; margin-top: 4px; }
+  .chooser-list .pcard { margin-bottom: 0; }
   .chooser button { text-align: left; background: var(--bg2); border: 1px solid var(--line); color: var(--txt);
     border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 12px; cursor: pointer; }
   .chooser button:hover { border-color: var(--accent); }
@@ -257,6 +260,44 @@
   .tiny { font-size: 11px; padding: 4px 9px; }
   .listed-tag { font-size: 9px; color: var(--gold); border: 1px solid var(--gold); border-radius: 3px; padding: 0 4px; }
   .bid-tag { font-size: 9px; color: var(--accent); border: 1px solid var(--accent); border-radius: 3px; padding: 0 4px; }
+
+  /* ---------- Player cards (donor-card colours from 1000goals) ----------
+     Reused verbatim from ../index.html so a player reads the same colour
+     language whether he is being drafted in 1000goals or picked here:
+       attack (FW/WG/AM)  red    midfield (DM/CM) green
+       defence (CB/FB)    blue   keeper   (GK)     gold          */
+  .pcard { display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: 14px;
+    background: #0d1620; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px;
+    text-align: left; width: 100%; color: var(--txt); font: inherit; cursor: pointer; transition: .12s; }
+  .pcard:hover { border-color: #47516b; background: #101c28; }
+  .pcard.in-xi { border-color: var(--accent); }
+  .pcard.mentored { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(0,208,108,.4) inset; }
+  .pcard.listed { border-color: var(--bad); box-shadow: 0 0 0 1px rgba(255,107,122,.4) inset; }
+  .prating { width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;
+    border-radius: 11px; color: #fff; font-size: 18px; font-weight: 900; flex-shrink: 0; }
+  .prating.attack { background: #f04452; }
+  .prating.defence { background: #347df1; }
+  .prating.midfield { background: #10c986; }
+  .prating.keeper { background: #f5c542; color: #221600; }
+  .pbody { min-width: 0; }
+  .pname { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pmeta { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .ppos { display: inline-block; font-size: 10px; font-weight: 900; border-radius: 5px; padding: 2px 7px; margin-right: 6px; }
+  .ppos.attack { color: #ff777f; background: rgba(255,70,85,.16); }
+  .ppos.defence { color: #70a7ff; background: rgba(52,125,241,.18); }
+  .ppos.midfield { color: #4de0b4; background: rgba(16,201,134,.16); }
+  .ppos.keeper { color: #f5c542; background: rgba(245,197,66,.18); }
+  .pattrs { display: grid; grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: 5px; margin-top: 8px; font-size: 11px; }
+  .pattr { display: flex; flex-direction: column; gap: 1px; background: rgba(255,255,255,.045); padding: 4px 6px; border-radius: 6px; color: var(--muted); min-width: 0; }
+  .pattr b { color: var(--txt); font-weight: 800; }
+  .pactions { display: flex; flex-direction: column; gap: 5px; flex-shrink: 0; }
+  .pbtn { font-size: 10px; font-weight: 800; letter-spacing: .5px; border: 1px solid var(--line); background: transparent;
+    color: var(--muted); border-radius: 6px; padding: 4px 8px; cursor: pointer; white-space: nowrap; font-family: inherit; }
+  .pbtn:hover { border-color: var(--accent2); color: var(--txt); }
+  .pbtn.on-list { border-color: var(--bad); color: var(--bad); background: rgba(255,107,122,.12); }
+  .pbtn.on-mentor { border-color: var(--accent); color: var(--accent); background: rgba(0,208,108,.12); }
+  .sortbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; }
+  .sortbar .muted { margin-right: 2px; }
 
   /* ---------- Legacy ---------- */
   .legacy-title { font-family: Impact, "Arial Black", sans-serif; text-transform: uppercase;
@@ -359,9 +400,8 @@
     <div class="tabs">
       <button class="tab on" data-tab="squad">SQUAD</button>
       <button class="tab" data-tab="tactics">TACTICS</button>
-      <button class="tab" data-tab="transfers">TRANSFERS</button>
       <button class="tab" data-tab="table">TABLE</button>
-      <button class="tab" data-tab="log">LOG</button>
+      <button class="tab" data-tab="log">CLUB LOG</button>
       <button class="tab" data-tab="world">WORLD</button>
     </div>
     <div id="tab-body" class="table-scroll"></div>
@@ -393,8 +433,10 @@
 <script src="src/names.js"></script>
 <script src="src/players.js"></script>
 <script src="src/ratings.js"></script>
+<script src="src/international.js"></script>
 <script src="src/tactics.js"></script>
 <script src="src/clubs.js"></script>
+<script src="src/network.js"></script>
 <script src="src/managers.js"></script>
 <script src="src/match.js"></script>
 <script src="src/competitions.js"></script>

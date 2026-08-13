@@ -99,8 +99,10 @@ Three tiers, top to bottom:
 2. **Decisions** — the window everything happens in: team set-up, pre-season
    cards, PLAY SEASON, the result and board report, end-of-season cards, and
    career endings.
-3. **The club & the world** — squad, tactics, transfers, table, club log and
-   world news.
+3. **The club & the world** — squad (with per-player transfer-list and
+   mentoring toggles), tactics and recruitment, the table, the club log
+   (your own actions) and the world tab (the global feed and a browser for
+   every league, club and manager).
 
 ## Tactics and the Starting XI
 
@@ -143,6 +145,36 @@ modern club works and how the AI clubs already behave.
 
 AI managers tag their own players the same way (`player.transferListed`), so
 the pool you browse is the same shop window the computer is shopping in.
+
+### The agent network — who you can reach
+
+A club can only sign out of the leagues its agents and channels actually
+reach (`src/network.js`), and reach is a function of standing rather than a
+flat global pool:
+
+| Reach | Who has it | What it opens |
+|---|---|---|
+| **Home** | reputation under 38 | your own country only |
+| **Regional** | 38+ | home pyramid + the big leagues of your confederation |
+| **Continental** | 58+ | home pyramid + every major league on earth |
+| **Global** | 78+ | the whole world |
+
+**Saudi clubs are the deliberate outlier** — their reach is global whatever
+their reputation, the one place money overrides standing, modelling the
+real-world spending power that lets them buy from anywhere. Every AI club is
+gated the same way, so a National League side's rivals for a target are the
+clubs in *its* reach, not Real Madrid — and growing the club's reputation
+beyond the league table becomes a reason in itself, because a bigger name
+opens a bigger market. The recruitment panel shows your current reach.
+
+## Mentoring
+
+Two buttons sit on every player in your squad: **list** (red — offer him to
+the board for sale) and **mentor** (green — take him under your wing). You can
+mentor **1 to 3 players** depending on your manager's development skill, and a
+mentored player gets a real, visible leg up in his end-of-season growth on top
+of normal coaching — biggest for the young players who still have headroom.
+The two are mutually exclusive: you do not develop a player you are selling.
 
 ## Player profiles
 
@@ -205,6 +237,23 @@ discounted in the unit ratings rather than removed, so the man behind him gets
 his season — which is what makes squad depth worth paying for. A season-at-a-
 time game cannot model a hamstring in October, but it can model "your
 first-choice centre half was fit for nine games".
+
+## International football, in the background
+
+Behind the club game runs the international one (`src/international.js`),
+lifted in shape from 1000goals' caps-and-competitions system. Nations are
+grouped by confederation with a strength rating; tournaments — the World Cup
+on a four-year cycle, plus the Euros, Copa América, Africa Cup and Asian Cup
+— come round on their own cadence and crown a champion weighted by squad
+strength. Every season the best players win call-ups and accumulate **caps
+and international goals**.
+
+It is not flavour: caps and goals **feed development** — a young player who
+has been playing tournament football sharpens faster than one who has not,
+biggest for the under-21s who still have headroom — and they carry a **value
+premium**, so an international is worth more in the market than an identical
+player who never got the call. You never manage a nation; it happens around
+you, and it shows up in your players' profiles and their growth.
 
 ## What is built
 
@@ -271,6 +320,8 @@ src/rng.js            seeded xorshift + named sub-streams
 src/names.js          nationalities and name pools for generated people
 src/players.js        player model, development curve, value, wages, unit ratings
 src/clubs.js          leagues, finances, and the boardroom
+src/network.js        the agent network: how far a club's reach extends
+src/international.js   nations, tournaments, caps and goals, development feed
 src/managers.js       archetypes, traits, personalities, tactics, hiring logic
 src/match.js          the match engine and goal attribution
 src/competitions.js   fixtures, tables, cups, Europe, promotion/relegation
@@ -317,7 +368,10 @@ script tags at the bottom of `index.html`.
   reads as broken, whatever the arithmetic says.
 - **Every board gives one season of grace**, including in the winter sacking
   window. A career that can end before its first board review is not a career.
-  Measured over twelve scripted careers: median 10 seasons, range 2 to 25+.
+- **Career endings are gated behind 18 seasons and ramp in from there**, so a
+  career runs the length of a real one — like retiring on 1000goals, not
+  ending after five seasons. Measured across scripted careers: median around
+  20 seasons, capped hard at 30. See `MIN_ENDING_SEASON` in `src/endings.js`.
 
 ## Not built yet
 
