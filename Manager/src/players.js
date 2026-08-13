@@ -1,0 +1,359 @@
+/* ============================================================================
+ * FOOTBALL MANAGER — PLAYER MODEL
+ *
+ * 1000goals models a club as four numbers (attack / midfield / defence /
+ * manager) that drift on a random walk. For a management game that is the
+ * wrong way round: the four numbers have to be a CONSEQUENCE of the squad, so
+ * that signing a striker visibly moves the attack rating, selling your centre
+ * halves visibly wrecks the defence, and a manager who develops youth slowly
+ * out-grows a manager who does not.
+ *
+ * So this module owns:
+ *   - the player record (attributes, age, contract, value, wage, potential)
+ *   - squad construction, from the real 2025/26 database where it exists and
+ *     procedurally everywhere else, calibrated to the club's tuned baseline
+ *   - ageing, development and decline
+ *   - unit ratings: how a list of players becomes attack/midfield/defence
+ *
+ * AGE: the shipped database has no age field (see src/data.js — every record
+ * is name/pos/attributes/overall). Ages are inferred from the 666 historical
+ * rosters: a player's first appearance in a Premier League squad list dates
+ * their arrival, and most players arrive between 20 and 22. That is accurate
+ * to within a few years for the ~75% of current players with history, and
+ * falls back to an overall-weighted guess for the rest. When real ages are
+ * added to the database, delete inferAge and read the field.
+ * ========================================================================== */
+(function (root) {
+  "use strict";
+  const MG = (root.MG = root.MG || {});
+  const { clamp } = MG.util;
+
+  /* ------------------------------ POSITIONS -------------------------------
+   * The eight position keys used by src/data.js. `line` groups them for squad
+   * building; `unit` weights say how much a player of this position feeds each
+   * of the three team ratings. A winger is most of an attack and a little bit
+   * of a midfield; a defensive midfielder is the reverse. */
+  const POSITIONS = {
+    GK: { name: "Goalkeeper",          line: "GK",  need: 3, starters: 1, unit: { attack: 0.00, midfield: 0.00, defence: 0.00 } },
+    CB: { name: "Centre-Back",         line: "DEF", need: 4, starters: 2, unit: { attack: 0.05, midfield: 0.10, defence: 1.00 } },
+    FB: { name: "Full-Back",           line: "DEF", need: 4, starters: 2, unit: { attack: 0.25, midfield: 0.25, defence: 0.80 } },
+    DM: { name: "Defensive Midfielder",line: "MID", need: 2, starters: 1, unit: { attack: 0.15, midfield: 0.90, defence: 0.55 } },
+    CM: { name: "Central Midfielder",  line: "MID", need: 4, starters: 2, unit: { attack: 0.40, midfield: 1.00, defence: 0.30 } },
+    AM: { name: "Attacking Midfielder",line: "MID", need: 2, starters: 1, unit: { attack: 0.75, midfield: 0.70, defence: 0.10 } },
+    WG: { name: "Winger",              line: "ATT", need: 4, starters: 2, unit: { attack: 0.90, midfield: 0.35, defence: 0.10 } },
+    FW: { name: "Forward",             line: "ATT", need: 3, starters: 2, unit: { attack: 1.00, midfield: 0.15, defence: 0.05 } },
+  };
+  const POSITION_KEYS = Object.keys(POSITIONS);
+  /** Total of the `need` column — the size of a properly stocked squad. */
+  const SQUAD_TARGET = POSITION_KEYS.reduce((n, k) => n + POSITIONS[k].need, 0); // 26
+
+  /* Goalkeepers are rated on a different scale to outfielders in the source
+   * data and contribute to results through a separate term in the match
+   * engine, so they are kept out of the three unit ratings entirely. */
+
+  /* --------------------------- AGE INFERENCE ------------------------------ */
+  let FIRST_SEASON = null;
+  /** name -> earliest season year that name appears in the historical rosters. */
+  function firstSeasonIndex(GAME_DATA) {
+    if (FIRST_SEASON) return FIRST_SEASON;
+    FIRST_SEASON = {};
+    const dbs = [GAME_DATA.PLAYER_DATABASE, GAME_DATA.PLAYER_DATABASE_2025, GAME_DATA.PLAYER_DATABASE_2026];
+    for (const db of dbs) {
+      if (!db) continue;
+      for (const key of Object.keys(db)) {
+        const m = /\((\d{4})\)/.exec(key);
+        if (!m) continue;
+        const year = Number(m[1]);
+        for (const p of db[key]) {
+          const prev = FIRST_SEASON[p.name];
+          if (prev == null || year < prev) FIRST_SEASON[p.name] = year;
+        }
+      }
+    }
+    return FIRST_SEASON;
+  }
+
+  /* A player good enough to be in a first-team squad is usually in his
+   * mid-twenties; the very best are older than the squad filler around them
+   * because it takes years to get there. This is the fallback when a name has
+   * no history to date it. */
+  function guessAgeFromRating(rng, overall) {
+    const prime = 23 + (overall - 60) * 0.18;       // 78-rated -> ~26, 90 -> ~28.4
+    const age = Math.round(prime + rng.gauss() * 3.4);
+    return clamp(age, 17, 38);
+  }
+
+  function inferAge(rng, player, currentYear, firstSeason) {
+    const first = firstSeason[player.name];
+    const guess = guessAgeFromRating(rng, player.overall);
+    if (first == null) return guess;
+    // +20: the modal age at which a player first appears in a PL squad list.
+    const dated = clamp((currentYear - first) + 20 + Math.round(rng.gauss() * 1.2), 17, 41);
+    // A first appearance three or more years ago dates a player well. A first
+    // appearance THIS season says nothing — he could be an 18-year-old debutant
+    // or a 31-year-old signing from abroad — so lean on the rating instead.
+    const trust = first <= currentYear - 3 ? 0.8 : 0.35;
+    return Math.round(dated * trust + guess * (1 - trust));
+  }
+
+  /* ------------------------- POTENTIAL & GROWTH --------------------------- */
+  /** Ceiling a player can still reach. Young players carry real spread here —
+   *  that spread is the entire point of scouting and youth development. */
+  function rollPotential(rng, overall, age) {
+    if (age >= 29) return overall;                       // what you see is what you get
+    const yearsLeft = clamp(27 - age, 0, 10);
+    // A wonderkid curve: most players add a little, a few add a lot.
+    const roll = rng.next();
+    const ceiling = roll > 0.97 ? 18 : roll > 0.85 ? 11 : roll > 0.55 ? 6 : 3;
+    const growth = Math.round(ceiling * (yearsLeft / 10) + rng.between(0, 3));
+    return clamp(overall + growth, overall, 96);
+  }
+
+  /* The development curve. Returns the change in overall for one season.
+   *   coaching  0-100, the club's training quality blended with the manager's
+   *             development attribute
+   *   minutes   0-1, share of available minutes played — a player who does not
+   *             play does not improve, which is what makes squad selection and
+   *             loans matter later */
+  function developmentDelta(rng, player, coaching, minutes) {
+    const age = player.age;
+    const headroom = player.potential - player.overall;
+    const coach = (coaching - 50) / 50;                  // -1 .. +1
+    const played = clamp(minutes, 0, 1);
+
+    if (age <= 23) {
+      const base = headroom > 0 ? 1.6 + headroom * 0.14 : 0.2;
+      const gain = base * (0.45 + played * 0.75) * (1 + coach * 0.45) + rng.gauss() * 0.8;
+      return Math.max(-1, gain);
+    }
+    if (age <= 27) {
+      const base = headroom > 0 ? 0.7 + headroom * 0.08 : 0;
+      return base * (0.5 + played * 0.6) * (1 + coach * 0.3) + rng.gauss() * 0.7;
+    }
+    if (age <= 30) return rng.gauss() * 0.7 - 0.15 + coach * 0.25;
+    // Decline, steepening with age and softened a little by good coaching and
+    // by the player's own fitness attribute.
+    const fitness = (player.attrs.fitness - 60) / 60;
+    const steep = (age - 30) * 0.45;
+    return -(steep) * (1 - fitness * 0.25) * (1 - coach * 0.15) + rng.gauss() * 0.6;
+  }
+
+  /* --------------------------- VALUE & WAGES ------------------------------ */
+  /* Keyed by league ID — the value clubs.leagueId actually holds. It was
+   * originally keyed by the four Premier League prestige bands from
+   * src/data.js (Elite/Europe/Mid/Lower), which no club object ever carries,
+   * so every wage in the world fell through to the default and Manchester City
+   * ran a £9m wage bill on £570m of revenue. */
+  const LEAGUE_WAGE_FACTOR = {
+    PL: 3.0,
+    LaLiga: 2.0, SerieA: 1.7, Bundesliga: 1.8,
+    Saudi: 1.6, MLS: 0.7,
+    Championship: 1.6, League1: 0.8, League2: 0.5, NationalLeague: 0.35,
+  };
+
+  function ageValueFactor(age) {
+    if (age <= 20) return 1.30;
+    if (age <= 25) return 1.35;
+    if (age <= 28) return 1.10;
+    if (age <= 30) return 0.80;
+    if (age <= 32) return 0.50;
+    if (age <= 34) return 0.26;
+    return 0.10;
+  }
+
+  /** Transfer value in £m. */
+  function marketValue(player) {
+    const q = Math.max(0.2, (player.overall - 40) / 10);
+    let v = Math.pow(q, 3.2) * 0.7 * ageValueFactor(player.age);
+    // A 19-year-old who might become world class costs more than he is worth.
+    const headroom = player.potential - player.overall;
+    if (player.age <= 23 && headroom >= 6) v *= 1 + Math.min(headroom, 18) * 0.06;
+    // Contract running down: leverage moves to the player.
+    if (player.contract.years <= 1) v *= 0.55;
+    else if (player.contract.years === 2) v *= 0.85;
+    return Math.max(0.05, Math.round(v * 100) / 100);
+  }
+
+  /** Weekly wage in £k. */
+  function expectedWage(player, league) {
+    const factor = LEAGUE_WAGE_FACTOR[league] != null ? LEAGUE_WAGE_FACTOR[league] : 0.5;
+    /* Calibrated so a 90-rated player in the Premier League earns around
+     * £350k a week and a 60-rated one around £12k — the curve has to be steep,
+     * because the gap between a very good player and a great one is most of
+     * what a wage budget is spent on. A shallower curve had entire Premier
+     * League squads costing £30m a year against £550m of revenue, which made
+     * the board's financial metric impossible to fail. */
+    const base = 1.9 * Math.exp((player.overall - 50) / 8.4);
+    const ageAdj = player.age <= 21 ? 0.55 : player.age <= 24 ? 0.85 : player.age >= 33 ? 0.9 : 1;
+    // The floor is a part-time National League wage, not a professional one —
+    // at 0.5 it was higher than the entire division could afford.
+    return Math.max(0.12, Math.round(base * factor * ageAdj * 10) / 10);
+  }
+
+  /* --------------------------- PLAYER RECORDS ----------------------------- */
+  let NEXT_ID = 1;
+  function resetIds() { NEXT_ID = 1; }
+
+  function makePlayer(fields) {
+    const p = Object.assign({
+      id: NEXT_ID++,
+      name: "Unnamed",
+      nationality: "England",
+      pos: "CM",
+      age: 24,
+      overall: 60,
+      potential: 60,
+      attrs: { heading: 60, fitness: 60, strength: 60, leftFoot: 60, rightFoot: 60, speed: 60, height: 180, weight: 76 },
+      mentality: "Balanced",
+      mentalityRating: 55,
+      clubId: null,
+      contract: { years: 3, wage: 5 },
+      homegrown: false,
+      form: 0,
+      // Career totals, so a fifteen-season save can show you who the world's
+      // record scorer became.
+      career: { apps: 0, goals: 0, assists: 0, seasons: 0, clubs: [] },
+      season: { apps: 0, goals: 0, assists: 0, minutesShare: 0 },
+      retired: false,
+    }, fields);
+    p.value = marketValue(p);
+    return p;
+  }
+
+  /** Convert a record from src/data.js into a live player. */
+  function fromDatabase(rng, raw, currentYear, firstSeason, league) {
+    const age = inferAge(rng, raw, currentYear, firstSeason);
+    const p = makePlayer({
+      name: raw.name,
+      nationality: MG.names.nationForLeague(rng, league),
+      pos: POSITIONS[raw.pos] ? raw.pos : "CM",
+      age,
+      overall: raw.overall,
+      attrs: {
+        heading: raw.heading, fitness: raw.fitness, strength: raw.strength,
+        leftFoot: raw.leftFoot, rightFoot: raw.rightFoot, speed: raw.speed,
+        height: raw.height, weight: raw.weight,
+      },
+      mentality: raw.mentality, mentalityRating: raw.mentalityRating,
+      contract: { years: rng.int(1, 5), wage: 0 },
+    });
+    p.potential = rollPotential(rng, p.overall, p.age);
+    p.contract.wage = expectedWage(p, league);
+    p.value = marketValue(p);
+    return p;
+  }
+
+  /** A generated player of roughly `target` quality. */
+  function generate(rng, opts) {
+    const league = opts.league || "Championship";
+    const pos = opts.pos || rng.pick(POSITION_KEYS);
+    const nationality = opts.nationality || MG.names.nationForLeague(rng, league);
+    const nationBonus = (MG.names.NATIONS[nationality] || {}).strength || 0;
+    const age = opts.age != null ? opts.age : rng.int(18, 33);
+    const overall = clamp(Math.round((opts.target || 60) + rng.gauss() * (opts.spread || 4) + nationBonus), 30, 94);
+
+    // Physical attributes track the position: centre-halves are tall and
+    // strong, wingers are quick, goalkeepers are neither.
+    const tall = pos === "CB" || pos === "GK" || pos === "FW";
+    const quick = pos === "WG" || pos === "FB" || pos === "FW";
+    const around = (base, spread) => clamp(Math.round(base + rng.gauss() * spread), 25, 99);
+    const p = makePlayer({
+      name: MG.names.personName(rng, nationality),
+      nationality, pos, age, overall,
+      attrs: {
+        heading: around(overall + (tall ? 6 : -6), 6),
+        fitness: around(overall, 6),
+        strength: around(overall + (pos === "CB" || pos === "FW" ? 5 : -3), 6),
+        leftFoot: around(overall - 10, 12),
+        rightFoot: around(overall - 2, 10),
+        speed: around(overall + (quick ? 7 : pos === "GK" || pos === "CB" ? -8 : 0), 7),
+        height: pos === "GK" ? rng.int(185, 199) : tall ? rng.int(182, 196) : rng.int(168, 186),
+        weight: rng.int(66, 92),
+      },
+      mentalityRating: clamp(Math.round(45 + rng.gauss() * 15 + (overall - 60) * 0.25), 20, 95),
+      contract: { years: rng.int(1, 4), wage: 0 },
+      homegrown: !!opts.homegrown,
+    });
+    p.potential = opts.potential != null ? opts.potential : rollPotential(rng, p.overall, p.age);
+    p.contract.wage = expectedWage(p, league);
+    p.value = marketValue(p);
+    return p;
+  }
+
+  /* ---------------------------- UNIT RATINGS ------------------------------
+   * The bridge from "a list of players" back to the attack/midfield/defence
+   * numbers the match engine speaks. Each unit takes its starters' weighted
+   * quality, with a small tail from the rest of the squad so that depth is
+   * worth something without a bench of reserves dragging a first eleven down. */
+  function unitRating(players, unit) {
+    const scored = [];
+    for (const p of players) {
+      if (p.pos === "GK") continue;
+      const w = POSITIONS[p.pos].unit[unit];
+      if (w <= 0.05) continue;
+      scored.push({ q: p.overall * w + p.overall * 0.0, w, ov: p.overall });
+    }
+    if (!scored.length) return 40;
+    // Rank by contribution: the four biggest contributors to this unit are the
+    // ones actually on the pitch in that role.
+    scored.sort((a, b) => b.q - a.q);
+    const core = scored.slice(0, 4);
+    const depth = scored.slice(4, 9);
+    let wsum = 0, vsum = 0;
+    core.forEach((s, i) => { const k = [1, 0.9, 0.75, 0.55][i] * s.w; vsum += s.ov * k; wsum += k; });
+    const coreRating = wsum ? vsum / wsum : 40;
+    const depthRating = depth.length ? depth.reduce((t, s) => t + s.ov, 0) / depth.length : coreRating - 6;
+    return coreRating * 0.86 + depthRating * 0.14;
+  }
+
+  function keeperRating(players) {
+    const gks = players.filter((p) => p.pos === "GK").sort((a, b) => b.overall - a.overall);
+    if (!gks.length) return 45;
+    return gks[0].overall * 0.9 + (gks[1] ? gks[1].overall * 0.1 : gks[0].overall * 0.1);
+  }
+
+  /** All four derived numbers for a squad, before manager/board modifiers. */
+  function squadRatings(players) {
+    return {
+      attack: unitRating(players, "attack"),
+      midfield: unitRating(players, "midfield"),
+      defence: unitRating(players, "defence"),
+      keeper: keeperRating(players),
+    };
+  }
+
+  /** How badly a squad is missing bodies in each position. Drives recruitment. */
+  function squadNeeds(players) {
+    const counts = {};
+    for (const k of POSITION_KEYS) counts[k] = 0;
+    for (const p of players) counts[p.pos] = (counts[p.pos] || 0) + 1;
+    const needs = [];
+    for (const k of POSITION_KEYS) {
+      const short = POSITIONS[k].need - counts[k];
+      if (short > 0) needs.push({ pos: k, short, urgency: short * 2 + (counts[k] < POSITIONS[k].starters ? 6 : 0) });
+    }
+    return { counts, needs };
+  }
+
+  /** Quality of the weakest starting slot — what a manager shops for when the
+   *  squad is full but not good enough. */
+  function weakestUnit(players) {
+    const r = squadRatings(players);
+    const units = [
+      { unit: "attack", value: r.attack, positions: ["FW", "WG", "AM"] },
+      { unit: "midfield", value: r.midfield, positions: ["CM", "DM", "AM"] },
+      { unit: "defence", value: r.defence, positions: ["CB", "FB"] },
+      { unit: "keeper", value: r.keeper, positions: ["GK"] },
+    ];
+    units.sort((a, b) => a.value - b.value);
+    return units[0];
+  }
+
+  MG.players = {
+    POSITIONS, POSITION_KEYS, SQUAD_TARGET,
+    firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta,
+    marketValue, expectedWage, ageValueFactor, LEAGUE_WAGE_FACTOR,
+    makePlayer, fromDatabase, generate, resetIds,
+    unitRating, keeperRating, squadRatings, squadNeeds, weakestUnit,
+  };
+})(typeof globalThis !== "undefined" ? globalThis : this);
