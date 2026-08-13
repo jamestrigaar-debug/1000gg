@@ -20,6 +20,44 @@ simulation is the thing that happens in between.
 draft a manager  ->  take a job  ->  [ brief -> PLAY SEASON -> board report ] ...  ->  sacked
 ```
 
+## The decision layer — the game itself
+
+Every season is bookended by decisions. Two cards before it, two after.
+
+```
+[ PRE-SEASON x2 ] -> PLAY SEASON -> [ RESULT + BOARD REPORT ] -> [ END-OF-SEASON x2 ] -> repeat
+```
+
+25 cards across nine categories — **tactics, transfers, medical, boardroom,
+dressing room, media, youth, finance** — drawn by weight against hard
+requirement gates (a card about selling your star only appears if you have one
+worth selling) with no repeats inside a set or across recent seasons.
+
+**Every effect is real.** Nothing is flavour text with a number bolted on:
+
+| Card says | Engine does |
+|---|---|
+| "Break the bank on a marquee signing" | searches the live market, pays a real fee out of the balance, puts the player in your squad |
+| "Drill the back four" | shifts the defensive rating the match engine reads, for as many seasons as the card bought |
+| "Brutal running camp" | +2 fitness squad-wide, +form, and a 1.35x multiplier on every injury roll |
+| "Promise the board you will beat the brief" | +confidence and more budget now; amplifies the season's verdict 1.25x if you deliver and 1.6x against you if you do not |
+| "Switch to Counter-Attack" | changes your system, the tactical matchup, and the squad-fit penalty until they learn it |
+| "Sell him for a fortune" | finds a club that would plausibly buy him, moves the fee between two real balance sheets |
+
+Each choice returns the sentence describing what actually happened, and that
+returned string is what the player is shown — so the outcome on screen is
+always the outcome applied.
+
+## Injuries
+
+Rolled once per season per player, before a ball is kicked, as the share of the
+campaign they miss. Risk rises with age, falls with fitness, and is multiplied
+by whatever the medical and pre-season cards did. An injured player is
+discounted in the unit ratings rather than removed, so the man behind him gets
+his season — which is what makes squad depth worth paying for. A season-at-a-
+time game cannot model a hamstring in October, but it can model "your
+first-choice centre half was fit for nine games".
+
 ## What is built
 
 **The world** (`src/world.js` and friends) — 221 clubs across ten divisions,
@@ -50,6 +88,10 @@ reports back on four metrics — **league position, cup run, financial
 discipline, youth development** — weighted by its style. The weighted total
 moves board confidence, and confidence is what sacks you. The same evaluation
 runs for all 221 clubs, which is what makes the AI carousel mean something.
+
+**The look** — the palette, type and components are lifted from 1000goals'
+stylesheet (`../index.html`) so the two games read as one family. If the parent
+site retunes its palette, retune `manager/index.html` to match.
 
 **The draft** (`src/draft.js`) — three rolls with three rerolls: an archetype
 (one of eight templates modelled on real managers already in the repository's
@@ -86,6 +128,7 @@ src/competitions.js   fixtures, tables, cups, Europe, promotion/relegation
 src/transfers.js      the summer window, youth intake, retirements
 src/world.js          orchestration: createWorld() and advanceSeason()
 src/draft.js          the manager draft and the first-job market
+src/decisions.js      the pre-season and end-of-season cards, and their effects
 src/ui.js             browser shell logic
 tests/run_world.js    headless multi-season simulation and invariant checks
 ```
@@ -115,14 +158,21 @@ script tags at the bottom of `index.html`.
 - **The board's metrics are calibrated to sit near zero for a median club**, so
   that a verdict actually reflects the season rather than a standing bias. Worth
   re-checking whenever the finance or youth systems change.
+- **Headline results override the weighted average.** Winning the division or
+  going down sets a floor/ceiling on the verdict, because a boardroom that
+  reacts to a title with "met expectations" because the wage bill was high
+  reads as broken, whatever the arithmetic says.
+- **Every board gives one season of grace**, including in the winter sacking
+  window. A career that can end before its first board review is not a career.
+  Measured over twelve scripted careers: median 10 seasons, range 2 to 25+.
 
 ## Not built yet
 
-- The **end-of-season and pre-season decision cards** — the actual motif. The
-  board report is the surface they hang off, and its metrics are the numbers
-  they will be written against.
 - **End-of-career events** (the 1000goals `CAREER_ENDINGS` equivalent):
-  retirement, the international job, moving upstairs, the legacy card.
+  retirement, the international job, moving upstairs, the legacy card. Being
+  sacked currently ends the run and drops you back into the job market.
+- More decision cards. 25 is enough to play; it is not enough to stop repeating
+  across a twenty-season career.
 - A **fuller manager draft** — drafting individual traits from several
   archetypes at once, with hidden influence from the templates you passed over,
   the way 1000goals blends attributes from donor squads.
