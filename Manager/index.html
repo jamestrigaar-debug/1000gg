@@ -201,6 +201,66 @@
   .inj { color: var(--bad); font-size: 11px; }
   .hg { font-size: 9px; color: var(--accent); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; }
   .simming { text-align: center; padding: 40px 20px; color: var(--accent2); font-weight: 700; }
+
+  /* ---------- Tier 1: career dashboard ---------- */
+  .tier-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted);
+    margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+  .dash { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 780px) { .dash { grid-template-columns: 1fr; } }
+
+  /* ---------- Tactics ---------- */
+  .pitch { background:
+      linear-gradient(180deg, #0c3320, #082516);
+    border: 1px solid var(--line); border-radius: 12px; padding: 12px; position: relative; }
+  .pitch-rows { display: flex; flex-direction: column-reverse; gap: 8px; }
+  .pitch-row { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+  .slot { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px;
+    min-width: 118px; text-align: center; cursor: pointer; font-size: 12px; color: var(--txt);
+    font-family: inherit; line-height: 1.3; }
+  .slot:hover { border-color: var(--accent2); }
+  .slot.warn { border-color: var(--gold); }
+  .slot.bad { border-color: var(--bad); }
+  .slot .slot-pos { font-size: 10px; line-height: 1.3; letter-spacing: 1px; color: var(--muted); margin-bottom: 1px; }
+  .slot .slot-name { font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .slot .slot-ovr { color: var(--accent); font-weight: 900; }
+  .slot .slot-flag { font-size: 10px; color: var(--gold); }
+  .slot .slot-flag.bad { color: var(--bad); }
+  .chooser { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; max-height: 300px; overflow-y: auto; }
+  .chooser button { text-align: left; background: var(--bg2); border: 1px solid var(--line); color: var(--txt);
+    border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 12px; cursor: pointer; }
+  .chooser button:hover { border-color: var(--accent); }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg button { background: var(--card); border: 1px solid var(--line); color: var(--muted); border-radius: 8px;
+    padding: 8px 12px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .seg button.on { color: var(--txt); border-color: var(--accent); background: var(--card2); }
+
+  /* ---------- Modal / player profile ---------- */
+  .modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; }
+  .modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.72); }
+  .modal-panel { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 20px; width: min(620px, 94%); max-height: 88vh; overflow-y: auto; box-shadow: var(--shadow); }
+  .modal-close { position: absolute; top: 10px; right: 12px; background: none; border: 0; color: var(--muted);
+    font-size: 22px; cursor: pointer; line-height: 1; }
+  .profile-head { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  .profile-radar { flex: 0 0 200px; }
+  .profile-meta { flex: 1; min-width: 200px; }
+  .trait-chip { display: inline-block; font-size: 11px; border: 1px solid var(--line); border-radius: 20px;
+    padding: 2px 9px; margin: 2px 3px 2px 0; color: var(--accent2); }
+  .trait-chip.gold { color: var(--gold); border-color: var(--gold); }
+  .mini-bar { display: grid; grid-template-columns: 92px 1fr 28px; gap: 6px; align-items: center; font-size: 11px; margin-bottom: 4px; }
+  .mini-bar .bar { height: 6px; }
+
+  /* ---------- Transfers ---------- */
+  .market-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center;
+    padding: 7px 8px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .market-row:hover { background: var(--bg2); }
+  .tiny { font-size: 11px; padding: 4px 9px; }
+  .listed-tag { font-size: 9px; color: var(--gold); border: 1px solid var(--gold); border-radius: 3px; padding: 0 4px; }
+  .bid-tag { font-size: 9px; color: var(--accent); border: 1px solid var(--accent); border-radius: 3px; padding: 0 4px; }
+
+  /* ---------- Legacy ---------- */
+  .legacy-title { font-family: Impact, "Arial Black", sans-serif; text-transform: uppercase;
+    font-size: clamp(28px, 5vw, 48px); letter-spacing: 2px; color: var(--gold); text-shadow: 3px 3px 0 #2a1c00; }
 </style>
 </head>
 <body>
@@ -286,16 +346,34 @@
       </div>
     </div>
 
+    <!-- TIER 1 — the career dashboard -->
+    <div class="tier-label">My career</div>
+    <div class="dash" id="dashboard"></div>
+
+    <!-- TIER 2 — the decision window -->
+    <div class="tier-label">Decisions</div>
     <div id="stage"></div>
 
+    <!-- TIER 3 — management tools, the log and the world -->
+    <div class="tier-label">The club &amp; the world</div>
     <div class="tabs">
       <button class="tab on" data-tab="squad">SQUAD</button>
+      <button class="tab" data-tab="tactics">TACTICS</button>
+      <button class="tab" data-tab="transfers">TRANSFERS</button>
       <button class="tab" data-tab="table">TABLE</button>
+      <button class="tab" data-tab="log">LOG</button>
       <button class="tab" data-tab="world">WORLD</button>
-      <button class="tab" data-tab="history">MY CAREER</button>
     </div>
     <div id="tab-body" class="table-scroll"></div>
   </section>
+
+  <!-- ------------------------------- LEGACY ------------------------------ -->
+  <section id="screen-legacy" class="screen">
+    <div id="legacy-body"></div>
+    <div class="row"><button class="btn primary big" id="legacy-restart">NEW CAREER</button></div>
+  </section>
+
+  <div id="modal-root"></div>
 
   <!-- ------------------------------- SACKED ------------------------------ -->
   <section id="screen-sacked" class="screen">
@@ -314,6 +392,8 @@
 <script src="src/rng.js"></script>
 <script src="src/names.js"></script>
 <script src="src/players.js"></script>
+<script src="src/ratings.js"></script>
+<script src="src/tactics.js"></script>
 <script src="src/clubs.js"></script>
 <script src="src/managers.js"></script>
 <script src="src/match.js"></script>
@@ -322,6 +402,7 @@
 <script src="src/world.js"></script>
 <script src="src/draft.js"></script>
 <script src="src/decisions.js"></script>
+<script src="src/endings.js"></script>
 <script src="src/ui.js"></script>
 </body>
 </html>
