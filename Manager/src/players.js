@@ -211,6 +211,8 @@
     // Contract running down: leverage moves to the player.
     if (player.contract.years <= 1) v *= 0.55;
     else if (player.contract.years === 2) v *= 0.85;
+    // A proven international carries a premium in the market.
+    if (MG.international) v *= MG.international.valuePremium(player);
     return Math.max(0.05, Math.round(v * 100) / 100);
   }
 

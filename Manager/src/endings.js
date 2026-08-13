@@ -171,17 +171,37 @@
 
   /** Draw an ending, or null if the career carries on. Forced endings (the
    *  thirty-season cap) bypass the dice entirely. */
+  /* A career should last a good long time — the whole appeal is building
+   * something across a couple of decades, the way a 1000goals striker plays a
+   * full career before the retirement events start. Nothing but the 30-season
+   * cap ends a career before this, and even after it the odds ramp up steadily
+   * toward 30 rather than firing the moment they become legal. Getting sacked
+   * is NOT a career ending — you go back to the job market and take a smaller
+   * club — so an early sacking never ends the game. */
+  const MIN_ENDING_SEASON = 18;
+
+  /** Scales every ending's chance from ~0 at season 18 to full by season 30. */
+  function seasonRamp(seasons) {
+    return clamp((seasons - MIN_ENDING_SEASON) / (SEASON_CAP - MIN_ENDING_SEASON), 0, 1);
+  }
+
   function check(world, manager, club, opts) {
     const ctx = buildContext(world, manager, club, opts);
     const rng = world.rng;
 
+    // The cap is the one hard ending; it always wins.
     const forced = ENDINGS.filter((e) => e.forced && e.req(ctx));
     if (forced.length) return { ending: forced[0], ctx };
 
+    // Below the floor, a career simply carries on — sacked managers find
+    // another job, nobody retires, the game keeps going.
+    if (ctx.seasons < MIN_ENDING_SEASON) return null;
+
+    const ramp = seasonRamp(ctx.seasons);
     const eligible = ENDINGS.filter((e) => {
       if (e.forced) return false;
       if (!e.req(ctx)) return false;
-      const chance = e.chance ? e.chance(ctx) : 0.05;
+      const chance = (e.chance ? e.chance(ctx) : 0.05) * ramp;
       return rng.chance(chance);
     });
     if (!eligible.length) return null;

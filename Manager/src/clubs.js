@@ -196,6 +196,10 @@
       formation: "4-4-2",   // overwritten per club at creation
       xi: null,             // null = auto-pick the best available side
       focus: null,          // "league" | "cup" | "europe" — the season's priority
+      mentoring: [],        // player ids the manager is personally developing
+      recruitment: [],      // positions the board is told to sign this window
+      transferList: [],     // player ids offered for sale
+      targets: [],          // specific players bid for (advanced/legacy path)
       /* Levers the decision layer pulls. Everything here is applied by the
        * simulation and then decayed at the end of the season, so a choice made
        * in the summer shapes the campaign that follows it and no more —

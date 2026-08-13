@@ -65,6 +65,7 @@
 
     MG.players.resetIds();
     MG.managers.resetIds();
+    if (MG.network) MG.network.resetCache();
 
     const world = {
       seed,
@@ -568,6 +569,10 @@
     const awards = computeAwards(world, results, boardReports);
 
     /* ---- 8. the summer ---- */
+    /* The international season runs behind the club game: caps and goals are
+     * awarded now, so the development pass that follows can read them. */
+    const intlNews = MG.international ? MG.international.runSeason(world) : [];
+    for (const n of intlNews) world.report(n.text, n.type, n.clubId);
     MG.transfers.developSquads(world);
     const { news: retireNews, freeAgents } = MG.transfers.retirementsAndExpiries(world);
     for (const club of world.clubs) MG.clubs.refreshRatings(club);
@@ -578,7 +583,13 @@
     let managerWindow = null;
     if (world.playerClubId) {
       const pc = world.clubById(world.playerClubId);
-      if (pc) managerWindow = MG.transfers.executeManagerRequests(world, pc);
+      if (pc) {
+        managerWindow = MG.transfers.executeManagerRequests(world, pc);
+        // The player's own dealings belong in the Club Log — the report's rule
+        // that everything touching your club shows up in your own feed.
+        for (const b of managerWindow.bought) world.report(`IN — ${b.player.name} (${b.player.pos}, ${Math.round(b.player.overall)}) signs from ${b.from} for ${money(b.fee)}.`, "transfer", pc.id);
+        for (const s of managerWindow.sold) world.report(`OUT — ${s.player.name} joins ${s.to} for ${money(s.fee)}.`, "transfer", pc.id);
+      }
     }
     const window = MG.transfers.runWindow(world);
     MG.transfers.signFreeAgents(world, freeAgents);
@@ -784,6 +795,13 @@
     return { topScorer, goldenBoots, managerOfYear };
   }
 
+  function money(m) {
+    const a = Math.abs(m);
+    if (a >= 1000) return `£${(m / 1000).toFixed(1)}bn`;
+    if (a >= 10) return `£${Math.round(m)}m`;
+    if (a >= 0.1) return `£${m.toFixed(1)}m`;
+    return `£${Math.round(m * 1000)}k`;
+  }
   function ordinal(n) {
     const s = ["th", "st", "nd", "rd"], v = n % 100;
     return n + (s[(v - 20) % 10] || s[v] || s[0]);

@@ -40,8 +40,33 @@
     lastCup: null, lastWindow: null, sackReason: null,
     endingEntry: null, endingView: null, endingOutcome: null,
     tab: "squad", pendingSlot: null, marketPos: "",
+    squadSort: "rating", chooserSort: "rating",
   };
   root.MG_STATE = state;
+
+  /* The 1000goals position-colour language, reused so a striker reads red and a
+   * centre-half reads blue in both games. */
+  function posClass(pos) {
+    if (pos === "GK") return "keeper";
+    if (pos === "FW" || pos === "WG" || pos === "AM") return "attack";
+    if (pos === "CB" || pos === "FB") return "defence";
+    return "midfield";
+  }
+  const ATTR_ROWS = [
+    { k: "heading", label: "HDR" }, { k: "fitness", label: "FIT" }, { k: "strength", label: "STR" },
+    { k: "leftFoot", label: "LF" }, { k: "rightFoot", label: "RF" }, { k: "speed", label: "SPD" },
+    { k: "height", label: "HGT", suffix: "cm" }, { k: "weight", label: "WGT", suffix: "kg" },
+  ];
+  function attrGrid(p) {
+    return `<div class="pattrs">${ATTR_ROWS.map((r) =>
+      `<div class="pattr"><span>${r.label}</span><b>${p.attrs[r.k]}${r.suffix || ""}</b></div>`).join("")
+      }<div class="pattr"><span>MEN</span><b>${esc(p.mentality)}</b></div></div>`;
+  }
+  const SORTS = {
+    rating: (a, b) => b.overall - a.overall,
+    name: (a, b) => a.name.localeCompare(b.name),
+    pos: (a, b) => MG.players.POSITION_KEYS.indexOf(a.pos) - MG.players.POSITION_KEYS.indexOf(b.pos) || b.overall - a.overall,
+  };
 
   function show(id) {
     for (const s of document.querySelectorAll(".screen")) s.classList.remove("active");
@@ -357,7 +382,9 @@
         <h3 class="muted">LAST SEASON</h3>
         <div class="muted">Your first season has not been played yet.</div>
       </div>`;
-    return career + last;
+    // Last Season leads (the report's high-priority context); the career
+    // totals sit second as reference rather than headline.
+    return last + career;
   }
 
   const CUP_LABELS = { none: "did not enter", R1: "first round", R2: "second round", R3: "third round",
@@ -435,7 +462,7 @@
     const c = club(), t = c.board.targets, r = c.ratings;
     const injured = c.squad.filter((p) => (p.season.injured || 0) > 0);
     const report = MG.tactics.xiReport(c);
-    const pending = (c.transferList || []).length + (c.targets || []).length;
+    const signings = (c.recruitment || []).length, sales = (c.transferList || []).length, mentees = (c.mentoring || []).length;
     return `${outcomesHtml()}
       <div class="panel">
         <div class="stage-step">The season ahead</div>
@@ -451,7 +478,7 @@
         <div class="muted" style="font-size:12px">
           Focus: <b>${c.focus ? esc(MG.clubs.FOCUS[c.focus].label) : "none"}</b> ·
           ${report.problems ? `<span class="bad">${report.problems} out of position</span>` : "eleven in position"} ·
-          ${pending ? `${pending} transfer instruction${pending === 1 ? "" : "s"} with the board` : "no transfer instructions"}
+          ${signings ? `${signings} signing${signings === 1 ? "" : "s"} requested` : "no signings requested"}${sales ? ` · ${sales} listed` : ""}${mentees ? ` · ${mentees} mentored` : ""}
         </div>
         ${injured.length ? `<div class="muted" style="font-size:12px;margin-top:6px">Treatment room: ${injured.sort((a, b) => b.season.injured - a.season.injured).slice(0, 4).map((p) => `${esc(p.name)} (${Math.round(p.season.injured * 100)}%)`).join(", ")}</div>` : ""}
       </div>
@@ -528,27 +555,51 @@
   function renderTab() {
     for (const b of document.querySelectorAll(".tab")) b.classList.toggle("on", b.dataset.tab === state.tab);
     const el = $("tab-body");
-    const views = { squad: squadHtml, tactics: tacticsHtml, transfers: transfersHtml, table: tableHtml, log: logHtml, world: worldHtml };
+    const views = { squad: squadHtml, tactics: tacticsHtml, table: tableHtml, log: logHtml, world: worldHtml };
     el.innerHTML = (views[state.tab] || squadHtml)();
     wireTab();
   }
 
   function squadHtml() {
     const c = club();
-    const squad = c.squad.slice().sort((a, b) => b.overall - a.overall);
+    const m = state.manager;
+    const squad = c.squad.slice().sort(SORTS[state.squadSort] || SORTS.rating);
     const xi = new Set(MG.tactics.effectiveXI(c).map((p) => p && p.id));
-    return `<div class="panel"><h3 class="muted">SQUAD (${squad.length}) · wage bill ${money(MG.clubs.wageBill(c))} of ${money(c.finances.wageBudget)} · click a player</h3>
-      <table><thead><tr><th></th><th>Name</th><th>Pos</th><th>Age</th><th>Ovr</th><th>Pot</th><th>Morale</th><th>Value</th><th>Wage</th><th>Status</th></tr></thead>
-      <tbody>${squad.map((p) => `<tr class="${xi.has(p.id) ? "you" : ""}" data-player="${p.id}" style="cursor:pointer">
-        <td>${xi.has(p.id) ? "▶" : ""}</td>
-        <td>${esc(p.name)}${p.homegrown ? ' <span class="hg">HG</span>' : ""}${p.transferListed ? ' <span class="listed-tag">LISTED</span>' : ""}</td>
-        <td>${esc(p.pos)}</td><td>${p.age}</td>
-        <td><b class="accent">${Math.round(p.overall)}</b></td>
-        <td class="muted">${Math.round(p.potential)}</td>
-        <td>${moraleDot(p.morale)}</td>
-        <td>${money(p.value)}</td><td>£${p.contract.wage}k</td>
-        <td>${p.season.injured > 0 ? `<span class="inj">out ${Math.round(p.season.injured * 100)}%</span>` : `<span class="muted">fit</span>`}</td>
-      </tr>`).join("")}</tbody></table></div>`;
+    const listed = c.transferList || [], mentoring = c.mentoring || [];
+    const mentorCap = MG.managers.mentorCapacity(m);
+
+    return `<div class="panel">
+      <h3 class="muted">SQUAD (${squad.length}) · wage bill ${money(MG.clubs.wageBill(c))} / ${money(c.finances.wageBudget)}</h3>
+      <div class="sortbar">
+        <span class="muted">Sort</span>
+        ${["rating", "pos", "name"].map((k) => `<button class="btn tiny ${state.squadSort === k ? "on-mentor" : ""}" data-squadsort="${k}">${k === "pos" ? "POSITION" : k.toUpperCase()}</button>`).join("")}
+        <span class="muted" style="margin-left:auto">Mentoring ${mentoring.length}/${mentorCap} · <span class="accent">green</span> mentored · <span class="bad">red</span> listed</span>
+      </div>
+      ${squad.map((p) => pcard(p, {
+        inXI: xi.has(p.id), listed: listed.includes(p.id), mentored: mentoring.includes(p.id),
+        canMentor: mentoring.length < mentorCap || mentoring.includes(p.id),
+      })).join("")}
+    </div>`;
+  }
+
+  /** One donor-style player card, coloured by position, with mentor + list
+   *  actions on the right. Clicking the body opens the full profile. */
+  function pcard(p, opt) {
+    const o = opt || {};
+    const pc = posClass(p.pos);
+    const flags = `${o.inXI ? '<span class="ppos midfield" style="background:rgba(0,208,108,.14)">XI</span>' : ""}`;
+    return `<div class="pcard ${o.mentored ? "mentored" : o.listed ? "listed" : o.inXI ? "in-xi" : ""}">
+      <div class="prating ${pc}" data-player="${p.id}" style="cursor:pointer">${Math.round(p.overall)}</div>
+      <div class="pbody" data-player="${p.id}" style="cursor:pointer">
+        <div class="pname">${flags}${esc(p.name)}${p.homegrown ? ' <span class="hg">HG</span>' : ""}</div>
+        <div class="pmeta"><span class="ppos ${pc}">${esc(p.pos)}</span>${p.age}y · pot ${Math.round(p.potential)} · ${money(p.value)} · £${p.contract.wage}k
+          ${p.season.injured > 0 ? ` · <span class="inj">out ${Math.round(p.season.injured * 100)}%</span>` : ""}</div>
+      </div>
+      ${o.mentored != null ? `<div class="pactions">
+        <button class="pbtn ${o.listed ? "on-list" : ""}" data-list="${p.id}">${o.listed ? "◤ LISTED" : "LIST"}</button>
+        <button class="pbtn ${o.mentored ? "on-mentor" : ""}" data-mentor="${p.id}" ${!o.canMentor && !o.mentored ? "disabled style=opacity:.4" : ""}>${o.mentored ? "◤ MENTOR" : "MENTOR"}</button>
+      </div>` : `<div class="pactions"><span class="muted" style="font-size:11px">${esc(p.pos)}</span></div>`}
+    </div>`;
   }
 
   function moraleDot(m) {
@@ -589,7 +640,35 @@
           <button class="btn tiny" id="auto-pick">AUTO-PICK BEST XI</button>
           <span class="muted" style="font-size:12px">Click a shirt to change who plays there.</span>
         </div>
-      </div>`;
+      </div>
+      ${recruitmentHtml(c)}`;
+  }
+
+  /* The transfer directive lives here now, not in a separate tab: you tell the
+   * board which positions to strengthen and it does the buying in the summer,
+   * within the budget, from the shared pool. Selling is on the squad tab. */
+  function recruitmentHtml(c) {
+    const m = state.manager;
+    const cap = MG.managers.recruitCapacity(m);
+    const rec = c.recruitment || [];
+    const wageRoom = c.finances.wageBudget - MG.clubs.wageBill(c);
+    const reach = MG.network ? MG.network.reachLabel(c) : null;
+    return `<div class="panel">
+      <h3 class="muted">RECRUITMENT · the board will fund ${money(c.finances.transferBudget)} · wage room ${money(wageRoom)}</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">
+        Tell the board which positions to strengthen — it signs the best it can afford in each, in the summer.
+        You can direct up to <b>${cap}</b> signing${cap === 1 ? "" : "s"} (set by your transfer acumen).
+        ${reach ? `<br>Your agents' <b>reach</b> is ${reach} — grow the club's reputation to widen the market.` : ""}
+      </div>
+      <div class="seg">${MG.players.POSITION_KEYS.map((k) => {
+        const n = rec.filter((x) => x === k).length;
+        return `<button class="${n ? "on" : ""}" data-recruit="${k}">${k}${n ? ` ×${n}` : ""}</button>`;
+      }).join("")}</div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn tiny" id="recruit-clear">CLEAR</button>
+        <span class="muted" style="font-size:12px">${rec.length ? `Instructed: ${rec.map((p) => `<span class="ppos ${posClass(p)}">${p}</span>`).join(" ")}` : "No signings requested."} ${rec.length > cap ? `<span class="bad">(only the first ${cap} will be actioned)</span>` : ""}</span>
+      </div>
+    </div>`;
   }
 
   function slotHtml(r, i) {
@@ -602,54 +681,6 @@
       ${r.warning ? `<div class="slot-flag ${r.fam < 0.7 ? "bad" : ""}">${esc(r.warning)}</div>` : ""}
       ${r.injured ? `<div class="slot-flag bad">injured</div>` : ""}
     </button>`;
-  }
-
-  function transfersHtml() {
-    const c = club();
-    const listed = c.transferList || [], targets = c.targets || [];
-    const wageRoom = c.finances.wageBudget - MG.clubs.wageBill(c);
-    const pool = MG.transfers.market(state.world, c, { pos: state.marketPos || undefined, limit: 40 });
-    const squad = c.squad.slice().sort((a, b) => b.overall - a.overall);
-
-    return `
-      <div class="panel">
-        <h3 class="muted">THE BOARD WILL FUND</h3>
-        <div class="stat-grid">
-          <div class="stat-box"><div class="sb-num gold">${money(c.finances.transferBudget)}</div><div class="sb-lab">Transfer budget</div></div>
-          <div class="stat-box"><div class="sb-num ${wageRoom < 0 ? "bad" : ""}">${money(wageRoom)}</div><div class="sb-lab">Wage room</div></div>
-          <div class="stat-box"><div class="sb-num">${listed.length}</div><div class="sb-lab">Listed</div></div>
-          <div class="stat-box"><div class="sb-num">${targets.length}</div><div class="sb-lab">Bids lodged</div></div>
-        </div>
-        <div class="muted" style="font-size:12px;margin-top:8px">
-          Instructions are executed by the board in the summer, and the results appear on the end-of-season screen.
-        </div>
-      </div>
-
-      <div class="panel">
-        <h3 class="muted">TRANSFER LIST — YOUR SQUAD</h3>
-        ${squad.map((p) => `<div class="market-row">
-          <div><b data-player="${p.id}" style="cursor:pointer">${esc(p.name)}</b> <span class="muted">${esc(p.pos)} · ${p.age} · ${Math.round(p.overall)} ovr · ${money(p.value)}</span></div>
-          <div>${listed.includes(p.id) ? '<span class="listed-tag">LISTED</span>' : ""}</div>
-          <div><button class="btn tiny" data-list="${p.id}">${listed.includes(p.id) ? "REMOVE" : "LIST"}</button></div>
-        </div>`).join("")}
-      </div>
-
-      <div class="panel">
-        <h3 class="muted">TRANSFER POOL</h3>
-        <div class="seg" style="margin-bottom:8px">
-          <button class="${!state.marketPos ? "on" : ""}" data-market="">ALL</button>
-          ${MG.players.POSITION_KEYS.map((k) => `<button class="${state.marketPos === k ? "on" : ""}" data-market="${k}">${k}</button>`).join("")}
-        </div>
-        ${pool.length ? pool.map((m) => `<div class="market-row">
-          <div><b data-player="${m.player.id}" style="cursor:pointer">${esc(m.player.name)}</b>
-            ${m.listed ? '<span class="listed-tag">LISTED</span>' : ""}
-            <span class="muted">${esc(m.player.pos)} · ${m.player.age} · ${Math.round(m.player.overall)} ovr · ${esc(m.club.name)}</span></div>
-          <div class="gold">${money(m.fee)}</div>
-          <div>${targets.includes(m.player.id)
-            ? `<button class="btn tiny" data-bid="${m.player.id}">CANCEL</button>`
-            : `<button class="btn tiny" data-bid="${m.player.id}">BID</button>`}</div>
-        </div>`).join("") : `<div class="muted">Nobody available in that position at this level.</div>`}
-      </div>`;
   }
 
   function tableHtml() {
@@ -679,15 +710,74 @@
     const world = state.world;
     const last = world.history[world.history.length - 1];
     if (!last) return `<div class="panel muted">The world has not played a season yet.</div>`;
-    const of = (type) => world.news.filter((n) => n.season === last.season && n.type === type);
+    const of = (type) => world.news.filter((n) => n.season === last.season && n.type === type && n.clubId !== state.clubId);
     const section = (title, items, limit) => `
       <div class="panel"><h3 class="muted">${title}</h3>
         ${items.slice(0, limit || 10).map((n) => `<div class="log-entry ${esc(n.type)}">${esc(n.text)}</div>`).join("") || `<div class="muted">Nothing to report.</div>`}
       </div>`;
-    return section("🏆 SILVERWARE", of("trophy"))
-      + section("🔁 THE CAROUSEL", of("sack").concat(of("hire")).concat(of("retirement")), 12)
-      + section("💰 THE WINDOW", of("transfer"), 12)
-      + section("🌱 COMING THROUGH", of("youth"), 6);
+
+    // The world feed: everything OUT there — the report's global tab. Deliberately
+    // deep for players who want to follow the ecosystem, and out of the way for
+    // those who do not.
+    const feed = section("🏆 SILVERWARE", of("trophy"))
+      + section("🔁 MANAGERS ON THE MOVE", of("sack").concat(of("hire")).concat(of("retirement")), 16)
+      + section("💰 THE WINDOW", of("transfer"), 16)
+      + section("🌱 COMING THROUGH", of("youth"), 8);
+
+    // The reference browser: the leagues that drive the simulation, open to
+    // anyone who wants to scout a rival or just look around.
+    const browser = `<div class="panel">
+      <h3 class="muted">BROWSE THE WORLD</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">The full football pyramid the engine simulates. Click a division to see its table, then a club to see its squad and manager.</div>
+      <div class="seg">${MG.clubs.LEAGUE_KEYS.map((k) => `<button data-league="${k}">${esc(MG.clubs.LEAGUES[k].name)}</button>`).join("")}</div>
+    </div>`;
+    return browser + feed;
+  }
+
+  /** A league table modal reachable from the World tab. */
+  function openLeague(leagueId) {
+    const world = state.world;
+    const last = world.history[world.history.length - 1];
+    const res = last && last.leagues[leagueId];
+    const league = MG.clubs.LEAGUES[leagueId];
+    if (!res) {
+      // Foreign leagues that were not the player's are still browsable via strength.
+      const clubs = world.clubsInLeague(leagueId).slice().sort((a, b) => MG.clubs.clubStrength(b) - MG.clubs.clubStrength(a));
+      modal(`<h3 class="muted">${esc(league.name)}</h3>
+        <table><thead><tr><th>#</th><th>Club</th><th>Squad</th><th>Manager</th></tr></thead><tbody>
+        ${clubs.map((cl, i) => { const m = world.managerById(cl.managerId); return `<tr data-club="${cl.id}" style="cursor:pointer"><td>${i + 1}</td><td>${esc(cl.name)}</td><td>${Math.round(MG.clubs.clubStrength(cl))}</td><td class="muted">${esc(m ? m.name : "—")}</td></tr>`; }).join("")}
+        </tbody></table>`);
+    } else {
+      modal(`<h3 class="muted">${esc(res.leagueName)}</h3>
+        <table><thead><tr><th>#</th><th>Club</th><th>P</th><th>W</th><th>D</th><th>L</th><th>Pts</th><th>Manager</th></tr></thead><tbody>
+        ${res.table.map((r) => { const cl = world.clubById(r.clubId), m = world.managerById(cl.managerId); return `<tr data-club="${cl.id}" class="${cl.id === state.clubId ? "you" : ""}" style="cursor:pointer"><td>${r.position}</td><td>${esc(r.name)}</td><td>${r.played}</td><td>${r.won}</td><td>${r.drawn}</td><td>${r.lost}</td><td><b>${r.pts}</b></td><td class="muted">${esc(m ? m.name : "—")}</td></tr>`; }).join("")}
+        </tbody></table>`);
+    }
+    for (const row of document.querySelectorAll("[data-club]")) {
+      row.addEventListener("click", () => openClub(Number(row.dataset.club)));
+    }
+  }
+
+  /** A rival club's squad and manager — the scouting view. */
+  function openClub(clubId) {
+    const world = state.world;
+    const c = world.clubById(clubId);
+    if (!c) return;
+    const m = world.managerById(c.managerId);
+    const squad = c.squad.slice().sort(SORTS.rating);
+    modal(`
+      <h3 class="muted">${esc(c.name)} · ${esc(MG.clubs.LEAGUES[c.leagueId].name)}</h3>
+      <div class="stat-grid" style="margin-bottom:10px">
+        <div class="stat-box"><div class="sb-num">${Math.round(c.ratings.attack)}</div><div class="sb-lab">Attack</div></div>
+        <div class="stat-box"><div class="sb-num">${Math.round(c.ratings.midfield)}</div><div class="sb-lab">Midfield</div></div>
+        <div class="stat-box"><div class="sb-num">${Math.round(c.ratings.defence)}</div><div class="sb-lab">Defence</div></div>
+        <div class="stat-box"><div class="sb-num">${c.reputation}</div><div class="sb-lab">Reputation</div></div>
+      </div>
+      <div class="muted" style="font-size:13px;margin-bottom:8px">Manager: <b>${esc(m ? m.name : "—")}</b>${m ? ` · ${esc(m.archetypeName)} · ${esc(m.tactic)} · ${esc(c.formation)}` : ""}</div>
+      <div class="chooser-list">${squad.slice(0, 24).map((p) => pcard(p, {})).join("")}</div>`);
+    for (const el of document.querySelectorAll("[data-player]")) {
+      el.addEventListener("click", (e) => { e.stopPropagation(); openPlayer(Number(el.dataset.player)); });
+    }
   }
 
   function wireTab() {
@@ -701,36 +791,63 @@
     for (const b of document.querySelectorAll("[data-slot]")) {
       b.addEventListener("click", () => openSlotChooser(Number(b.dataset.slot)));
     }
-    for (const b of document.querySelectorAll("[data-market]")) {
-      b.addEventListener("click", () => { state.marketPos = b.dataset.market; renderTab(); });
+    for (const b of document.querySelectorAll("[data-squadsort]")) {
+      b.addEventListener("click", () => { state.squadSort = b.dataset.squadsort; renderTab(); });
     }
     for (const b of document.querySelectorAll("[data-list]")) {
-      b.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const id = Number(b.dataset.list);
-        c.transferList = c.transferList || [];
-        const i = c.transferList.indexOf(id);
-        if (i >= 0) c.transferList.splice(i, 1); else c.transferList.push(id);
-        const p = c.squad.find((x) => x.id === id);
-        if (p) p.transferListed = c.transferList.includes(id);
+      b.addEventListener("click", (e) => { e.stopPropagation(); toggleList(c, Number(b.dataset.list)); renderTab(); });
+    }
+    for (const b of document.querySelectorAll("[data-mentor]")) {
+      b.addEventListener("click", (e) => { e.stopPropagation(); toggleMentor(c, Number(b.dataset.mentor)); renderTab(); });
+    }
+    for (const b of document.querySelectorAll("[data-recruit]")) {
+      b.addEventListener("click", () => {
+        c.recruitment = c.recruitment || [];
+        // Left-click adds one of that position; it cycles off once you exceed
+        // what the board will action, so a position is easy to add and remove.
+        const cap = MG.managers.recruitCapacity(state.manager);
+        if (c.recruitment.filter((x) => x === b.dataset.recruit).length >= cap) {
+          c.recruitment = c.recruitment.filter((x) => x !== b.dataset.recruit);
+        } else c.recruitment.push(b.dataset.recruit);
         renderTab();
       });
     }
-    for (const b of document.querySelectorAll("[data-bid]")) {
-      b.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const id = Number(b.dataset.bid);
-        c.targets = c.targets || [];
-        const i = c.targets.indexOf(id);
-        if (i >= 0) c.targets.splice(i, 1); else c.targets.push(id);
-        renderTab();
-      });
+    const clear = $("recruit-clear");
+    if (clear) clear.addEventListener("click", () => { c.recruitment = []; renderTab(); });
+    for (const b of document.querySelectorAll("[data-league]")) {
+      b.addEventListener("click", () => openLeague(b.dataset.league));
     }
     for (const el of document.querySelectorAll("[data-player]")) {
       el.addEventListener("click", (e) => { e.stopPropagation(); openPlayer(Number(el.dataset.player)); });
     }
     const auto = $("auto-pick");
     if (auto) auto.addEventListener("click", () => { MG.tactics.setXI(c, null); render(); });
+  }
+
+  /** Toggle a player on the transfer list (sell directive). */
+  function toggleList(c, id) {
+    c.transferList = c.transferList || [];
+    const i = c.transferList.indexOf(id);
+    if (i >= 0) c.transferList.splice(i, 1); else c.transferList.push(id);
+    const p = c.squad.find((x) => x.id === id);
+    if (p) p.transferListed = c.transferList.includes(id);
+    // A listed player is not one you also want to develop.
+    if (c.mentoring) c.mentoring = c.mentoring.filter((x) => x !== id);
+  }
+
+  /** Toggle a player as a mentee, respecting the manager's capacity. */
+  function toggleMentor(c, id) {
+    c.mentoring = c.mentoring || [];
+    const i = c.mentoring.indexOf(id);
+    if (i >= 0) { c.mentoring.splice(i, 1); return; }
+    if (c.mentoring.length >= MG.managers.mentorCapacity(state.manager)) return;
+    c.mentoring.push(id);
+    // Mentoring someone you were about to sell makes no sense either.
+    if (c.transferList) {
+      c.transferList = c.transferList.filter((x) => x !== id);
+      const p = c.squad.find((x) => x.id === id);
+      if (p) p.transferListed = false;
+    }
   }
 
   /* ------------------------------- MODALS --------------------------------- */
@@ -743,36 +860,50 @@
     for (const el of document.querySelectorAll("[data-close]")) el.addEventListener("click", closeModal);
   }
 
-  /** Swap the player in a given XI slot. */
+  /** Swap the player in a given XI slot. Sortable by rating (for this role),
+   *  position or name — the QOL the screenshot asked for. */
   function openSlotChooser(slotIndex) {
     const c = club();
     const formation = MG.tactics.FORMATIONS[c.formation];
     const slot = formation.slots[slotIndex];
-    const current = MG.tactics.effectiveXI(c);
-    const currentIds = current.map((p) => p && p.id);
-    const options = c.squad.slice().sort((a, b) =>
-      MG.tactics.effectiveOverall(b, slot) - MG.tactics.effectiveOverall(a, slot));
+    const currentIds = MG.tactics.effectiveXI(c).map((p) => p && p.id);
 
-    modal(`<h3 class="muted">WHO PLAYS AT ${esc(slot)}?</h3>
-      <div class="chooser">${options.map((p) => {
+    // Rating in the chooser means rating IN THIS SLOT — a winger at left-back
+    // sorts by what he is worth there, not by his headline number.
+    const chooserSorts = {
+      rating: (a, b) => MG.tactics.effectiveOverall(b, slot) - MG.tactics.effectiveOverall(a, slot),
+      pos: SORTS.pos, name: SORTS.name,
+    };
+    const options = c.squad.slice().sort(chooserSorts[state.chooserSort] || chooserSorts.rating);
+
+    modal(`<h3 class="muted">WHO PLAYS AT <span class="ppos ${posClass(slot)}">${esc(slot)}</span>?</h3>
+      <div class="sortbar"><span class="muted">Sort</span>
+        ${["rating", "pos", "name"].map((k) => `<button class="btn tiny ${state.chooserSort === k ? "on-mentor" : ""}" data-csort="${k}">${k === "pos" ? "POSITION" : k.toUpperCase()}</button>`).join("")}
+      </div>
+      <div class="chooser-list">${options.map((p) => {
         const fam = MG.tactics.familiarity(p.pos, slot);
         const inXI = currentIds.indexOf(p.id);
-        return `<button data-pick="${p.id}">
-          <b>${esc(p.name)}</b><br>
-          <span class="muted">${esc(p.pos)} · ${p.age} · ${Math.round(p.overall)} ovr</span><br>
-          <span class="${fam >= 0.9 ? "accent" : fam >= 0.7 ? "gold" : "bad"}">${Math.round(fam * 100)}% suited</span>
-          ${p.season.injured > 0 ? ` <span class="inj">injured</span>` : ""}
-          ${inXI >= 0 && inXI !== slotIndex ? ` <span class="muted">(playing ${esc(formation.slots[inXI])})</span>` : ""}
+        const pc = posClass(p.pos);
+        const famCls = fam >= 0.9 ? "accent" : fam >= 0.7 ? "gold" : "bad";
+        return `<button class="pcard" data-pick="${p.id}" style="cursor:pointer">
+          <div class="prating ${pc}">${Math.round(MG.tactics.effectiveOverall(p, slot))}</div>
+          <div class="pbody">
+            <div class="pname">${esc(p.name)}${inXI >= 0 && inXI !== slotIndex ? ` <span class="muted" style="font-weight:400;font-size:11px">(now ${esc(formation.slots[inXI])})</span>` : ""}</div>
+            <div class="pmeta"><span class="ppos ${pc}">${esc(p.pos)}</span>${p.age}y · <span class="${famCls}">${Math.round(fam * 100)}% suited</span>${p.season.injured > 0 ? ` · <span class="inj">injured</span>` : ""}</div>
+          </div>
+          <div class="pactions"><span class="muted" style="font-size:11px">${Math.round(p.overall)} ovr</span></div>
         </button>`;
       }).join("")}</div>`);
 
+    for (const b of document.querySelectorAll("[data-csort]")) {
+      b.addEventListener("click", () => { state.chooserSort = b.dataset.csort; openSlotChooser(slotIndex); });
+    }
     for (const b of document.querySelectorAll("[data-pick]")) {
       b.addEventListener("click", () => {
         const id = Number(b.dataset.pick);
         const ids = currentIds.slice();
         const existing = ids.indexOf(id);
-        // Picking someone already in the side swaps the two shirts rather than
-        // leaving a hole where he was.
+        // Picking someone already in the side swaps the two shirts.
         if (existing >= 0) { ids[existing] = ids[slotIndex]; }
         ids[slotIndex] = id;
         MG.tactics.setXI(c, ids);
@@ -806,26 +937,34 @@
       { label: "Mentality", value: player.mentalityRating },
     ];
     const listed = (c.transferList || []).includes(player.id);
+    const mentored = (c.mentoring || []).includes(player.id);
     const mine = player.clubId === c.id;
+    const pc = posClass(player.pos);
+    const intl = player.intl;
 
     modal(`
       <div class="profile-head">
-        <div class="profile-radar"><canvas id="radar" width="200" height="200"></canvas></div>
+        <div class="profile-radar">
+          <div class="prating ${pc}" style="width:64px;height:64px;font-size:24px;margin:0 auto 8px">${Math.round(player.overall)}</div>
+          <canvas id="radar" width="200" height="200"></canvas>
+        </div>
         <div class="profile-meta">
           <div style="font-size:20px;font-weight:800">${esc(player.name)}</div>
-          <div class="muted">${esc(MG.players.POSITIONS[player.pos].name)} · ${player.age} · ${esc(player.nationality)} · ${esc(from)}</div>
+          <div class="muted"><span class="ppos ${pc}">${esc(player.pos)}</span>${esc(MG.players.POSITIONS[player.pos].name)} · ${player.age} · ${esc(player.nationality)} · ${esc(from)}</div>
           <div style="margin:8px 0">
-            <span class="trait-chip gold">${Math.round(player.overall)} OVERALL</span>
-            <span class="trait-chip">${Math.round(player.potential)} potential</span>
+            <span class="trait-chip">pot ${Math.round(player.potential)}</span>
             <span class="trait-chip">${esc(player.mentality)}</span>
             ${player.homegrown ? '<span class="trait-chip">Homegrown</span>' : ""}
-            ${player.transferListed ? '<span class="trait-chip gold">Transfer listed</span>' : ""}
-            ${player.season.injured > 0 ? `<span class="trait-chip" style="color:var(--bad);border-color:var(--bad)">Out ${Math.round(player.season.injured * 100)}% of the season</span>` : ""}
+            ${intl && intl.caps ? `<span class="trait-chip gold">${esc(intl.nation)} · ${intl.caps} caps${intl.goals ? ` · ${intl.goals} gls` : ""}</span>` : ""}
+            ${mentored ? '<span class="trait-chip" style="color:var(--accent);border-color:var(--accent)">Mentored</span>' : ""}
+            ${listed ? '<span class="trait-chip" style="color:var(--bad);border-color:var(--bad)">Transfer listed</span>' : ""}
+            ${player.season.injured > 0 ? `<span class="trait-chip" style="color:var(--bad);border-color:var(--bad)">Out ${Math.round(player.season.injured * 100)}%</span>` : ""}
           </div>
           ${stats.map((s) => `<div class="mini-bar"><span class="muted">${esc(s.label)}</span>
             <div class="bar"><i style="width:${clamp(s.value, 0, 99)}%"></i></div><b>${Math.round(s.value)}</b></div>`).join("")}
         </div>
       </div>
+      ${attrGrid(player)}
       <div class="stat-grid" style="margin-top:12px">
         <div class="stat-box"><div class="sb-num">${moraleDot(player.morale)}</div><div class="sb-lab">Morale</div></div>
         <div class="stat-box"><div class="sb-num gold">${money(player.value)}</div><div class="sb-lab">Value</div></div>
@@ -835,18 +974,17 @@
         <div class="stat-box"><div class="sb-num">${player.career.apps}</div><div class="sb-lab">Career apps</div></div>
       </div>
       ${player.season.apps ? `<div class="muted" style="font-size:12px;margin-top:8px">This season: ${player.season.apps} apps, ${player.season.goals} goals, ${player.season.assists} assists.</div>` : ""}
-      ${mine ? `<div class="row" style="margin-top:12px"><button class="btn tiny" id="profile-list">${listed ? "REMOVE FROM TRANSFER LIST" : "ADD TO TRANSFER LIST"}</button></div>` : ""}
+      ${mine ? `<div class="row" style="margin-top:12px">
+        <button class="btn tiny ${listed ? "danger" : ""}" id="profile-list">${listed ? "REMOVE FROM LIST" : "TRANSFER LIST"}</button>
+        <button class="btn tiny ${mentored ? "primary" : ""}" id="profile-mentor">${mentored ? "STOP MENTORING" : "MENTOR"}</button>
+      </div>` : ""}
     `);
 
     drawRadar($("radar"), stats);
     const lb = $("profile-list");
-    if (lb) lb.addEventListener("click", () => {
-      c.transferList = c.transferList || [];
-      const i = c.transferList.indexOf(player.id);
-      if (i >= 0) c.transferList.splice(i, 1); else c.transferList.push(player.id);
-      player.transferListed = c.transferList.includes(player.id);
-      closeModal(); renderTab();
-    });
+    if (lb) lb.addEventListener("click", () => { toggleList(c, player.id); closeModal(); renderTab(); });
+    const mb = $("profile-mentor");
+    if (mb) mb.addEventListener("click", () => { toggleMentor(c, player.id); closeModal(); renderTab(); });
   }
 
   /** Six-axis radar, drawn the same way 1000goals draws its card radar. */

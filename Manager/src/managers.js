@@ -299,6 +299,28 @@
     return clamp(1 + (score / weight) * 0.012, 0.9, 1.1);
   }
 
+  /* --------------------- MENTORING AND RECRUITMENT ------------------------
+   * How many players a manager can personally mentor (extra development), and
+   * how many signings the board will action on his say-so in a window. Both
+   * scale with the manager himself — a better developer mentors more, a better
+   * negotiator gets more deals over the line — which is what makes the manager
+   * draft matter to squad-building, not just to match day. */
+  function mentorCapacity(manager) {
+    if (!manager) return 1;
+    const d = manager.attrs.development || 55;
+    return d >= 82 ? 3 : d >= 64 ? 2 : 1;
+  }
+  function recruitCapacity(manager) {
+    if (!manager) return 2;
+    const a = manager.attrs.transferAcumen || 55;
+    return a >= 80 ? 4 : a >= 62 ? 3 : 2;
+  }
+  /** Extra overall a mentored player gains per season, on top of normal growth. */
+  function mentorBoost(manager) {
+    if (!manager) return 0.8;
+    return 0.6 + (manager.attrs.development - 50) / 60;
+  }
+
   /** The manager's contribution to a club's match-day strength, in rating
    *  points to be ADDED to the squad's own ratings. A very good manager of a
    *  well-suited squad is worth roughly eight points; a poor one at a club
@@ -437,6 +459,7 @@
     ARCHETYPES, ARCHETYPE_KEYS,
     fromArchetype, generate, resetIds, applyTraitAttrs,
     tacticalFit, matchModifiers, coachingQuality, youthAppetite, recruitmentPolicy,
+    mentorCapacity, recruitCapacity, mentorBoost,
     TACTIC_PARAMS, pressIntensity, deriveShift,
     candidateScore, wouldMove,
   };

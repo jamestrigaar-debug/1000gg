@@ -33,10 +33,19 @@
     for (const club of world.clubs) {
       const manager = world.managerById(club.managerId);
       const coaching = MG.managers.coachingQuality(manager, club);
+      const mentored = new Set(club.mentoring || []);
+      const boost = mentored.size ? MG.managers.mentorBoost(manager) : 0;
       for (const p of club.squad) {
         p.age++;
         const minutes = p.season.minutesShare || 0.2;
-        const delta = MG.players.developmentDelta(rng, p, coaching, minutes);
+        let delta = MG.players.developmentDelta(rng, p, coaching, minutes);
+        // A mentored player gets a real leg up — this is the payoff for the
+        // manager spending one of his limited mentoring slots on him, and it is
+        // biggest for the young players who still have headroom to grow into.
+        if (mentored.has(p.id) && p.overall < p.potential) delta += boost;
+        // A season of international football sharpens a young player on top of
+        // his club development — caps and goals feeding growth, as asked.
+        if (MG.international && p.overall < p.potential) delta += MG.international.developmentBonus(p);
         p.overall = clamp(Math.round((p.overall + delta) * 10) / 10, 25, 96);
         if (p.overall > p.potential) p.potential = p.overall;
         // Physical attributes follow the same curve, a little more slowly.
@@ -263,6 +272,10 @@
           if (evaluated > 60) break;
           const { player, club: seller } = entry;
           if (seller.id === buyer.id || player.retired || player.clubId === buyer.id) continue;
+          // Reach: the buyer can only sign out of leagues its agent network can
+          // actually touch. A National League side does not have the channels
+          // to prise a player out of La Liga, however much it might want to.
+          if (MG.network && !MG.network.canRecruit(buyer, seller)) continue;
           // The index is a snapshot taken before the window opened. Once a
           // player has moved, his entry in it is stale — without this check the
           // second buyer to reach him would remove him from a club he had
@@ -446,6 +459,7 @@
     for (const entry of (index[pos] || [])) {
       const { player, seller } = { player: entry.player, seller: entry.club };
       if (seller.id === club.id || player.retired || player.clubId !== seller.id) continue;
+      if (MG.network && !MG.network.canRecruit(club, seller)) continue;
       if (seller.squad.length <= MIN_SQUAD) continue;
       if (o.quality === "prospect" && player.age > 22) continue;
       if (o.quality === "star" && player.overall < level + 2) continue;
@@ -506,7 +520,8 @@
         && c.finances.balance >= fee
         && c.squad.length < MG.players.SQUAD_TARGET + 3
         && (c.level || 50) >= player.overall - 12
-        && player.overall >= (c.level || 50) - 13)
+        && player.overall >= (c.level || 50) - 13
+        && (!MG.network || MG.network.canRecruit(c, club)))
       .sort((a, b) => b.finances.transferBudget - a.finances.transferBudget)[0];
     if (!buyer) return null;
 
@@ -547,6 +562,9 @@
     const out = [];
     for (const seller of world.clubs) {
       if (seller.id === club.id) continue;
+      // Only show what the club's network can reach — the shop window is the
+      // same one the board would actually be able to buy from.
+      if (MG.network && !MG.network.canRecruit(club, seller)) continue;
       for (const p of seller.squad) {
         if (p.retired) continue;
         // Only show players who would realistically consider the move: within
@@ -584,7 +602,8 @@
           && c.finances.balance >= fee
           && c.squad.length < MG.players.SQUAD_TARGET + 3
           && (c.level || 50) >= player.overall - 12
-          && player.overall >= (c.level || 50) - 13)
+          && player.overall >= (c.level || 50) - 13
+          && (!MG.network || MG.network.canRecruit(c, club)))
         .sort((a, b) => b.finances.transferBudget - a.finances.transferBudget)[0];
       if (!buyer) { refused.push({ player, reason: "nobody bid" }); continue; }
 
@@ -613,6 +632,10 @@
       }
       if (!entry) { continue; }                      // already moved elsewhere
       const { player, club: seller } = entry;
+      if (MG.network && !MG.network.canRecruit(club, seller)) {
+        refused.push({ player, reason: "he plays beyond your club's reach" });
+        continue;
+      }
       const fee = askingPrice(entry, club, new Set());
       const wage = round1(MG.players.expectedWage(player, club.leagueId) * rng.between(1.0, 1.15));
       const wageRoom = club.finances.wageBudget - wageBillOf(club);
@@ -644,11 +667,28 @@
       bought.push({ player, fee, from: seller.name });
     }
 
+    /* ---- recruitment directives: "sign a striker, sign a midfielder" ----
+     * The manager names positions and the board finds the best player it can
+     * afford in each — the report's model, where the player gives high-level
+     * directives and the board does the buying. findAndSign already walks the
+     * shared pool and pays a real fee, so this is just aiming it. */
+    const manager = world.managerById(club.managerId);
+    const cap = MG.managers.recruitCapacity(manager);
+    for (const pos of (club.recruitment || []).slice(0, cap)) {
+      if (club.finances.transferBudget < 0.05) { refused.push({ player: { name: `a ${posLabel(pos)}` }, reason: "the budget is spent" }); continue; }
+      const signing = findAndSign(world, club, { pos, quality: "solid" });
+      if (signing) bought.push({ player: signing.player, fee: signing.fee, from: signing.from });
+      else refused.push({ player: { name: `a ${posLabel(pos)}` }, reason: "none available in budget" });
+    }
+
     club.transferList = [];
     club.targets = [];
+    club.recruitment = [];
     MG.clubs.refreshRatings(club);
     return { sold, bought, refused };
   }
+
+  function posLabel(pos) { return (MG.players.POSITIONS[pos] || {}).name || pos; }
 
   function wageBillOf(club) { return MG.clubs.wageBill(club); }
   function fmtFee(f) { return f >= 10 ? `£${Math.round(f)}m` : `£${round1(f)}m`; }
