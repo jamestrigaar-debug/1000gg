@@ -39,7 +39,8 @@ function safeReq(card, ctx) { try { return !!card.req(ctx); } catch (e) { failur
 function freshWorld(seed) {
   const w = MG.world.createWorld({ seed, startYear: 2026 });
   const d = MG.draft.createDraft(seed, { rerolls: 0 });
-  d.spin(); d.accept(); d.spin(); d.accept(); d.spin();
+  d.spin();
+  for (let i = 1; i < MG.draft.DRAFT_STEPS.length; i++) { d.accept(); d.spin(); }
   const mgr = d.build("Exerciser");
   mgr.id = MG.managers.nextId();
   w.managers.push(mgr); w.managerIndex[mgr.id] = mgr;
