@@ -93,6 +93,17 @@ function primeClub(w, club, mode, mgr) {
     club.squad.push(p);
   }
   MG.clubs.refreshRatings(club);
+
+  // A genuine, ready academy prospect, for the promotion card.
+  if (MG.youth) {
+    const academy = MG.youth.ensure(club);
+    const level = club.level != null ? club.level : 55;
+    const kid2 = MG.youth.makeProspect(w.rng, w, club);
+    kid2.overall = level;
+    kid2.potential = Math.min(96, level + 10);
+    kid2.scouted = { floor: level, ceiling: Math.min(96, level + 10) };
+    academy.players.push(kid2);
+  }
 }
 
 /* Every card, every choice.
