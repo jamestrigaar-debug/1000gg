@@ -186,7 +186,13 @@
   .tab { background: var(--card); border: 1px solid var(--line); color: var(--muted); padding: 8px 14px;
     font: inherit; font-size: 12px; font-weight: 700; letter-spacing: 1px; border-radius: 8px; cursor: pointer; }
   .tab.on { color: var(--txt); border-color: var(--accent); background: var(--card2); }
-  .log-entry { font-size: 13px; padding: 8px 10px; border-radius: 8px; margin-bottom: 6px; background: var(--bg2); border-left: 3px solid var(--line); }
+  /* The log is a feed, not prose: tighter leading and a slightly condensed face
+     fit roughly twice as many lines on a screen without shrinking the text to
+     the point of being unreadable. */
+  .log-entry { font-size: 12px; line-height: 1.35; padding: 4px 8px; border-radius: 6px;
+    margin-bottom: 2px; background: var(--bg2); border-left: 2px solid var(--line);
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+  .log-entry .muted { font-size: 11px; opacity: .75; margin-right: 4px; }
   .log-entry.trophy { border-left-color: var(--gold); }
   .log-entry.transfer { border-left-color: var(--rare); }
   .log-entry.sack, .log-entry.relegated { border-left-color: var(--bad); }
@@ -214,10 +220,23 @@
       linear-gradient(180deg, #0c3320, #082516);
     border: 1px solid var(--line); border-radius: 12px; padding: 12px; position: relative; }
   .pitch-rows { display: flex; flex-direction: column-reverse; gap: 8px; }
-  .pitch-row { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
-  .slot { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px;
-    min-width: 118px; text-align: center; cursor: pointer; font-size: 12px; color: var(--txt);
-    font-family: inherit; line-height: 1.3; }
+  /* nowrap is what keeps a back four looking like a back four. Wrapping turned
+     every line into a stack on a phone, so the shape — the entire point of the
+     screen — was invisible on the device most people play on. */
+  .pitch-row { display: flex; justify-content: center; gap: 6px; flex-wrap: nowrap; }
+  @media (max-width: 620px) {
+    .pitch { padding: 8px 6px; }
+    .pitch-rows { gap: 5px; }
+    .pitch-row { gap: 4px; }
+    .slot { padding: 5px 3px; font-size: 10px; border-radius: 6px; }
+    .slot .slot-pos { font-size: 8px; letter-spacing: 0; margin-bottom: 0; }
+    .slot .slot-name { font-size: 10px; }
+    .slot .slot-flag { font-size: 8px; }
+    .log-entry { font-size: 11px; padding: 3px 6px; }
+  }
+  .slot { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 6px;
+    min-width: 0; flex: 1 1 0; max-width: 132px; text-align: center; cursor: pointer; font-size: 12px;
+    color: var(--txt); font-family: inherit; line-height: 1.3; }
   .slot:hover { border-color: var(--accent2); }
   .slot.warn { border-color: var(--gold); }
   .slot.bad { border-color: var(--bad); }
@@ -279,6 +298,12 @@
   .prating.defence { background: #347df1; }
   .prating.midfield { background: #10c986; }
   .prating.keeper { background: #f5c542; color: #221600; }
+  /* Shades within a line: a full-back is a lighter blue than a centre-half,
+     a winger a warmer red than a forward, a holder a deeper green. */
+  .prating.defence.wide { background: #4f9bf5; }
+  .prating.attack.wide { background: #ff6b48; }
+  .prating.attack.advanced { background: #f0567f; }
+  .prating.midfield.deep { background: #0a9e73; }
   .pbody { min-width: 0; }
   .pname { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pmeta { font-size: 12px; color: var(--muted); margin-top: 1px; }
@@ -287,6 +312,10 @@
   .ppos.defence { color: #70a7ff; background: rgba(52,125,241,.18); }
   .ppos.midfield { color: #4de0b4; background: rgba(16,201,134,.16); }
   .ppos.keeper { color: #f5c542; background: rgba(245,197,66,.18); }
+  .ppos.defence.wide { color: #9cc6ff; background: rgba(79,155,245,.18); }
+  .ppos.attack.wide { color: #ff9a70; background: rgba(255,107,72,.18); }
+  .ppos.attack.advanced { color: #ff8fae; background: rgba(240,86,127,.18); }
+  .ppos.midfield.deep { color: #2fc39a; background: rgba(10,158,115,.18); }
   .pattrs { display: grid; grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: 5px; margin-top: 8px; font-size: 11px; }
   .pattr { display: flex; flex-direction: column; gap: 1px; background: rgba(255,255,255,.045); padding: 4px 6px; border-radius: 6px; color: var(--muted); min-width: 0; }
   .pattr b { color: var(--txt); font-weight: 800; }
@@ -322,6 +351,22 @@
   .wizard-block h4 { margin: 0 0 8px; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
   .board-note { background: rgba(56,182,255,.08); border-left: 3px solid var(--accent2); border-radius: 8px;
     padding: 8px 10px; font-size: 13px; margin: 8px 0; }
+
+  /* ---------- Matchup + depth ---------- */
+  .mrow { display: grid; grid-template-columns: 68px 1fr 28px 1fr; gap: 8px; align-items: center;
+    padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+  .mrow:last-child { border-bottom: 0; }
+  .mrow .mf { font-weight: 800; }
+  .mrow b { text-align: center; font-size: 14px; }
+  .depth-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+  .dcell { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 6px; text-align: center; }
+  .dname { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dslot { margin-bottom: 2px; }
+  @media (max-width: 620px) {
+    .mrow { grid-template-columns: 58px 1fr 24px; font-size: 11px; }
+    .mrow span:last-child { display: none; }
+    .depth-grid { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); }
+  }
 
   /* ---------- The two verdicts: boardroom and supporters ---------- */
   .verdict-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -454,6 +499,7 @@
     <div class="tabs">
       <button class="tab on" data-tab="squad">SQUAD</button>
       <button class="tab" data-tab="tactics">TACTICS</button>
+      <button class="tab" data-tab="youth">YOUTH</button>
       <button class="tab" data-tab="contracts">CONTRACTS</button>
       <button class="tab" data-tab="table">TABLE</button>
       <button class="tab" data-tab="career">CAREER</button>
@@ -495,6 +541,7 @@
 <script src="src/managers.js"></script>
 <script src="src/match.js"></script>
 <script src="src/narrative.js"></script>
+<script src="src/youth.js"></script>
 <script src="src/competitions.js"></script>
 <script src="src/transfers.js"></script>
 <script src="src/world.js"></script>

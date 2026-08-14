@@ -423,6 +423,58 @@ answered where you look rather than buried in a report. Beside it is his
 **development** since last year (▲2 / ▼1) — the clearest signal that a young
 signing is working out, or that a 33-year-old is going.
 
+## Shape against shape
+
+A formation used to change only your own rating bias; who you played made no
+difference, so 4-4-2 was as effective against a midfield three as against
+another 4-4-2. The matchup matrix (`MG.tactics.MATCHUP`) is now the base
+modifier the match engine reads, worth up to a fifth of a goal a game — enough
+to tilt a match, never enough to beat a better squad on its own.
+
+|  | vs 4-4-2 | vs 4-3-3 | vs 4-2-3-1 | vs 3-5-2 | vs 5-3-2 | vs 4-5-1 |
+|---|---|---|---|---|---|---|
+| **4-4-2** | 0 | − | − | 0 | − | − |
+| **4-3-3** | + | 0 | 0 | + | 0 | 0 |
+| **4-2-3-1** | + | 0 | 0 | + | 0 | 0 |
+| **3-5-2** | 0 | − | − | 0 | 0 | + |
+| **5-3-2** | + | 0 | 0 | 0 | 0 | 0 |
+| **4-5-1** | + | 0 | 0 | − | 0 | 0 |
+
+The table is antisymmetric, so both sides of a fixture are looked up
+independently and agree. Measured over 3,000 games per pairing with identical
+squads, the ordering comes out as intended: 5-3-2 is the best answer to 4-4-2,
+3-5-2 beats 4-5-1, and 4-4-2 is the weakest shape overall. The **TACTICS** tab
+shows your shape against every formation *and how many clubs in your league
+actually play it*.
+
+## Cover
+
+Every shirt has a named understudy. Depth used to be one average of the seven
+best players outside the side, rated in their own positions — so a squad with
+three spare wingers and no reserve goalkeeper looked exactly as deep as one
+covered everywhere. Cover is per-shirt or it is not cover: the depth tail in
+the team rating is now the average of the men who would *actually* come in for
+each starter, and the tab shows the drop-off for every position.
+
+## The academy
+
+Youth used to happen *to* you: the intake ran, a teenager appeared, and the only
+lever was a decision card. Every club now carries a real academy of eight
+teenagers who age and train behind the first team, and the **YOUTH** tab gives
+the manager three things:
+
+- **See it** — the coaches' scouting *range* rather than a true potential
+  number. Better facilities narrow the range, because a good academy reads its
+  own players better.
+- **Shape it** — a training focus (Balanced / Technical / Physical / Mentality)
+  that decides which attributes the whole intake develops, so an academy has a
+  character. Same size of gain in every case; this is a choice about shape.
+- **Promote or release** — pull one up when he is ready, or leave him another
+  year. Past 21 he is released.
+
+AI clubs run the same academy on the same rules and promote their best
+automatically, so the world's player population keeps refreshing either way.
+
 ## Ageing by position
 
 A goalkeeper at 32 is in his prime; a winger at 32 is finished. The curve used
