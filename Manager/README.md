@@ -101,8 +101,13 @@ one panel:
 3. **The log** — always open, directly beneath the decisions. The board reports
    back here: what it signed, what it *tried and could not*, who renewed, who
    retired, who was sold. Each season closes with a written **season review**.
-4. **Tabs** — SQUAD (transfer-list and mentoring toggles), TACTICS, CONTRACTS,
-   TABLE, CAREER (the full season-by-season record) and WORLD.
+4. **Tabs** — SQUAD (listing, mentoring and contracts on each player card),
+   TACTICS, YOUTH, TABLE, CAREER (the full season-by-season record) and WORLD.
+
+A **notification bell** next to the club name counts the things easy to miss in
+a feed that also carries match reports and boardroom chatter: transfers in and
+out, contract news, loans and retirements. Opening it lists them, highlights
+the unread ones, and clears the badge.
 
 ### The log
 
@@ -123,11 +128,14 @@ The supporters: behind you (70/100, +17) — the football was worth the ticket.
 
 ## Contracts
 
-Every player by years remaining, shortest first. **EXTEND** asks the board to
-tie a player down; **RELEASE** lets his deal run down. The board still decides —
-it backs a renewal unless the club is in genuine financial crisis, since keeping
-a player you already have is cheap next to signing one — and it reports what it
-actually did in the log each summer.
+There is no contracts tab: every player card in the **SQUAD** tab carries all
+four levers, because they are the same shape — you state a preference, the
+board executes it and reports back. **LIST** offers him for sale, **MENTOR**
+develops him, **EXTEND** asks the board to tie him down, **RELEASE** lets his
+deal run down. Years remaining sit on the card, and the squad can be sorted by
+contract length to find the ones that need a call. The board still decides — it
+backs a renewal unless the club is in genuine financial crisis — and reports
+what it actually did in the log each summer.
 
 ## Tactics and the Starting XI
 
@@ -455,6 +463,54 @@ three spare wingers and no reserve goalkeeper looked exactly as deep as one
 covered everywhere. Cover is per-shirt or it is not cover: the depth tail in
 the team rating is now the average of the men who would *actually* come in for
 each starter, and the tab shows the drop-off for every position.
+
+## Money and ownership
+
+Every club starts a season with a real amount of money and a real board behind
+it. Income is earned three ways, mirroring the real game: **selling players**,
+**league position** (TV and merit money, weighted by division — a Premier
+League place is worth many times a League Two one), and **cup and European
+runs**, whose prize money rises steeply toward the finals.
+
+**Who owns the club decides what happens when that is not enough.** Three
+tiers, and only the type is public — the money behind it is not:
+
+| Owner | Who | Effect |
+|---|---|---|
+| **State-backed** | Manchester City, Newcastle United, and the entire Saudi Pro League | Effectively bottomless. Covers ~92% of a losing balance every summer and multiplies discretionary spending. |
+| **Wealthy owner** | ~5% of clubs, rolled independently of size | Real money, real ceiling. Covers ~55% of a loss. |
+| **Self-funded** | Everyone else | Runs on what it earns; covers ~15%. |
+
+Manchester City, Newcastle and the Saudi league are named rather than rolled
+because that state backing is a fact about the real world, not something the
+game should reinvent per save — and it is exactly why a Saudi club can buy at a
+level its own league's football does not otherwise justify.
+
+**The death spiral is real.** Two consecutive seasons with debt worse than 55%
+of revenue triggers a **points deduction** the following season (6, then 9,
+then 12) — applied at kick-off, shown in the table and named in the season
+review. A worse finish means less merit money, which deepens the hole. A backed
+owner rarely gets near this; a self-funded one that overspends can genuinely
+fall through the divisions.
+
+**Boardrooms change hands.** Each club has a 0.5% chance per season of a
+takeover — one or two clubs a season across the world. Ownership tier, board
+temperament and hidden wealth all reset, and historic debt is written off the
+way a real takeover usually does. The state-backed clubs are exempt.
+
+## Squad turnover
+
+Free transfers used to be routine squad-building — any position with any
+shortfall went shopping, every summer, for every club — and the result was 10+
+arrivals a season and a squad that barely resembled itself a year later. Free
+agents are now the **last** resort: a club only pursues one when a position is
+genuinely short-handed (two or more bodies missing). Measured over a long save,
+arrivals dropped from 9-11 a season to **5-6**, which is ordinary football.
+
+The other half of that fix was structural: `transfers.youthIntake` was still
+running alongside the academy, so every club received *two* separate batches of
+teenagers every summer without either pipeline knowing about the other. The
+academy is now the only youth pipeline.
 
 ## The academy
 

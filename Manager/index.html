@@ -292,34 +292,34 @@
   .pcard.in-xi { border-color: var(--accent); }
   .pcard.mentored { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(0,208,108,.4) inset; }
   .pcard.listed { border-color: var(--bad); box-shadow: 0 0 0 1px rgba(255,107,122,.4) inset; }
+  /* Four families, four colours — reverted from an eight-shade scheme that
+     added clutter without adding information. The position letters are what
+     tell FB from CB now, and .ppos is boxed clearly enough to carry that on
+     its own (a real border, not just a colour wash). */
   .prating { width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;
     border-radius: 11px; color: #fff; font-size: 18px; font-weight: 900; flex-shrink: 0; }
   .prating.attack { background: #f04452; }
   .prating.defence { background: #347df1; }
   .prating.midfield { background: #10c986; }
   .prating.keeper { background: #f5c542; color: #221600; }
-  /* Shades within a line: a full-back is a lighter blue than a centre-half,
-     a winger a warmer red than a forward, a holder a deeper green. */
-  .prating.defence.wide { background: #4f9bf5; }
-  .prating.attack.wide { background: #ff6b48; }
-  .prating.attack.advanced { background: #f0567f; }
-  .prating.midfield.deep { background: #0a9e73; }
   .pbody { min-width: 0; }
   .pname { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pmeta { font-size: 12px; color: var(--muted); margin-top: 1px; }
-  .ppos { display: inline-block; font-size: 10px; font-weight: 900; border-radius: 5px; padding: 2px 7px; margin-right: 6px; }
-  .ppos.attack { color: #ff777f; background: rgba(255,70,85,.16); }
-  .ppos.defence { color: #70a7ff; background: rgba(52,125,241,.18); }
-  .ppos.midfield { color: #4de0b4; background: rgba(16,201,134,.16); }
-  .ppos.keeper { color: #f5c542; background: rgba(245,197,66,.18); }
-  .ppos.defence.wide { color: #9cc6ff; background: rgba(79,155,245,.18); }
-  .ppos.attack.wide { color: #ff9a70; background: rgba(255,107,72,.18); }
-  .ppos.attack.advanced { color: #ff8fae; background: rgba(240,86,127,.18); }
-  .ppos.midfield.deep { color: #2fc39a; background: rgba(10,158,115,.18); }
+  .ppos { display: inline-block; font-size: 10px; font-weight: 900; letter-spacing: .5px; border-radius: 5px;
+    padding: 2px 7px; margin-right: 6px; border: 1px solid; }
+  .ppos.attack { color: #ff8790; background: rgba(255,70,85,.14); border-color: rgba(255,70,85,.55); }
+  .ppos.defence { color: #7fb2ff; background: rgba(52,125,241,.16); border-color: rgba(52,125,241,.55); }
+  .ppos.midfield { color: #4de0b4; background: rgba(16,201,134,.14); border-color: rgba(16,201,134,.55); }
+  .ppos.keeper { color: #f5c542; background: rgba(245,197,66,.16); border-color: rgba(245,197,66,.55); }
   .pattrs { display: grid; grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: 5px; margin-top: 8px; font-size: 11px; }
   .pattr { display: flex; flex-direction: column; gap: 1px; background: rgba(255,255,255,.045); padding: 4px 6px; border-radius: 6px; color: var(--muted); min-width: 0; }
   .pattr b { color: var(--txt); font-weight: 800; }
   .pactions { display: flex; flex-direction: column; gap: 5px; flex-shrink: 0; }
+  /* Four actions (list/mentor/extend/release) in a 2x2 grid rather than a
+     four-tall stack — the contracts tab merged into the squad card, and a
+     stack of four buttons made every row nearly as tall as the card itself. */
+  .pactions.quad { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; width: 118px; }
+  .pactions.quad .pbtn { padding: 5px 4px; }
   .pbtn { font-size: 10px; font-weight: 800; letter-spacing: .5px; border: 1px solid var(--line); background: transparent;
     color: var(--muted); border-radius: 6px; padding: 4px 8px; cursor: pointer; white-space: nowrap; font-family: inherit; }
   .pbtn:hover { border-color: var(--accent2); color: var(--txt); }
@@ -367,6 +367,19 @@
     .mrow span:last-child { display: none; }
     .depth-grid { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); }
   }
+
+  /* ---------- Notifications ---------- */
+  .bell { position: relative; background: transparent; border: 1px solid var(--line); border-radius: 8px;
+    width: 32px; height: 32px; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .bell:hover { border-color: var(--accent2); }
+  .bell-badge { position: absolute; top: -6px; right: -6px; background: var(--bad); color: #2a0006; font-size: 10px;
+    font-weight: 900; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
+  .notif-panel { position: absolute; z-index: 40; top: 100%; margin-top: 6px; left: 0; width: min(360px, 88vw);
+    background: var(--card); border: 1px solid var(--accent2); border-radius: 10px; box-shadow: var(--shadow);
+    padding: 10px; max-height: 60vh; overflow-y: auto; }
+  .notif-wrap { position: relative; }
+  .notif-empty { color: var(--muted); font-size: 12px; padding: 6px 2px; }
+  .notif-panel .log-entry.unseen { background: rgba(56,182,255,.10); border-left-color: var(--accent2); }
 
   /* ---------- The two verdicts: boardroom and supporters ---------- */
   .verdict-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -468,7 +481,13 @@
   <section id="screen-career" class="screen">
     <div class="career-head">
       <div>
-        <div class="career-club" id="career-club">—</div>
+        <div class="row" style="gap:10px;align-items:center">
+          <div class="career-club" id="career-club">—</div>
+          <div class="notif-wrap">
+            <button class="bell" id="notif-bell" title="What's happened at the club">🔔<span class="bell-badge" id="notif-badge" style="display:none">0</span></button>
+            <div id="notif-panel"></div>
+          </div>
+        </div>
         <div class="muted"><span id="career-league"></span> · <span id="career-season"></span></div>
         <div class="muted" id="career-manager" style="font-size:13px"></div>
       </div>
@@ -500,7 +519,6 @@
       <button class="tab on" data-tab="squad">SQUAD</button>
       <button class="tab" data-tab="tactics">TACTICS</button>
       <button class="tab" data-tab="youth">YOUTH</button>
-      <button class="tab" data-tab="contracts">CONTRACTS</button>
       <button class="tab" data-tab="table">TABLE</button>
       <button class="tab" data-tab="career">CAREER</button>
       <button class="tab" data-tab="world">WORLD</button>
