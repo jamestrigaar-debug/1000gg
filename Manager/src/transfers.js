@@ -79,7 +79,13 @@
         if (belowLevel && p.age >= 31) retireChance += 0.25;
         if (retireChance > 0 && rng.chance(retireChance)) {
           p.retired = true;
-          if (p.career.goals >= 150 || p.overall >= 82) {
+          /* Anyone leaving the managed club is reported, not just the famous —
+           * a squad player quietly retiring used to remove him from the squad
+           * with no explanation anywhere. Elsewhere in the world only the
+           * notable retirements are worth a line. */
+          if (club.id === world.playerClubId) {
+            news.push({ type: "retirement", text: `RETIRED — ${p.name} (${p.pos}, ${p.age}) hangs up his boots after ${p.career.seasons} season${p.career.seasons === 1 ? "" : "s"}${p.career.goals ? ` and ${p.career.goals} career goals` : ""}.`, clubId: club.id });
+          } else if (p.career.goals >= 150 || p.overall >= 82) {
             news.push({ type: "retirement", text: `${p.name} retires at ${p.age} after ${p.career.seasons} seasons and ${p.career.goals} career goals.`, clubId: club.id });
           }
           continue;
@@ -363,6 +369,22 @@
             text: `${player.name} (${player.pos}, ${player.age}, ${player.overall}) joins ${buyer.name} from ${seller.name} for £${bestFee}m.`,
             clubId: buyer.id, fee: bestFee,
           });
+        }
+        /* A deal involving the managed club is ALWAYS reported, whatever the fee
+         * — the AI window used to be able to lift a player straight out of the
+         * player's squad and the only evidence was that he was no longer there.
+         * The supporters notice too: losing a good one hurts, signing one lifts
+         * the place. */
+        if (world.playerClubId) {
+          if (seller.id === world.playerClubId) {
+            news.push({ type: "transfer", text: `OUT — ${player.name} (${player.pos}, ${Math.round(player.overall)}) leaves for ${buyer.name} for £${bestFee}m.`, clubId: seller.id });
+            const keyLoss = player.overall >= (seller.level || 60) + 2;
+            MG.clubs.fansReact(seller, keyLoss ? -5 : -1.5, keyLoss ? `${player.name} was sold` : `${player.name} was allowed to leave`);
+          } else if (buyer.id === world.playerClubId) {
+            news.push({ type: "transfer", text: `IN — ${player.name} (${player.pos}, ${player.age}, ${Math.round(player.overall)}) signs from ${seller.name} for £${bestFee}m.`, clubId: buyer.id });
+            const marquee = player.overall >= (buyer.level || 60) + 2;
+            MG.clubs.fansReact(buyer, marquee ? 5 : 1.5, marquee ? `${player.name} was a statement signing` : `${player.name} came in`);
+          }
         }
       }
     }

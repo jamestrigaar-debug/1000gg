@@ -162,6 +162,16 @@
   /* ------------------------------ CREATION -------------------------------- */
   let NEXT_ID = 1;
   function resetIds() { NEXT_ID = 1; }
+  /* Claim the next free id without building a manager. The player's own manager
+   * is drafted BEFORE the world exists, so it is minted from whatever the
+   * counter happened to be — and createWorld() then resets the counter and hands
+   * the same number to the first AI manager it generates. Two managers with one
+   * id meant two clubs pointed at the same man: his seasons and tenure counted
+   * twice (a career on season 10 reporting 20), the manager index resolved to
+   * whichever was registered last, and the carousel crashed the moment one of
+   * them was moved on. The player's manager is re-issued an id from here once
+   * the world is built. */
+  function nextId() { return NEXT_ID++; }
 
   function applyTraitAttrs(attrs, traits) {
     for (const t of traits) {
@@ -457,7 +467,7 @@
   MG.managers = {
     TACTICS, TACTIC_KEYS, TRAITS, TRAIT_KEYS, PERSONALITIES, PERSONALITY_KEYS,
     ARCHETYPES, ARCHETYPE_KEYS,
-    fromArchetype, generate, resetIds, applyTraitAttrs,
+    fromArchetype, generate, resetIds, nextId, applyTraitAttrs,
     tacticalFit, matchModifiers, coachingQuality, youthAppetite, recruitmentPolicy,
     mentorCapacity, recruitCapacity, mentorBoost,
     TACTIC_PARAMS, pressIntensity, deriveShift,

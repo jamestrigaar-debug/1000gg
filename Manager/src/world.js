@@ -519,6 +519,16 @@
           cupRound: cupLabel,
           youthMinutesPct: selection ? selection.youthMinutesPct : 0,
           promoted: false, relegated: false,
+          /* The division the season was actually PLAYED in. Promotion and
+           * relegation move the club before the summary is written, so reading
+           * club.leagueId afterwards had a Championship winner celebrating as
+           * "champions of the Premier League" — the division they were about to
+           * join rather than the one they had just won. */
+          leagueId,
+          // The raw season, carried through for the supporters: they judge how
+          // watchable it was, not just where it finished.
+          played: row.played, won: row.won, drawn: row.drawn, lost: row.lost,
+          gf: row.gf, ga: row.ga, pts: row.pts,
         };
         club._outcome = outcome;
       });
@@ -559,6 +569,15 @@
         const swing = boardReports[club.id].total * 6 + (club.reputation - manager.reputation) * 0.12;
         manager.reputation = clamp(Math.round(manager.reputation + swing), 3, 99);
       }
+    }
+
+    /* The managed club gets a written season summary in its log — the digest
+     * 1000goals ends a season with, so the feed reads as a story rather than a
+     * pile of disconnected lines. Pushed here, once the board has ruled, so it
+     * sits directly beneath the summer that follows it in the newest-first log. */
+    if (world.playerClubId) {
+      const pc = world.clubById(world.playerClubId);
+      if (pc && pc._outcome) writeSeasonSummary(world, pc, boardReports[pc.id]);
     }
 
     /* ---- 6. managers age out, then the carousel ---- */
@@ -675,6 +694,47 @@
     return events;
   }
 
+  /* --------------------------- THE SEASON DIGEST ---------------------------
+   * One block of lines closing off the season for the managed club: how it
+   * finished, who carried it, what the cup did, and what the boardroom and the
+   * stands made of it. The rest of the log is events as they happen; this is
+   * the paragraph that ties them together. */
+  const CUP_WORDS = { none: "did not enter", R1: "went out in the first round", R2: "went out in the second round",
+    R3: "went out in the third round", R4: "went out in the fourth round", R5: "went out in the fifth round",
+    QF: "reached the quarter-final", SF: "reached the semi-final", F: "reached the final", W: "WON THE CUP" };
+
+  function writeSeasonSummary(world, club, report) {
+    const o = club._outcome;
+    const league = MG.clubs.LEAGUES[o.leagueId || club.leagueId];
+    const label = `${world.year}/${String(world.year + 1).slice(2)}`;
+    const ord = (n) => { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+
+    const headline = o.champion ? `CHAMPIONS of the ${league.name}`
+      : o.promoted ? `PROMOTED out of the ${league.name}`
+        : o.relegated ? `RELEGATED from the ${league.name}`
+          : `${ord(o.position)} in the ${league.name}`;
+    world.report(`— ${label} SEASON REVIEW — ${headline}, ${o.pts} points from ${o.played} games (${o.won}W ${o.drawn}D ${o.lost}L, ${o.gf} scored, ${o.ga} conceded).`, "season", club.id);
+
+    // Who actually did it.
+    const scorers = club.squad.slice().filter((p) => p.season.goals > 0).sort((a, b) => b.season.goals - a.season.goals);
+    if (scorers.length) {
+      const top = scorers[0];
+      const rest = scorers.slice(1, 3).map((p) => `${p.name} ${p.season.goals}`).join(", ");
+      world.report(`Top scorer: ${top.name} with ${top.season.goals} in ${top.season.apps} appearances${rest ? ` · then ${rest}` : ""}.`, "season", club.id);
+    }
+    world.report(`Cup: the club ${CUP_WORDS[o.cupRound] || "did not enter"}.`, "season", club.id);
+
+    // The two verdicts that matter, side by side.
+    if (report) {
+      world.report(`The boardroom: "${report.verdict}" — confidence ${report.swing >= 0 ? "+" : ""}${report.swing} to ${Math.round(report.confidence)}/100.`, "season", club.id);
+      const f = report.fans;
+      if (f) {
+        const why = (f.notes || []).concat((f.eventNotes || []).map((n) => n.reason)).slice(0, 3);
+        world.report(`The supporters: ${f.mood.label.toLowerCase()} (${f.score}/100, ${f.swing >= 0 ? "+" : ""}${f.swing})${why.length ? ` — ${why.join("; ")}` : ""}.`, "season", club.id);
+      }
+    }
+  }
+
   /* ----------------------------- THE CAROUSEL ----------------------------- */
   function runCarousel(world) {
     const rng = world.rng;
@@ -685,6 +745,10 @@
       if (!club.managerId) { vacancies.push(club); continue; }
       if (!MG.clubs.wantsSacking(club, rng)) continue;
       const out = removeManager(world, club, "sacked");
+      // A club can point at a manager the index cannot resolve. That should not
+      // happen, but a broken pointer must cost one log line rather than the
+      // whole career, so the vacancy is still opened and the season continues.
+      if (!out) { vacancies.push(club); continue; }
       const report = club.board.report;
       world.report(
         `${club.name} part company with ${out.name} after ${out.record.seasons} season${out.record.seasons === 1 ? "" : "s"} — the board's verdict: ${report ? report.verdict.toLowerCase() : "unacceptable"}.`,

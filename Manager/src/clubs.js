@@ -124,22 +124,22 @@
   const BOARD_STYLES = {
     Balanced: {
       label: "Balanced", blurb: "Expects what the squad deserves and reacts in proportion.",
-      expectationShift: 0, tolerance: 2, reactivity: 1.0, patience: 2, sackFloor: 28, drift: 0.6,
+      expectationShift: 0, tolerance: 2, reactivity: 1.0, patience: 2, sackFloor: 28, drift: 0.6, fanSensitivity: 1.0,
       weights: { league: 0.45, cup: 0.15, finance: 0.20, youth: 0.20 }, backing: 0.5,
     },
     Patient: {
       label: "Patient", blurb: "Backs a project. Judges over years, values the academy.",
-      expectationShift: 2, tolerance: 4, reactivity: 0.6, patience: 4, sackFloor: 16, drift: 0.3,
+      expectationShift: 2, tolerance: 4, reactivity: 0.6, patience: 4, sackFloor: 16, drift: 0.3, fanSensitivity: 0.55,
       weights: { league: 0.30, cup: 0.10, finance: 0.25, youth: 0.35 }, backing: 0.4,
     },
     Chaotic: {
       label: "Chaotic", blurb: "Moves the goalposts. Nobody is ever quite safe.",
-      expectationShift: -1, tolerance: 2, reactivity: 1.25, patience: 2, sackFloor: 34, drift: 3.2,
+      expectationShift: -1, tolerance: 2, reactivity: 1.25, patience: 2, sackFloor: 34, drift: 3.2, fanSensitivity: 1.45,
       weights: { league: 0.40, cup: 0.20, finance: 0.15, youth: 0.25 }, backing: 0.6,
     },
     Aggressive: {
       label: "Aggressive", blurb: "Demands more than the squad deserves, and demands it now.",
-      expectationShift: -1.5, tolerance: 1, reactivity: 1.55, patience: 2, sackFloor: 36, drift: 0.8,
+      expectationShift: -1.5, tolerance: 1, reactivity: 1.55, patience: 2, sackFloor: 36, drift: 0.8, fanSensitivity: 1.25,
       weights: { league: 0.60, cup: 0.20, finance: 0.10, youth: 0.10 }, backing: 0.75,
     },
   };
@@ -202,6 +202,8 @@
       targets: [],          // specific players bid for (advanced/legacy path)
       contractRequests: {}, // { [playerId]: "extend" | "release" } — the board actions these
       boardListed: [],      // player ids the BOARD itself decided to list (fed back to you)
+      fans: clamp(Math.round(52 + rng.gauss() * 7), 30, 78),  // supporters' mood, 0-100
+      fanNotes: [],         // why it moved, quoted back on the end-of-season screen
       /* Levers the decision layer pulls. Everything here is applied by the
        * simulation and then decayed at the end of the season, so a choice made
        * in the summer shapes the campaign that follows it and no more —
@@ -468,6 +470,103 @@
    * come to opposite conclusions. */
   const CUP_ROUND_RANK = { none: 0, R3: 1, R4: 2, R5: 3, QF: 4, SF: 5, F: 6, W: 7 };
 
+  /* ---------------------------- THE SUPPORTERS ----------------------------
+   * A second opinion on the season, and deliberately a different one from the
+   * boardroom's. The board counts the wage bill, the academy and the brief it
+   * set; the stands count where you finished, whether it was worth watching,
+   * and whether you sold the player they loved. Fans are quicker to turn and
+   * slower to forgive, and their mood feeds back into the boardroom — an owner
+   * can wave away a mid-table finish, but not an empty ground and a banner.
+   *
+   * One number, 0-100, sitting around 56 for a contented crowd. It moves from
+   * two places: the season itself (updateFans, once a year) and events as they
+   * happen (fansReact — a sale, a marquee signing, a decision card), so by the
+   * time the board passes judgement the mood already reflects the summer. */
+  const FAN_MOODS = [
+    { at: 84, label: "Adoring", blurb: "They sing your name. You could do no wrong." },
+    { at: 68, label: "Behind you", blurb: "The ground is full and the mood is good." },
+    { at: 50, label: "Patient", blurb: "Watching, waiting, reserving judgement." },
+    { at: 34, label: "Restless", blurb: "Grumbling on the way out. It would not take much." },
+    { at: 18, label: "Turning", blurb: "Boos at the whistle and empty seats after half-time." },
+    { at: 0, label: "Hostile", blurb: "Banners, protests and a boardroom reading the news." },
+  ];
+  function fanMood(score) {
+    for (const m of FAN_MOODS) if (score >= m.at) return m;
+    return FAN_MOODS[FAN_MOODS.length - 1];
+  }
+
+  /** Nudge the supporters from anywhere in the game, with a reason the
+   *  end-of-season screen can quote back. */
+  function fansReact(club, delta, reason) {
+    if (club.fans == null) club.fans = 56;
+    club.fans = clamp(club.fans + delta, 0, 100);
+    if (reason) {
+      club.fanNotes = club.fanNotes || [];
+      club.fanNotes.push({ delta: round1(delta), reason });
+      if (club.fanNotes.length > 10) club.fanNotes.shift();
+    }
+  }
+
+  /** The supporters' verdict on the season just played. */
+  function updateFans(club, result) {
+    if (club.fans == null) club.fans = 56;
+    const before = club.fans;
+    const t = club.board.targets || { position: 10 };
+    const size = result.fieldSize || 20;
+    const notes = [];
+    let delta = 0;
+
+    /* Where you finished, judged emotionally rather than against a brief: the
+     * stands measure you against the top of the table. */
+    const posPct = 1 - (result.position - 1) / Math.max(size - 1, 1);
+    delta += (posPct - 0.5) * 10;
+
+    // And against what they were told to expect, which they do remember.
+    const vsBrief = clamp((t.position - result.position) / 4, -4, 4);
+    delta += vsBrief;
+    if (Math.abs(vsBrief) >= 2.5) notes.push(vsBrief > 0 ? "you beat what the club promised them" : "the season fell short of what was promised");
+
+    /* Entertainment. Goals buy affection almost regardless of results, and a
+     * dour side grates even when it wins — the one thing the crowd rates that
+     * the boardroom never mentions. */
+    const gpg = result.played ? (result.gf || 0) / result.played : 1.35;
+    const fun = clamp((gpg - 1.35) * 5, -3, 4);
+    delta += fun;
+    if (fun >= 2.5) notes.push("the football was worth the ticket");
+    else if (fun <= -2.5) notes.push("it was dull to watch");
+
+    // Headlines outweigh everything else.
+    if (result.champion) { delta += 12; notes.push("champions"); }
+    else if (result.promoted) { delta += 9; notes.push("promotion"); }
+    if (result.relegated) { delta -= 14; notes.push("relegation"); }
+    if (result.cupRound === "W") { delta += 8; notes.push("a cup in the cabinet"); }
+    else if (result.cupRound === "F") { delta += 3; notes.push("a cup final"); }
+    else if (result.cupRound === "R1" || result.cupRound === "R2") { delta -= 2; notes.push("an early cup exit"); }
+
+    // Homegrown players in the side is the other thing a crowd quietly loves.
+    const homegrownPlaying = club.squad.filter((p) => p.homegrown && (p.season.minutesShare || 0) > 0.25).length;
+    if (homegrownPlaying >= 3) { delta += 2; notes.push("their own kids in the team"); }
+
+    /* One season can only move the mood so far. Without this the terms stacked:
+     * a relegation that also missed the brief, bored the ground and went out of
+     * the cup early ran to -40 in a single year, which parked the crowd at
+     * "hostile" permanently and left the boardroom reading a riot every season. */
+    delta = clamp(delta, -16, 16);
+
+    /* Gravity back toward contentment. A crowd stays angry longer than an owner
+     * does, but it does come back — this is what makes a fanbase recoverable
+     * rather than a one-way trip. */
+    delta += (58 - club.fans) * 0.21;
+
+    club.fans = clamp(club.fans + delta, 0, 100);
+    const swing = Math.round(club.fans - before);
+    const mood = fanMood(club.fans);
+    // Event notes from the summer (sales, signings) are quoted then cleared.
+    const eventNotes = (club.fanNotes || []).slice();
+    club.fanNotes = [];
+    return { score: Math.round(club.fans), swing, mood, notes, eventNotes };
+  }
+
   function evaluateSeason(club, result, rng) {
     const cfg = BOARD_STYLES[club.board.style];
     const t = club.board.targets || { position: 10, tolerance: 3, cup: "R4", youthMinutes: 10, wageCeiling: 999 };
@@ -524,13 +623,22 @@
     // A chaotic board sometimes simply decides it does not like you.
     if (club.board.style === "Chaotic") total += rng.between(-0.45, 0.45);
 
+    /* The supporters have their say first, because the boardroom listens to
+     * them. This is the one place the crowd has real teeth: a hostile ground
+     * drags confidence down even after a defensible season, and an adoring one
+     * buys a struggling manager another year. How much it counts is the board's
+     * own temperament — a Patient board tunes the noise out, a Chaotic one
+     * reads the morning papers and panics. */
+    const fansReport = updateFans(club, result);
+    const fanPressure = ((club.fans - 60) / 100) * 18 * cfg.fanSensitivity;
+
     const swing = Math.round(total * 26 * cfg.reactivity);
     // Gravity: confidence sags back toward neutral every season regardless of
     // the verdict. Without it, a few good years bank a manager enough goodwill
     // to sit at 100 for the rest of his life and the top of the game stops
     // turning over at all.
     const gravity = (55 - club.board.confidence) * 0.12;
-    club.board.confidence = clamp(club.board.confidence + swing + gravity, 0, 100);
+    club.board.confidence = clamp(club.board.confidence + swing + gravity + fanPressure, 0, 100);
     club.board.seasonsWithManager++;
     if (club.board.grace > 0) club.board.grace--;
 
@@ -545,6 +653,8 @@
       weights: w,
       total: round1(total),
       swing,
+      fanPressure: Math.round(fanPressure),
+      fans: fansReport,
       confidence: club.board.confidence,
       verdict: verdictFor(total, club.board.style),
     };
@@ -656,5 +766,6 @@
     createBoard, standingIn, setSeasonTargets, describeTargets, evaluateSeason, wantsSacking,
     onManagerAppointed, adjustReputation, CUP_ROUND_RANK, decayModifiers,
     FOCUS, FOCUS_KEYS, focusBonus, focusWeights,
+    FAN_MOODS, fanMood, fansReact, updateFans,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

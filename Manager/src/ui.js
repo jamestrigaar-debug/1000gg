@@ -146,6 +146,11 @@
     show("screen-loading");
     setTimeout(() => {
       state.world = MG.world.createWorld({ seed: state.seed, startYear: 2026 });
+      // The manager was drafted before the world existed, so his id came from a
+      // counter createWorld() has since reset and handed out again. Re-issue it
+      // here, after the AI managers are minted, or he shares an id with one of
+      // them — which double-counted his seasons and broke the carousel.
+      state.manager.id = MG.managers.nextId();
       state.world.managers.push(state.manager);
       state.world.managerIndex[state.manager.id] = state.manager;
       renderOffers();
@@ -205,11 +210,14 @@
     const c = club();
     const ctx = MG.decisions.buildContext(state.world, c, state.manager, state.lastRow);
     const picked = MG.decisions.pick(pool, ctx, state.world.rng, 2, state.recent);
-    state.cards = picked.map((d) => ({ def: d, view: MG.decisions.present(d, ctx), ctx }));
+    state.cards = picked.map((d) => ({ def: d, view: MG.decisions.present(d, ctx, state.world.rng), ctx }));
     state.cardIndex = 0;
     state.outcomes = [];
+    // A longer memory than the old six now that the pools are big enough to
+    // support it — the same dilemma coming back two seasons running was the
+    // most obvious tell that a career was running out of material.
     for (const p of picked) state.recent.push(p.id);
-    while (state.recent.length > 6) state.recent.shift();
+    while (state.recent.length > 14) state.recent.shift();
   }
 
   /* Pre-season now opens with the board's transfer brief — how many to sign,
@@ -380,6 +388,16 @@
     $("board-style").textContent = board.style.toUpperCase();
     $("board-style").className = `board-${board.style.toLowerCase()}`;
     $("board-brief").textContent = board.targets ? board.targets.summary : "";
+
+    // The supporters: the second opinion, and one the board listens to.
+    const fans = Math.round(c.fans == null ? 56 : c.fans);
+    const mood = MG.clubs.fanMood(fans);
+    $("fans-bar").style.width = `${fans}%`;
+    $("fans-bar").className = `conf ${fans >= 55 ? "" : fans >= 35 ? "warn" : "bad"}`;
+    $("fans-value").textContent = fans;
+    $("fans-mood").textContent = mood.label.toUpperCase();
+    $("fans-mood").className = fans >= 55 ? "accent" : fans >= 35 ? "gold" : "bad";
+    $("fans-blurb").textContent = mood.blurb;
 
     $("lastseason").innerHTML = lastSeasonHtml();
     $("stage").innerHTML = stageHtml();
@@ -621,6 +639,10 @@
         : row.relegated ? `📉 RELEGATED. ${c.name} go down.`
           : `${c.name} finish ${ordinal(row.position)} in the ${row.leagueName}.`;
 
+    /* The detail is still here, but it is no longer the headline. Two scores
+     * carry the screen — the boardroom and the stands — and the four metrics
+     * that produced the board's number are one click away for anyone who wants
+     * to know exactly why. */
     const keys = r ? Object.keys(r.metrics) : [];
     const metrics = r ? keys.map((k) => {
       const mt = r.metrics[k];
@@ -635,18 +657,39 @@
     }).join("") : "";
 
     const scorer = c.squad.slice().sort((a, b) => b.season.goals - a.season.goals)[0];
+    const f = r && r.fans;
+    const fansScore = f ? f.score : Math.round(c.fans == null ? 56 : c.fans);
+    const fanWhy = f ? (f.notes || []).concat((f.eventNotes || []).map((n) => n.reason)).slice(0, 3) : [];
+    const confNow = r ? Math.round(r.confidence) : Math.round(c.board.confidence);
+
     return `
       <div class="panel">
         <div class="result-banner ${tone}">${esc(headline)}</div>
         <div class="muted" style="font-size:13px">Cup run: <b>${esc(cupLabel(row.cupRound))}</b>${scorer && scorer.season.goals ? ` · Top scorer: <b class="accent">${esc(scorer.name)}</b> with ${scorer.season.goals}` : ""}</div>
       </div>
       ${r ? `<div class="panel">
-        <div class="stage-step">The boardroom · ${esc(c.board.style)}${c.focus ? ` · focus: ${esc(MG.clubs.FOCUS[c.focus].label)}` : ""}</div>
-        <div class="muted" style="font-size:13px;margin-bottom:8px">The brief was: ${esc(state.lastBrief.summary || "—")}</div>
-        ${metrics}
-        <div class="result-banner ${r.total >= 0.15 ? "great" : r.total <= -0.3 ? "awful" : "ok"}" style="margin-top:12px">
-          ${esc(r.verdict)} — confidence ${r.swing >= 0 ? "+" : ""}${r.swing}, now ${Math.round(r.confidence)}/100
+        <div class="stage-step">The verdict · ${esc(c.board.style)} board${c.focus ? ` · focus: ${esc(MG.clubs.FOCUS[c.focus].label)}` : ""}</div>
+        <div class="muted" style="font-size:13px;margin-bottom:10px">The brief was: ${esc(state.lastBrief.summary || "—")}</div>
+        <div class="verdict-pair">
+          <div class="verdict-card ${r.total >= 0.15 ? "good" : r.total <= -0.3 ? "bad" : ""}">
+            <div class="vc-label">THE BOARDROOM</div>
+            <div class="vc-score">${confNow}<span class="muted" style="font-size:14px">/100</span></div>
+            <div class="vc-swing ${r.swing >= 0 ? "accent" : "bad"}">${r.swing >= 0 ? "+" : ""}${r.swing} this season</div>
+            <div class="vc-verdict">${esc(r.verdict)}</div>
+          </div>
+          <div class="verdict-card ${fansScore >= 60 ? "good" : fansScore <= 38 ? "bad" : ""}">
+            <div class="vc-label">THE SUPPORTERS</div>
+            <div class="vc-score">${fansScore}<span class="muted" style="font-size:14px">/100</span></div>
+            <div class="vc-swing ${f && f.swing >= 0 ? "accent" : "bad"}">${f ? `${f.swing >= 0 ? "+" : ""}${f.swing} this season` : "—"}</div>
+            <div class="vc-verdict">${esc(f ? f.mood.label : MG.clubs.fanMood(fansScore).label)}</div>
+          </div>
         </div>
+        ${fanWhy.length ? `<div class="muted" style="font-size:12px;margin-top:8px">The stands: ${esc(fanWhy.join("; "))}.</div>` : ""}
+        ${r.fanPressure ? `<div class="muted" style="font-size:12px;margin-top:4px">The mood in the ground moved the board's confidence by <b class="${r.fanPressure >= 0 ? "accent" : "bad"}">${r.fanPressure >= 0 ? "+" : ""}${r.fanPressure}</b>.</div>` : ""}
+        <details style="margin-top:10px">
+          <summary class="muted" style="cursor:pointer;font-size:12px">How the board reached that number</summary>
+          <div style="margin-top:8px">${metrics}</div>
+        </details>
       </div>` : ""}
       <button class="btn primary big" id="to-endseason">CONTINUE ▶</button>`;
   }
@@ -1015,18 +1058,30 @@
       <div class="sortbar"><span class="muted">Sort</span>
         ${["rating", "pos", "name"].map((k) => `<button class="btn tiny ${state.chooserSort === k ? "on-mentor" : ""}" data-csort="${k}">${k === "pos" ? "POSITION" : k.toUpperCase()}</button>`).join("")}
       </div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">The big number is the player's <b>rating</b>. <b>IN ROLE</b> is what he is actually worth in this shirt once his position, fitness, morale and form are taken into account.</div>
       <div class="chooser-list">${options.map((p) => {
         const fam = MG.tactics.familiarity(p.pos, slot);
         const inXI = currentIds.indexOf(p.id);
         const pc = posClass(p.pos);
         const famCls = fam >= 0.9 ? "accent" : fam >= 0.7 ? "gold" : "bad";
+        // The coloured number is ALWAYS the player's own rating, exactly as it
+        // reads everywhere else in the game. What changes with the shirt is the
+        // in-role figure beside it, shown with the swing that produced it —
+        // showing the adjusted number in the big slot made two different values
+        // both look like "his rating".
+        const eff = Math.round(MG.tactics.effectiveOverall(p, slot));
+        const delta = eff - Math.round(p.overall);
+        const effCls = delta >= 0 ? "accent" : delta <= -6 ? "bad" : "gold";
         return `<button class="pcard" data-pick="${p.id}" style="cursor:pointer">
-          <div class="prating ${pc}">${Math.round(MG.tactics.effectiveOverall(p, slot))}</div>
+          <div class="prating ${pc}">${Math.round(p.overall)}</div>
           <div class="pbody">
             <div class="pname">${esc(p.name)}${inXI >= 0 && inXI !== slotIndex ? ` <span class="muted" style="font-weight:400;font-size:11px">(now ${esc(formation.slots[inXI])})</span>` : ""}</div>
             <div class="pmeta"><span class="ppos ${pc}">${esc(p.pos)}</span>${p.age}y · <span class="${famCls}">${Math.round(fam * 100)}% suited</span>${p.season.injured > 0 ? ` · <span class="inj">injured</span>` : ""}</div>
           </div>
-          <div class="pactions"><span class="muted" style="font-size:11px">${Math.round(p.overall)} ovr</span></div>
+          <div class="pactions" style="text-align:right">
+            <span class="${effCls}" style="font-weight:800;font-size:15px">${eff}</span>
+            <span class="muted" style="font-size:10px;display:block">IN ROLE ${delta >= 0 ? "+" : ""}${delta}</span>
+          </div>
         </button>`;
       }).join("")}</div>`);
 
