@@ -21,7 +21,7 @@ const SEED = process.argv[3] || "bench";
 
 globalThis.window = globalThis;
 require(path.join(__dirname, "..", "..", "src", "data.js"));
-for (const f of ["rng", "names", "players", "ratings", "international", "tactics", "clubs", "network", "managers", "match",
+for (const f of ["rng", "names", "players", "ratings", "international", "tactics", "clubs", "network", "managers", "match", "narrative",
   "competitions", "transfers", "world", "draft", "decisions", "endings"]) {
   require(path.join(__dirname, "..", "src", `${f}.js`));
 }
