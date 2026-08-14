@@ -298,6 +298,25 @@
   .pbtn.on-mentor { border-color: var(--accent); color: var(--accent); background: rgba(0,208,108,.12); }
   .sortbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; }
   .sortbar .muted { margin-right: 2px; }
+  .log-entry.contract { border-left-color: var(--accent2); }
+
+  /* ---------- The pre-season transfer wizard ---------- */
+  .wizard-block { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 10px 0; }
+  .wizard-block h4 { margin: 0 0 8px; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+  .board-note { background: rgba(56,182,255,.08); border-left: 3px solid var(--accent2); border-radius: 8px;
+    padding: 8px 10px; font-size: 13px; margin: 8px 0; }
+
+  /* ---------- Contracts tab ---------- */
+  .crow { display: flex; align-items: center; gap: 10px; background: var(--bg2); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
+  .crow.extend { border-color: var(--accent); }
+  .crow.release { border-color: var(--bad); }
+  .crow-yrs { min-width: 54px; text-align: center; font-weight: 800; font-size: 18px; }
+  .crow-yrs.soon { color: var(--gold); }
+  .crow-yrs.expiring { color: var(--bad); }
+  .crow-body { flex: 1; min-width: 0; }
+  .crow-body .nm { font-weight: 700; }
+  .crow-actions { display: flex; gap: 6px; }
 
   /* ---------- Legacy ---------- */
   .legacy-title { font-family: Impact, "Arial Black", sans-serif; text-transform: uppercase;
@@ -387,21 +406,26 @@
       </div>
     </div>
 
-    <!-- TIER 1 — the career dashboard -->
-    <div class="tier-label">My career</div>
-    <div class="dash" id="dashboard"></div>
+    <!-- Last season — a compact reminder of where you stand -->
+    <div class="tier-label">Last season</div>
+    <div id="lastseason"></div>
 
-    <!-- TIER 2 — the decision window -->
+    <!-- Decisions — the heart of the game, where almost everything happens -->
     <div class="tier-label">Decisions</div>
     <div id="stage"></div>
 
-    <!-- TIER 3 — management tools, the log and the world -->
-    <div class="tier-label">The club &amp; the world</div>
+    <!-- The log — always open, so you see what the board and the world did -->
+    <div class="tier-label">The log</div>
+    <div id="logfeed"></div>
+
+    <!-- Squad, contracts and the world — preference tools the board acts on -->
+    <div class="tier-label">Squad, contracts &amp; the world</div>
     <div class="tabs">
       <button class="tab on" data-tab="squad">SQUAD</button>
       <button class="tab" data-tab="tactics">TACTICS</button>
+      <button class="tab" data-tab="contracts">CONTRACTS</button>
       <button class="tab" data-tab="table">TABLE</button>
-      <button class="tab" data-tab="log">CLUB LOG</button>
+      <button class="tab" data-tab="career">CAREER</button>
       <button class="tab" data-tab="world">WORLD</button>
     </div>
     <div id="tab-body" class="table-scroll"></div>
