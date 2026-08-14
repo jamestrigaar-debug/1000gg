@@ -77,6 +77,22 @@
   .beta-badge { display: inline-block; background: var(--gold); color: #2a1c00; font-weight: 900;
     padding: 4px 14px; border-radius: 6px; text-transform: uppercase; letter-spacing: 2px; font-size: 11px; margin-left: 8px; }
   .barclays-strip { height: 8px; background: linear-gradient(90deg, var(--accent), var(--accent2), var(--gold)); margin: 16px 0; border-radius: 4px; }
+  /* The shared "Football DNA Simulator" mark — one brand, two games. The
+     frame/banner pairing is the standard gradient-border trick (a gradient
+     background showing through a 2px padding, with a solid card sitting on
+     top) since CSS border-image ignores border-radius in most engines. The
+     PLAYER/MANAGER badge is the only thing that tells the two games apart —
+     everything else about the mark is identical on purpose. */
+  .dna-frame { max-width: 640px; margin: 0 auto; padding: 2px; border-radius: 20px;
+    background: linear-gradient(120deg, var(--accent), var(--gold)); }
+  .dna-banner { border-radius: 18px; background: var(--bg); padding: 22px 20px 20px; }
+  .dna-tags { display: flex; justify-content: center; gap: 8px; margin-bottom: 10px; }
+  .dna-banner h1 { margin: 0; }
+  .dna-sub { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+  .dna-line { flex: 1; height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--accent), var(--gold)); opacity: .65; }
+  .dna-badge { flex-shrink: 0; border: 1px solid var(--gold); border-radius: 8px; padding: 5px 16px;
+    font-weight: 800; letter-spacing: 3px; font-size: 13px; color: var(--accent); white-space: nowrap; }
+  .dna-badge::before, .dna-badge::after { content: "★"; color: var(--gold); margin: 0 7px; }
   .hero .sub { font-size: 16px; color: var(--muted); margin-bottom: 8px; }
   .hero .goal { display: inline-block; margin: 14px 0 20px; padding: 8px 16px; border: 1px solid var(--gold);
     color: var(--gold); border-radius: 30px; font-weight: 700; font-size: 14px; }
@@ -302,6 +318,15 @@
   .prating.defence { background: #347df1; }
   .prating.midfield { background: #10c986; }
   .prating.keeper { background: #f5c542; color: #221600; }
+  /* A quality ring, layered on top of the position colour rather than
+     replacing it — the badge still says WHAT he plays, the ring says HOW
+     GOOD at a glance, which a flat position-coloured number never could:
+     two very different players in the same shirt read identically. Only
+     the two ends stand out (elite / poor) so a 26-man list still reads as
+     mostly quiet — the point is to make outliers jump out, not to ring
+     every card and add the clutter back in from the other direction. */
+  .prating.rtier-elite { box-shadow: 0 0 0 3px var(--gold), 0 0 10px rgba(245,197,66,.55); }
+  .prating.rtier-poor { box-shadow: 0 0 0 3px var(--bad); }
   .pbody { min-width: 0; }
   .pname { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pmeta { font-size: 12px; color: var(--muted); margin-top: 1px; }
@@ -424,9 +449,11 @@
   <!-- ------------------------------ WELCOME ------------------------------ -->
   <section id="screen-welcome" class="screen active">
     <div class="hero">
-      <span class="retro-badge">Simulation Sports</span><span class="beta-badge">Alpha</span>
-      <h1>Football Manager DNA ⚽</h1>
-      <div class="barclays-strip"></div>
+      <div class="dna-frame"><div class="dna-banner">
+        <div class="dna-tags"><span class="retro-badge">Simulation Sports</span><span class="beta-badge">Alpha</span></div>
+        <h1>Football DNA Simulator ⚽</h1>
+        <div class="dna-sub"><span class="dna-line"></span><span class="dna-badge">MANAGER</span><span class="dna-line"></span></div>
+      </div></div>
       <p class="sub">Draft a manager from the DNA of the greats — then take whatever job will have you</p>
       <div class="goal">🎯 SURVIVE YOUR BOARDROOM</div>
       <div class="row" style="justify-content:center">
@@ -436,7 +463,7 @@
       <p class="muted" style="margin-top:10px;font-size:12px">Same seed, same world — 221 clubs, ten divisions, all simulated around you.</p>
 
       <div class="features">
-        <div class="feature"><b>THE DRAFT</b><span>Roll a manager: eight archetypes cut from real managers, your reputation, your nationality. Three rerolls.</span></div>
+        <div class="feature"><b>THE DRAFT</b><span>Five independent rolls — tactic, origin, career, and two separate draws from history's coaching legends — that combine into a manager nothing on the reel quite tells you the value of. Three rerolls.</span></div>
         <div class="feature"><b>THE DECISIONS</b><span>Two cards before the season, two after. Transfers, tactics, the medical room, the dressing room, the board.</span></div>
         <div class="feature"><b>THE BOARDROOM</b><span>Balanced, Patient, Chaotic or Aggressive. It sets your targets and it decides how long you last.</span></div>
       </div>
@@ -444,7 +471,7 @@
       <details class="how-to-play">
         <summary>How to play</summary>
         <ol>
-          <li><strong>Draft your manager.</strong> Three rolls — archetype, reputation, nationality. Reputation decides who will hire you.</li>
+          <li><strong>Draft your manager.</strong> Five rolls — tactic, origin, career, and two separate draws from football's coaching history. What they add up to is never shown; you find out from the job offers.</li>
           <li><strong>Take a job.</strong> Read the boardroom style before you sign. An Aggressive board sacks you in a year.</li>
           <li><strong>Pre-season decisions.</strong> Two cards that shape the season — sign a striker, drill the defence, promise the board the world.</li>
           <li><strong>Simulate the season.</strong> Every division in the world plays out at once.</li>

@@ -17,7 +17,7 @@ season in one pass, and you are shown what that season did to you. The
 simulation is the thing that happens in between.
 
 ```
-draft a manager  ->  take a job  ->  [ brief -> PLAY SEASON -> board report ] ...  ->  sacked
+draft a manager  ->  take a job  ->  meet the club  ->  [ brief -> PLAY SEASON -> board report -> contracts up ] ...  ->  sacked
 ```
 
 ## The simulation, and how it is calibrated
@@ -126,6 +126,17 @@ The boardroom: "Outstanding" — confidence +11 to 76/100.
 The supporters: behind you (70/100, +17) — the football was worth the ticket.
 ```
 
+### Meeting the club
+
+A new job used to open on a formation picker — no club, no squad, no sense of
+what had just been taken on, mechanics before introduction. Taking a job now
+opens on the club itself: its reputation and ratings, the boardroom's style
+and blurb, the season's brief, the five best players already there, and the
+three strongest rivals in the division — before team set-up asks for a single
+decision. Returning for a new season skips straight back to the transfer
+window, but even that now opens on a line of context rather than cold: which
+season it is, and how the last one finished.
+
 ## Contracts
 
 There is no contracts tab: all four levers — **LIST** offers him for sale,
@@ -142,6 +153,14 @@ next to the name. On a phone that fixed-width button block left almost no
 room for the name itself, which is exactly the information a list is for —
 so the list card is name-first now (tap it to open the actions), and the
 buttons live where the rest of a player's detail already lives.
+
+**Contracts up, at the point it actually matters.** Finding out a squad
+player left for nothing used to mean spotting it three windows later, buried
+in the log with everything else that happened that summer. The screen
+between a season ending and the next one beginning now lists everyone with a
+year or less left — anyone already at zero flagged as an outright free
+release if nothing is done — with EXTEND/RELEASE right there, before the
+transfer window opens and the manager's mind is on signings instead.
 
 ## Tactics and the Starting XI
 
@@ -273,28 +292,66 @@ The two are mutually exclusive: you do not develop a player you are selling.
 ## Player profiles
 
 Click any player, anywhere — your squad, a rival's — for a mini-profile: a
-six-axis radar, top and then clockwise **Aerial, Mental, Finishing, Pace,
-Physical, Defense** (Goalkeeping for a keeper), the attribute bars behind it,
-mentality trait, morale, value, wage, contract and career record, plus a
-one-click transfer-list toggle. Each axis is a composite built from the
-attributes that actually make up that quality and stretched around the
-population's midpoint, so three players who all rate 78 overall still look
-like three different footballers rather than three identical hexagons.
+six-axis radar, top and then clockwise **Defending, Physical, Speed,
+Attacking, Aerial, Mental** (Goalkeeping in place of Defending for a keeper),
+the attribute bars behind it, mentality trait, morale, value, wage, contract,
+career record and — once there is one — a **career path** (below). Each axis
+is a composite built from the attributes that actually make up that quality:
 
-**Finishing is position-weighted, the mirror of DEF-ATR.** The database's
-foot ratings are a broad "how good is he with that foot" number — passing,
-dribbling, tricks and shooting folded into one — not a shooting rating on
-their own. Reading it straight for every position produced technically
-excellent centre-backs showing up with finishing to rival a striker, because
-a ball-playing defender's foot rating is genuinely high even though he is
-never asked to shoot. `FINISHING_WEIGHT` discounts the foot component by how
-much of a position's job is actually about getting shots away — heaviest for
-the back line, lighter through midfield, none at all for a forward — while
-composure in front of goal (mentality) stays unweighted. Physical reads
-strength and fitness, the database's own conditioning attributes, rather than
-height, which already has its own job on the Aerial axis — folding it into
-Physical too made every tall player read as "physical" whatever his actual
-strength or stamina said.
+- **Defending** — DEF-ATR (GK-ATR for a keeper), unchanged: position-weighted
+  overall blended with a physical read, so a genuine stopper reads
+  differently from a ball-playing centre-half of the same rating.
+- **Physical** — strength and fitness, the database's own conditioning
+  attributes. Not height, which has its own job on Aerial — folding it in
+  here too made every tall player read as "physical" whatever his actual
+  strength or stamina said.
+- **Speed** — raw speed, on its own. It used to be blended with fitness (on
+  the idea that stamina decides how often a player can use his pace); moved
+  to a single attribute once Physical had a firm claim on fitness, so the two
+  axes stop measuring almost the same thing under different names.
+- **Attacking** — the average of both feet. An earlier version discounted
+  this by position, the DEF-ATR idea run in reverse for defenders and
+  midfielders — it went too far, reading a genuinely composed centre-half's
+  distribution as barely better than a goalkeeper's, and has been reverted.
+- **Aerial** — heading, with height and strength behind it.
+- **Mental** — the mentality rating, on its own axis.
+
+**The stretch is centred on the population, not anchored below it.** The
+axes are visually AMPLIFIED so three players who all rate 78 overall still
+look like three different footballers rather than three identical hexagons —
+but the original version anchored that amplification at a low floor (34) with
+a steep slope, which meant its own break-even point sat at 82.6: almost any
+ordinary attribute (the population itself averages around 55) displayed
+BELOW its true value, mentality worst of all, while a genuinely fast handful
+of players got slammed into the 99 ceiling regardless of how much faster than
+that they actually were. `stretch()` now centres on the population's own
+average (~56) with a gentler slope, so a typical attribute shows roughly
+itself and only real deviation either way produces real movement.
+
+**Mentality was the same bug from the content side.** Every GENERATED
+player's mentality rating was a synthetic number centred on 45 — the real
+2025/26 squads in `../src/data.js` average 66 — so regens read as uniformly
+timid, and their mentality TRAIT (`Composed`, `Mercurial`, and so on) was
+never actually rolled at all: `makePlayer`'s own default, "Balanced", stood
+in for every one of them, though it appears in barely 1% of the real
+database. Both are fixed at the source (`MG.players.rollMentalityRating`/
+`rollMentalityTrait`) rather than papered over on the chart.
+
+**A quality ring on the rating badge.** A flat, position-coloured number made
+two very different players in the same shirt look identical at a glance —
+which is exactly what a manager needs to scan a 26-man squad for. Only the
+two tails light up (a gold ring for a real standout, red for a genuine weak
+link), both measured against the CLUB's own level rather than a flat world
+number, so a National League side's best player rings gold just as readily
+as a Premier League giant's does. Most of a squad still reads plain — the
+point is outliers, not a ring on every card.
+
+**Career path.** Every signing, sale, loan return, board sale and academy
+promotion now records `{club, season, age}` (`MG.players.recordMove`), and
+the profile reads it back as a short timeline once there is more than one
+entry — his very first club is not a career yet. The flat name list
+(`career.clubs`) this replaced was tracked from the start; nothing ever
+actually showed it.
 
 ## How a career ends
 
@@ -698,14 +755,63 @@ one and enrages the other.
 
 **The look** — the palette, type and components are lifted from 1000goals'
 stylesheet (`../index.html`) so the two games read as one family. If the parent
-site retunes its palette, retune `manager/index.html` to match.
+site retunes its palette, retune `manager/index.html` to match. Both welcome
+screens now open on the same mark — a bordered "FOOTBALL DNA SIMULATOR" banner
+(`.dna-frame`/`.dna-banner` — the same gradient-border technique in both
+files) with a **PLAYER** or **MANAGER** badge underneath being the only thing
+that tells the two games apart. One brand, two games.
 
-**The draft** (`src/draft.js`) — three rolls with three rerolls: an archetype
-(one of eight templates modelled on real managers already in the repository's
-data), a reputation tier (which decides who will even talk to you), and a
-nationality. Each roll draws from its own seeded sub-stream, so a reroll
-changes that roll and nothing else — the same trick 1000goals' genesis screen
-uses.
+## The manager draft
+
+Five independent rolls, not one archetype that bundles everything together —
+and, on purpose, close to none of what they add up to is shown while you are
+rolling.
+
+| Roll | What it decides |
+|---|---|
+| **Tactic** | the system he wants to play — Possession, High Press, Route One... |
+| **Origin** | his nationality, and a club in that country he is quietly still attached to |
+| **Career + Age** | how he actually got here — see below |
+| **Personality DNA** | temperament and signature traits, drawn from history |
+| **Attributes DNA** | coaching shape, drawn from the SAME pool, independently |
+
+**Origin** sets his nationality and, through it, two things that never appear
+on the reel: a small reputation and coaching-attribute nudge for a handful of
+nations with a real, disproportionate footballing pedigree (`TOP_NATIONS` —
+England, Spain, Italy, Germany, Portugal, Netherlands, Argentina, Brazil),
+and a **club affiliation** — a real club from his own country, weighted
+toward the ones with actual history — that quietly improves his chances of
+an offer from that specific club (`jobOffers`).
+
+**Career + Age** is a background, not a stat: recently retired
+(`exPlayer`), built from the bottom of the pyramid (`nonLeague`), years
+coaching kids before anyone trusted him with the first team (`academyCoach`),
+someone significant's long-serving assistant (`assistant`), or a reputation
+built somewhere the cameras were not really watching (`foreignImport`). It
+sets his age range, the band his reputation can fall in, a flat nudge to a
+couple of attributes, and his coaching badge. Three times in four, a SECOND
+chapter (a media stint, a spell upstairs, an age-group national job, a
+player-manager spell, or time out of the game entirely) layers on a smaller
+nudge of its own.
+
+**Personality DNA and Attributes DNA** draw from the same ten-name pool of
+history's most influential coaches — Ferguson, Shankly, Cruyff, Sacchi,
+Clough, Paisley, Chapman, Stein, Herrera, Lobanovskyi; two legendary, three
+rare, five common — but the two rolls are INDEPENDENT, so a manager can
+inherit one man's temperament and a completely different man's coaching
+shape. This is the "fuller manager draft" a previous version of this file
+flagged as not built yet.
+
+**Reputation, coaching badge, the exact effect of a club affiliation, and two
+rolls that are hidden entirely** — Manager Traits (managers.js, same
+mechanism the AI carousel already uses) and **Agent Level**, which decides
+how far his reach into the job market actually goes (a well-connected agent
+gets a look at a slightly bigger job than his reputation alone would justify,
+and reads a foreign vacancy as seriously as a domestic one) — are all
+DERIVED once the five rolls are in, never shown as a number on the draft
+screen. Reroll all you like: you still do not see the number underneath. Each
+roll draws from its own seeded sub-stream, so a reroll changes that roll and
+nothing else — the same trick 1000goals' genesis screen uses.
 
 ## Running it
 
@@ -824,9 +930,6 @@ script tags at the bottom of `index.html`.
   than picking from a list. Scouting (above) now covers what you see of a
   *rival club's own players*; a browsable, scouted market is the natural next
   step if the wizard ever grows into one.
-- A **fuller manager draft** — drafting individual traits from several
-  archetypes at once, with hidden influence from the templates you passed over,
-  the way 1000goals blends attributes from donor squads.
 - Foreign leagues are single-tier islands (the database has no second divisions
   for them), so only English clubs move between divisions.
 - A relegated club keeps top-flight wages and can dig a deep hole before its
