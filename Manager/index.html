@@ -299,12 +299,25 @@
   .sortbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; }
   .sortbar .muted { margin-right: 2px; }
   .log-entry.contract { border-left-color: var(--accent2); }
+  .log-entry.season { border-left-color: var(--gold); background: var(--card2); }
+  .log-entry.retirement { border-left-color: var(--muted); }
 
   /* ---------- The pre-season transfer wizard ---------- */
   .wizard-block { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 10px 0; }
   .wizard-block h4 { margin: 0 0 8px; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
   .board-note { background: rgba(56,182,255,.08); border-left: 3px solid var(--accent2); border-radius: 8px;
     padding: 8px 10px; font-size: 13px; margin: 8px 0; }
+
+  /* ---------- The two verdicts: boardroom and supporters ---------- */
+  .verdict-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 560px) { .verdict-pair { grid-template-columns: 1fr; } }
+  .verdict-card { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; text-align: center; }
+  .verdict-card.good { border-color: var(--accent); }
+  .verdict-card.bad { border-color: var(--bad); }
+  .vc-label { font-size: 10px; letter-spacing: 2px; color: var(--muted); margin-bottom: 6px; }
+  .vc-score { font-size: 34px; font-weight: 900; line-height: 1; }
+  .vc-swing { font-size: 12px; font-weight: 700; margin-top: 4px; }
+  .vc-verdict { font-size: 13px; font-weight: 700; margin-top: 6px; }
 
   /* ---------- Contracts tab ---------- */
   .crow { display: flex; align-items: center; gap: 10px; background: var(--bg2); border: 1px solid var(--line);
@@ -403,6 +416,9 @@
         <div class="conf-top"><span>Board confidence</span><span id="board-style">—</span></div>
         <div class="conf-track"><i class="conf" id="confidence-bar" style="width:60%"></i></div>
         <div class="muted" style="font-size:12px;margin-top:4px"><span id="confidence-value">60</span>/100 · <span id="board-brief"></span></div>
+        <div class="conf-top" style="margin-top:10px"><span>The supporters</span><span id="fans-mood">—</span></div>
+        <div class="conf-track"><i class="conf" id="fans-bar" style="width:56%"></i></div>
+        <div class="muted" style="font-size:12px;margin-top:4px"><span id="fans-value">56</span>/100 · <span id="fans-blurb"></span></div>
       </div>
     </div>
 

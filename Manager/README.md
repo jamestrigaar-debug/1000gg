@@ -91,18 +91,43 @@ Implemented in the published direction.
 
 ## The page
 
-Three tiers, top to bottom:
+Top to bottom, built so that almost everything the player does runs through
+one panel:
 
-1. **My Career** — career totals (seasons, titles, cups, promotions, win rate,
-   reputation) alongside last season's results: position, W/D/L, goals for and
-   against, cup run and the board's verdict.
-2. **Decisions** — the window everything happens in: team set-up, pre-season
-   cards, PLAY SEASON, the result and board report, end-of-season cards, and
-   career endings.
-3. **The club & the world** — squad (with per-player transfer-list and
-   mentoring toggles), tactics and recruitment, the table, the club log
-   (your own actions) and the world tab (the global feed and a browser for
-   every league, club and manager).
+1. **Last season** — a compact glance: finish, points, W/D/L, cup, verdict.
+2. **Decisions** — the heart of the game. Team set-up, the pre-season transfer
+   window, the cards, PLAY SEASON, the result and the two verdicts, the
+   end-of-season cards, and career endings.
+3. **The log** — always open, directly beneath the decisions. The board reports
+   back here: what it signed, what it *tried and could not*, who renewed, who
+   retired, who was sold. Each season closes with a written **season review**.
+4. **Tabs** — SQUAD (transfer-list and mentoring toggles), TACTICS, CONTRACTS,
+   TABLE, CAREER (the full season-by-season record) and WORLD.
+
+### The log
+
+The feed is the game's memory, so nothing at your club happens silently. A
+player leaving used to just be gone — the AI window could lift him out of your
+squad and the only evidence was an empty shirt. Now every arrival, departure,
+retirement, renewal and release at your club is reported, whatever the fee, and
+each season ends with a digest:
+
+```
+— 2026/27 SEASON REVIEW — CHAMPIONS of the Premier League, 100 points from
+  38 games (29W 13D 4L, 87 scored, 34 conceded).
+Top scorer: Maximilian Brandt with 26 in 28 appearances · then Lewis Walcott 17.
+Cup: the club reached the semi-final.
+The boardroom: "Outstanding" — confidence +11 to 76/100.
+The supporters: behind you (70/100, +17) — the football was worth the ticket.
+```
+
+## Contracts
+
+Every player by years remaining, shortest first. **EXTEND** asks the board to
+tie a player down; **RELEASE** lets his deal run down. The board still decides —
+it backs a renewal unless the club is in genuine financial crisis, since keeping
+a player you already have is cheap next to signing one — and it reports what it
+actually did in the log each summer.
 
 ## Tactics and the Starting XI
 
@@ -208,10 +233,25 @@ Every season is bookended by decisions. Two cards before it, two after.
 [ PRE-SEASON x2 ] -> PLAY SEASON -> [ RESULT + BOARD REPORT ] -> [ END-OF-SEASON x2 ] -> repeat
 ```
 
-25 cards across nine categories — **tactics, transfers, medical, boardroom,
-dressing room, media, youth, finance** — drawn by weight against hard
-requirement gates (a card about selling your star only appears if you have one
-worth selling) with no repeats inside a set or across recent seasons.
+**53 cards** across ten categories — **tactics, transfers, medical, boardroom,
+dressing room, media, youth, finance, supporters** — drawn by weight against
+hard requirement gates (a card about selling your star only appears if you have
+one worth selling) with no repeats inside a set or across recent seasons.
+
+**Every save should play differently**, so three things fight repetition:
+
+- **Jittered weights.** The draw multiplies each weight by 0.65–1.35, so the
+  same situation does not always surface the same two cards. Previously the
+  heaviest eligible pair won every time and two careers that hit the same
+  circumstances played out identically.
+- **Text variants.** A card can carry several ways of putting the same
+  situation; one is chosen per draw, so a card you have seen before does not
+  open with a sentence you can recite.
+- **A longer memory.** Fourteen cards, not six, before one can come back.
+
+Measured over six independent careers (`tests/decisions.js`): a median of 28
+distinct cards per career, and **two different saves share only 32% of their
+cards**.
 
 **Every effect is real.** Nothing is flavour text with a number bolted on:
 
@@ -286,6 +326,40 @@ discipline, youth development** — weighted by its style. The weighted total
 moves board confidence, and confidence is what sacks you. The same evaluation
 runs for all 221 clubs, which is what makes the AI carousel mean something.
 
+The end-of-season screen leads with **two numbers, not eight**: what the
+boardroom thinks and what the stands think. The four metrics that produced the
+board's figure are one click away for anyone who wants them.
+
+## The supporters
+
+A second constituency with its own opinion, and deliberately a different one
+from the boardroom's. The board counts the wage bill and the academy; the
+stands count where you finished, whether it was worth watching, and whether you
+sold the player they loved.
+
+One score, 0-100, moving from two places: the season itself, and events as they
+happen (a sale, a marquee signing, a decision card), so by the time the board
+passes judgement the mood already reflects the summer. What they rate:
+
+| Fans care about | Board cares about |
+|---|---|
+| where you finished, vs the top of the table | position vs the brief it set |
+| **goals — whether it was watchable** | the wage bill |
+| trophies, promotion, relegation | cup progress vs target |
+| selling their favourites | the balance sheet |
+| homegrown players in the side | under-21 minutes |
+
+**Fans feed back into the boardroom.** A hostile ground drags confidence down
+even after a defensible season; an adoring one buys a struggling manager
+another year. How much it counts is the board's own temperament — a Patient
+board tunes the noise out (×0.55), a Chaotic one reads the papers and panics
+(×1.45). Measured across the world, this adds about 12% more sackings without
+moving the confidence equilibrium, which is the effect wanted: more pressure,
+same balance.
+
+Two moods can pull apart, and that is the point — raising ticket prices pleases
+one and enrages the other.
+
 **The look** — the palette, type and components are lifted from 1000goals'
 stylesheet (`../index.html`) so the two games read as one family. If the parent
 site retunes its palette, retune `manager/index.html` to match.
@@ -305,7 +379,16 @@ node manager/tests/run_world.js            # 20 seasons, seed "alpha"
 node manager/tests/run_world.js 30 my-seed # 30 seasons on your own seed
 node manager/tests/run_world.js 5 alpha -v # also dump the news feed
 node manager/tests/realism.js              # match engine vs real football
+node manager/tests/decisions.js            # every card, every choice, applied
 ```
+
+`tests/decisions.js` exists because `decisions.js` deliberately wraps each card
+in `safe()` so one bad card cannot take a career down. That is right in
+production and a menace in testing — a card whose effect throws is silently
+downgraded to its label and the game carries on looking fine. The harness
+captures those swallowed errors and turns them back into failures, firing all
+609 choices across five scripted situations (champion, mid-table, relegated and
+broke, promoted, and a second-tier side that just missed out).
 
 The test harness builds the world, simulates N seasons with no player and no
 UI, prints tables, champions, the carousel, boardroom behaviour, finances and
@@ -335,6 +418,7 @@ src/endings.js        career endings, the 30-season cap and the legacy screen
 src/ui.js             browser shell logic
 tests/run_world.js    headless multi-season simulation and invariant checks
 tests/realism.js      match-engine output measured against real football
+tests/decisions.js    every decision card and choice applied against a world
 ```
 
 Load order matters (each file registers onto a global `MG` namespace); see the
@@ -366,6 +450,18 @@ script tags at the bottom of `index.html`.
   going down sets a floor/ceiling on the verdict, because a boardroom that
   reacts to a title with "met expectations" because the wage bill was high
   reads as broken, whatever the arithmetic says.
+- **The player's manager is issued his id AFTER the world is built.** He is
+  drafted before `createWorld()` exists to be drafted into, so his id came from
+  a counter that `createWorld()` then reset and handed out again — giving him
+  the same id as the first AI manager generated (Guardiola, as it happened).
+  Two clubs pointed at one man: his seasons and tenure counted twice, so a
+  career on season 10 reported 20, and the carousel crashed the moment either
+  club moved him on. `MG.managers.nextId()` exists for this.
+- **The big coloured number is always the player's own rating.** The slot
+  chooser used to show his *effective* rating there — adjusted for position,
+  fitness, morale and form — while printing his real rating in small text
+  beside it, so two different numbers both looked like "his rating". The
+  adjusted figure is now labelled `IN ROLE` with the swing that produced it.
 - **Every board gives one season of grace**, including in the winter sacking
   window. A career that can end before its first board review is not a career.
 - **Career endings are gated behind 18 seasons and ramp in from there**, so a
