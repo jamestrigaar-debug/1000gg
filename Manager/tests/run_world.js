@@ -20,7 +20,7 @@ const VERBOSE = process.argv.includes("-v");
  * 1000goals). Under node, globalThis stands in for window. */
 globalThis.window = globalThis;
 require(path.join(__dirname, "..", "..", "src", "data.js"));
-for (const f of ["rng", "names", "players", "ratings", "international", "tactics", "clubs", "network", "managers", "match", "narrative", "youth", "competitions", "transfers", "world", "draft", "decisions", "endings"]) {
+for (const f of ["rng", "names", "data_intl", "players", "ratings", "international", "tactics", "clubs", "network", "scouting", "managers", "match", "narrative", "youth", "competitions", "transfers", "world", "draft", "decisions", "endings"]) {
   require(path.join(__dirname, "..", "src", `${f}.js`));
 }
 const MG = globalThis.MG;
