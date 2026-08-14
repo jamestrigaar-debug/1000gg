@@ -169,6 +169,22 @@
     color: var(--txt); text-shadow: 3px 3px 0 #1a4a2e; }
   .hero .sub { font-size: 16px; color: var(--muted); margin-bottom: 8px; }
   .barclays-strip { height: 8px; background: linear-gradient(90deg, var(--accent), var(--accent2), var(--gold)); margin: 16px 0; border-radius: 4px; }
+  /* The shared "Football DNA Simulator" mark — one brand, two games (this
+     one and the manager spin-off). The frame/banner pairing is the standard
+     gradient-border trick (a gradient background showing through a 2px
+     padding, with a solid card on top) since CSS border-image ignores
+     border-radius in most engines. The PLAYER/MANAGER badge is the only
+     thing that tells the two games apart. */
+  .dna-frame { max-width: 640px; margin: 0 auto; padding: 2px; border-radius: 20px;
+    background: linear-gradient(120deg, var(--accent), var(--gold)); }
+  .dna-banner { border-radius: 18px; background: var(--bg); padding: 22px 20px 20px; }
+  .dna-tags { display: flex; justify-content: center; gap: 8px; margin-bottom: 10px; }
+  .dna-banner h1 { margin: 0; }
+  .dna-sub { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+  .dna-line { flex: 1; height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--accent), var(--gold)); opacity: .65; }
+  .dna-badge { flex-shrink: 0; border: 1px solid var(--gold); border-radius: 8px; padding: 5px 16px;
+    font-weight: 800; letter-spacing: 3px; font-size: 13px; color: var(--accent); white-space: nowrap; }
+  .dna-badge::before, .dna-badge::after { content: "★"; color: var(--gold); margin: 0 7px; }
   .retro-badge { display: inline-block; background: var(--accent2);
     color: #04223f; font-weight: 800; padding: 4px 12px; border-radius: 6px;
     text-transform: uppercase; letter-spacing: 1px; font-size: 11px; margin-bottom: 10px; }
@@ -1024,10 +1040,11 @@
   <!-- ================= SCREEN 1: WELCOME ================= -->
   <section id="screen-welcome" class="screen active">
     <div class="hero">
-      <div class="retro-badge">Simulation Sports</div>
-      <div class="beta-badge">BETA</div>
-      <h1>FOOTBALL DNA SIMULATOR ⚽</h1>
-      <div class="barclays-strip"></div>
+      <div class="dna-frame"><div class="dna-banner">
+        <div class="dna-tags"><div class="retro-badge">Simulation Sports</div><div class="beta-badge">BETA</div></div>
+        <h1>FOOTBALL DNA SIMULATOR ⚽</h1>
+        <div class="dna-sub"><span class="dna-line"></span><span class="dna-badge">PLAYER</span><span class="dna-line"></span></div>
+      </div></div>
       <div class="sub">Pick an era and a rating mode — then roll your country, build, and draft attributes from squads</div>
       <div class="goal">🎯 GOAL: 1000 CAREER GOALS</div>
       <div id="continue-box" style="display:none; margin-bottom: 14px;">
