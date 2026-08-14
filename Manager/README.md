@@ -171,6 +171,58 @@ modern club works and how the AI clubs already behave.
 AI managers tag their own players the same way (`player.transferListed`), so
 the pool you browse is the same shop window the computer is shopping in.
 
+### A market, not a queue
+
+The window used to be a single richest-first walk: each club in turn took the
+best player it could afford at the asking price and moved on. Nobody ever
+competed for anybody, so no fee was driven up, the wealthiest club always got
+its first choice, and a window read as a list of unopposed transactions.
+
+Now every club **nominates** its top target, and any player wanted by more than
+one club goes to **auction**. The winner is whoever values him most and pays
+just past what the runner-up would have gone to — so a contested signing
+genuinely costs more than an uncontested one, and being outbid is a thing that
+happens to you. Clubs that lose keep their money and come back for someone else
+next round. Measured across the world, **13–22% of deals are contested**.
+
+A **clearing pass** then lets anyone with money and an unfilled squad sign the
+best player still available, unopposed. This is not decoration: without it the
+market punished the poor twice over — a small club was outbid on every target,
+ran out of rounds and signed nobody, which left the bottom of the Premier
+League on 16 points against a real 26, with one club down to nineteen players.
+The auction decides who gets the players everybody wants; the clearing pass
+decides who gets everybody else.
+
+### The player has a say
+
+A transfer needs three parties to agree and, until now, the player was not one
+of them: any deal two clubs could afford simply happened. A first-choice
+forward at a Champions League club would move to a mid-table side without a
+murmur, because nobody asked him.
+
+He weighs the **step** — the standing of the club coming for him against the
+one he is at — whether he is **actually playing** where he is, and the **money**.
+A fringe player will drop a division to play. A first-choice starter will not,
+however good the offer. Around 30–55 moves a window die because the player says
+no, and when it is your bid, the log tells you so.
+
+### Loans
+
+The answer to a problem the game could not previously solve: a nineteen-year-old
+with a real future, stuck behind two better players, who therefore never played,
+therefore never developed, and was the same player at twenty-three. Development
+runs on **minutes**, so a prospect who cannot get them has to find them
+elsewhere.
+
+Blocked under-21s with headroom are sent to clubs whose level they would walk
+into. A loanee stays his parent club's property, plays and develops at the club
+he is lent to, and comes home in the summer — usually better than he left, and
+the log says by how much. While he is away nobody can sell him: he is not the
+loan club's to trade, and the squad list marks him `ON LOAN` for the club
+borrowing him. Your own loanees get their own **OUT ON LOAN** panel in the squad
+tab, because a player you cannot see is a player you forget you own. About 150
+loans move each summer.
+
 ### The agent network — who you can reach
 
 A club can only sign out of the leagues its agents and channels actually
@@ -330,6 +382,60 @@ The end-of-season screen leads with **two numbers, not eight**: what the
 boardroom thinks and what the stands think. The four metrics that produced the
 board's figure are one click away for anyone who wants them.
 
+## The story of the season
+
+The world was never short of detail; it was short of **testimony**. The match
+engine computes, for every one of five thousand fixtures, how many chances each
+side deserved and whether the result defied them — and then reported a score. A
+player looking at "lost 1-0" had no way to know whether his team was outclassed
+or hit the woodwork four times. `src/narrative.js` says it out loud.
+
+**Match reports.** The managed club's own matches are kept (46 a season, not
+five thousand) and the ones that defined the year are reported with the reason
+they went that way, read off the expected goals the engine already computed:
+
+```
+Beat Venezia 4-1, away — a rout, and even more emphatic than the play deserved.
+Lost 0-5 to Atalanta, away — taken apart.
+Lost 0-1 to Genoa, away — harsh; you had the better of it and lost anyway.
+A run of 8 unbeaten was the backbone of the season.
+```
+
+**Nothing here invents anything.** Every sentence is derived from a number the
+simulation already produced — xG against goals, the upset flag, the derby flag,
+appearances. If the text says the team was wasteful it is because expected goals
+genuinely outran real ones. That rule is what stops it becoming decorative
+flavour text, which is the one thing it must not be.
+
+The margin outranks the underlying numbers, because a sentence must never argue
+with the scoreline printed beside it: reading xG first called a 6-1 win "a smash
+and grab" and a 0-4 defeat "fine margins". A rout is called a rout, and the xG
+only colours how emphatic it was.
+
+**Player ratings.** A season mark out of ten on the scale football actually uses
+— 6.0 unremarkable, 7.0 good, 8+ wins awards — judged against what a player in
+that position is *for*: a striker on goals, a centre-half on what the team
+conceded, so a defender is never punished for not scoring. Measured across the
+world the marks land at a median of 6.1 with a p75 of 6.7.
+
+The mark sits on the player's card, so "why is my star playing poorly?" is
+answered where you look rather than buried in a report. Beside it is his
+**development** since last year (▲2 / ▼1) — the clearest signal that a young
+signing is working out, or that a 33-year-old is going.
+
+## Ageing by position
+
+A goalkeeper at 32 is in his prime; a winger at 32 is finished. The curve used
+to be one shape for everybody, which made every squad age at the same rate and
+quietly removed one of the real judgements in football: when to sell.
+
+| | still improving to | peak ends | decline |
+|---|---|---|---|
+| GK | 27 | 34 | slowest |
+| CB / DM | 25 | 31–32 | slow |
+| CM / FB / FW | 24 | 29–30 | medium |
+| AM / WG | 23 | 28 | steepest |
+
 ## The supporters
 
 A second constituency with its own opinion, and deliberately a different one
@@ -471,8 +577,12 @@ script tags at the bottom of `index.html`.
 
 ## Not built yet
 
-- More decision cards. 25 is enough to play; it is not enough to stop repeating
-  across a thirty-season career.
+- **A winter transfer window.** The market runs once, in the summer. A January
+  window needs the season simulation restructured — every league currently plays
+  its full campaign before the next one starts, so there is no shared mid-season
+  moment for a global window to happen in. Worth doing, not a small change.
+- **Manager rivalries** and a **player/agent voice** (unhappiness at not
+  playing, agents opening contract talks).
 - **Saves.** Nothing persists between page loads.
 - In-season substitutions or match-by-match management — this is deliberately a
   season-at-a-time game, and the XI is picked for a campaign, not a fixture.

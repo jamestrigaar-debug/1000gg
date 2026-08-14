@@ -300,6 +300,21 @@
   .sortbar .muted { margin-right: 2px; }
   .log-entry.contract { border-left-color: var(--accent2); }
   .log-entry.season { border-left-color: var(--gold); background: var(--card2); }
+  .log-entry.match { border-left-color: var(--accent2); }
+  .log-entry.loan { border-left-color: var(--rare); }
+
+  /* ---------- Season marks and development ---------- */
+  .pmark { display: inline-block; font-size: 11px; font-weight: 800; padding: 1px 6px;
+    border-radius: 10px; margin-left: 6px; vertical-align: middle; }
+  .pmark.mark-great { background: rgba(245,224,80,.18); color: var(--gold); }
+  .pmark.mark-good { background: rgba(0,208,108,.16); color: var(--accent); }
+  .pmark.mark-ok { background: rgba(123,155,139,.16); color: var(--muted); }
+  .pmark.mark-poor { background: rgba(255,107,122,.16); color: var(--bad); }
+  .prating { position: relative; }
+  .pgrow { position: absolute; right: -2px; bottom: -6px; font-size: 9px; font-weight: 800;
+    padding: 0 3px; border-radius: 6px; background: var(--bg2); }
+  .pgrow.up { color: var(--accent); }
+  .pgrow.down { color: var(--bad); }
   .log-entry.retirement { border-left-color: var(--muted); }
 
   /* ---------- The pre-season transfer wizard ---------- */
@@ -479,6 +494,7 @@
 <script src="src/network.js"></script>
 <script src="src/managers.js"></script>
 <script src="src/match.js"></script>
+<script src="src/narrative.js"></script>
 <script src="src/competitions.js"></script>
 <script src="src/transfers.js"></script>
 <script src="src/world.js"></script>
