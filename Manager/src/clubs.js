@@ -156,6 +156,58 @@
     });
   }
 
+  /* ----------------------------- OWNERSHIP ---------------------------------
+   * Who is actually behind the cheque book, hidden from the player exactly as
+   * a rival's real bank balance would be. Three tiers:
+   *
+   *   state     a sovereign wealth fund or state-adjacent group. Effectively
+   *             bottomless: it tops up the board's own wealth every season and
+   *             largely insulates the club from a financial death spiral. This
+   *             is the one place the game names real clubs rather than rolling
+   *             for everyone — Manchester City (Abu Dhabi/City Football Group)
+   *             and Newcastle United (the Saudi PIF) are who they are in this
+   *             database, and the entire Saudi Pro League carries the same
+   *             backing for the same reason: it is PIF-funded top to bottom in
+   *             reality, which is exactly why Saudi clubs can buy at a level
+   *             their league's own football does not otherwise justify.
+   *   wealthy   a rich individual or consortium. Real money, a real ceiling —
+   *             this is a Chelsea-Boehly or an Everton-777 situation, not a
+   *             state's. Rolled rarely, unrelated to the club's own size,
+   *             because that is how those takeovers actually happen.
+   *   normal    the common case: the club runs on what it earns, backed only
+   *             as far as an ordinary owner's pocket and appetite allow.
+   *
+   * `injection` scales how much of the board's personal wealth it is willing
+   * to push into the transfer budget beyond the club's own income; `rescue`
+   * scales how far it will cover a losing balance before the crisis mechanics
+   * (see checkFinancialHealth) start to bite. */
+  const OWNER_TYPES = {
+    state:   { label: "State-backed", wealthFloor: [90, 100], injection: 2.6, rescue: 0.92 },
+    wealthy: { label: "Wealthy owner", wealthFloor: [74, 92], injection: 1.5, rescue: 0.55 },
+    normal:  { label: "Self-funded", wealthFloor: [5, 100], injection: 1.0, rescue: 0.15 },
+  };
+  /* The real-world exceptions, matched by exact club name. Everyone else in
+   * the Saudi league inherits "state" from their league; everyone else in the
+   * world rolls the ordinary way. */
+  const STATE_CLUBS = new Set(["Manchester City", "Newcastle United"]);
+  const WEALTHY_CHANCE = 0.05;   // an otherwise ordinary club with a rich benefactor
+
+  /** Decide once, at creation (or on the rare ownership change), who owns the
+   *  club and how deep their pocket really is. */
+  function rollOwnership(rng, club) {
+    let type = "normal";
+    if (STATE_CLUBS.has(club.name) || club.leagueId === "Saudi") type = "state";
+    else if (rng.chance(WEALTHY_CHANCE)) type = "wealthy";
+    const cfg = OWNER_TYPES[type];
+    const [lo, hi] = cfg.wealthFloor;
+    const wealth = type === "normal"
+      // The existing roll: loosely tied to reputation, with the same rare
+      // benefactor spike a normal club can still land.
+      ? clamp(Math.round(club.reputation * 0.6 + (rng.next() > 0.94 ? 45 : rng.next() > 0.75 ? 18 : 0) + rng.gauss() * 12), lo, hi)
+      : clamp(Math.round(rng.between(lo, hi)), lo, hi);
+    return { type, wealth };
+  }
+
   /* ------------------------------- CLUBS ---------------------------------- */
   function createClub(rng, name, raw, opts) {
     const leagueId = leagueIdFor(raw.league);
@@ -300,12 +352,28 @@
 
   /* Budgets are set in the summer, before the transfer window. The board is
    * what decides how much of the club's money the manager is allowed to touch,
-   * which is why the style matters here as much as the balance does. */
+   * which is why the style matters here as much as the balance does — and now
+   * so does who is actually behind the board. */
   function setBudgets(club, rng) {
     const style = BOARD_STYLES[club.board.style];
+    const owner = OWNER_TYPES[club.owner] || OWNER_TYPES.normal;
     const f = club.finances;
     const projected = computeRevenue(club, club.lastPosition, 20, 0);
     const backing = style.backing * (club.board.wealth / 100);
+
+    /* A backed owner's first act every summer is covering part of last
+     * season's hole — this is the representation the brief asked for. A
+     * normal club nurses its own debt; a state or wealthy one has it written
+     * down for them, which is exactly why a Manchester City or a Saudi club
+     * can keep buying through a loss-making season that would sink anyone
+     * else. `rescue` is a fraction, not a full wipe: even a bottomless owner
+     * is bailing out a real number, and the size of it becomes visible in the
+     * club's history as `ownerInjected`. */
+    if (f.balance < 0 && owner.rescue > 0) {
+      const covered = round1(-f.balance * owner.rescue);
+      f.balance = round1(f.balance + covered);
+      f.ownerInjected = round1((f.ownerInjected || 0) + covered);
+    }
 
     // Wage budget: a share of projected revenue, wider for a board that is
     // happy to gamble, tighter for one watching the pennies.
@@ -314,28 +382,99 @@
     // with running costs meant almost every club in the world lost money every
     // season and 176 of 221 ended up in the red.
     const wageShare = clamp(0.54 + backing * 0.18 - (club.board.style === "Patient" ? 0.05 : 0), 0.44, 0.74);
-    f.wageBudget = round1(projected * wageShare);
+    // Exactly 1.0 for a normal owner — unchanged from the original calibration
+    // — and only lifted for a backed one, so introducing ownership does not
+    // quietly shift the wage economics for the 200-odd clubs it does not apply to.
+    const wageMult = owner.injection > 1 ? 1 + (owner.injection - 1) * 0.06 : 1;
+    f.wageBudget = round1(projected * wageShare * wageMult);
 
     // Transfer budget: whatever the club can afford from its balance, plus a
-    // slice of revenue, plus whatever the owner feels like putting in.
+    // slice of revenue, plus whatever the owner feels like putting in — the
+    // owner's own multiplier scales the two discretionary terms, not the
+    // baseline the club earned itself.
     const fromBalance = Math.max(0, f.balance) * (0.25 + backing * 0.45);
-    const fromRevenue = projected * (0.10 + backing * 0.22);
-    const injection = club.board.wealth > 70 ? projected * backing * 0.35 : 0;
+    const fromRevenue = projected * (0.10 + backing * 0.22) * owner.injection;
+    const injection = club.board.wealth > 70 ? projected * backing * 0.35 * owner.injection : 0;
     let budget = fromBalance + fromRevenue + injection;
     if (club.board.style === "Chaotic") budget *= rng.between(0.45, 1.8);
     // Hard ceiling: what is in the bank plus a slice of next season's income.
     // Without it a club with an ambitious board spent a fraction of its revenue
     // every single summer whether it had the money or not, and twenty seasons
-    // later Al Hilal were £1.8bn in the red and still buying.
-    budget = Math.min(budget, Math.max(0, f.balance) + projected * 0.2);
-    if (f.balance < 0) budget = 0;                        // in the red: sell before you buy
+    // later a mid-table club was billions in the red and still buying.
+    budget = Math.min(budget, Math.max(0, f.balance) + projected * 0.2 * owner.injection);
+    // Still in the red after the owner's cover: a normal club sells before it
+    // buys, same as always. A backed owner keeps some power in reserve rather
+    // than zeroing it outright — the whole point of being backed.
+    if (f.balance < 0) budget = club.owner === "normal" ? 0 : budget * 0.5;
     f.transferBudget = round1(Math.max(0, budget));
     // A club this far under water has to raise money, and the only asset it
-    // has is its players. buildListings reads this.
+    // has is its players. buildListings reads this. A backed owner's rescue
+    // keeps this out of reach for anyone but a normal club in real trouble.
     club.mustSell = f.balance < -projected * 0.35;
     f.spent = 0;
     f.received = 0;
     return f;
+  }
+
+  /* ------------------------- FINANCIAL CRISIS ------------------------------
+   * A season or two in the red is ordinary football. Two seasons running deep
+   * in debt is not, and in the real game that is when a league steps in. This
+   * is the death spiral the brief asked for: a points deduction the following
+   * season costs a worse finish, a worse finish costs merit money, and the
+   * hole gets deeper — while a backed club's owner keeps covering the balance
+   * in setBudgets and rarely gets anywhere near this threshold at all. */
+  const CRISIS_DEBT_SHARE = 0.55;      // balance below -(revenue * this) counts as deep trouble
+  const DEDUCTION_AFTER = 2;           // consecutive deep seasons before the axe falls
+  const POINTS_DEDUCTIONS = [6, 9, 12];
+
+  /** Call once per club, right after settleFinances. Returns the points
+   *  deduction just imposed (0 if none), which the league table applies at
+   *  kick-off next season. */
+  function checkFinancialHealth(club) {
+    const f = club.finances;
+    const deep = f.revenue > 0 && f.balance < -f.revenue * CRISIS_DEBT_SHARE;
+    club.board.crisisStreak = deep ? (club.board.crisisStreak || 0) + 1 : 0;
+    if (club.board.crisisStreak < DEDUCTION_AFTER) return 0;
+
+    club.board.deductionCount = (club.board.deductionCount || 0) + 1;
+    const amount = POINTS_DEDUCTIONS[clamp(club.board.deductionCount - 1, 0, POINTS_DEDUCTIONS.length - 1)];
+    club.pendingPointsDeduction = amount;
+    club.board.crisisStreak = 0;   // the axe falling resets the clock, not the debt
+    return amount;
+  }
+
+  /* --------------------------- BOARDROOM CHANGE ----------------------------
+   * Ownership rarely changes hands — about one or two clubs in 221 a season —
+   * but when it does, everything about the boardroom the player cannot see
+   * resets: the personal wealth behind it, the temperament, and (as a real
+   * takeover usually does) a chunk of historic debt written off with the old
+   * regime. The real-world exceptions are permanent: Manchester City,
+   * Newcastle United and the Saudi league do not roll over to something else,
+   * because that state backing is not a fact this game invents per save. */
+  const BOARDROOM_CHANGE_CHANCE = 0.005;
+
+  /** Returns a description of what changed, or null if nothing did. */
+  function rollBoardroomChange(rng, club) {
+    if (!rng.chance(BOARDROOM_CHANGE_CHANCE)) return null;
+    if (STATE_CLUBS.has(club.name) || club.leagueId === "Saudi") return null;
+    const oldStyle = club.board.style, oldOwner = club.owner;
+    const owner = rollOwnership(rng, club);
+    club.owner = owner.type;
+    club.board.style = rollBoardStyle(rng, club.reputation);
+    club.board.wealth = owner.wealth;
+    // A clean slate: the new regime steadies the ship rather than inheriting
+    // a crisis it did not create, and pays down the historic debt the way a
+    // real takeover almost always does.
+    club.board.confidence = clamp(Math.round((club.board.confidence + 55) / 2), 40, 70);
+    club.board.crisisStreak = 0;
+    club.board.deductionCount = 0;
+    if (club.finances.balance < 0) club.finances.balance = 0;
+    const changed = oldOwner !== owner.type || oldStyle !== club.board.style;
+    if (!changed) return null;
+    return {
+      club: club.name, from: { style: oldStyle, owner: oldOwner },
+      to: { style: club.board.style, owner: owner.type },
+    };
   }
 
   /* Everything that is not a player's wage: coaching and academy staff, the
@@ -384,15 +523,11 @@
   function createBoard(rng, club) {
     const style = rollBoardStyle(rng, club.reputation);
     const cfg = BOARD_STYLES[style];
-    // Wealth is the owner's pocket, only loosely tied to the club's size — a
-    // rich owner at a small club is one of the ways the world reshuffles.
-    const wealthRoll = rng.next();
-    const wealth = clamp(Math.round(
-      club.reputation * 0.6 + (wealthRoll > 0.94 ? 45 : wealthRoll > 0.75 ? 18 : 0) + rng.gauss() * 12
-    ), 5, 100);
+    const owner = rollOwnership(rng, club);
+    club.owner = owner.type;   // surfaced on the club, not just the board
     return {
       style,
-      wealth,
+      wealth: owner.wealth,
       confidence: rng.int(55, 75),
       // Set each summer in setSeasonTargets.
       targets: null,
@@ -401,6 +536,9 @@
       seasonsWithManager: 0,
       grace: cfg.patience,
       history: [],
+      // How many seasons running the club has been in genuine financial
+      // trouble — see checkFinancialHealth. Resets the moment it recovers.
+      crisisStreak: 0,
     };
   }
 
@@ -775,5 +913,8 @@
     onManagerAppointed, adjustReputation, CUP_ROUND_RANK, decayModifiers,
     FOCUS, FOCUS_KEYS, focusBonus, focusWeights,
     FAN_MOODS, fanMood, fansReact, updateFans,
+    OWNER_TYPES, STATE_CLUBS, rollOwnership,
+    checkFinancialHealth, CRISIS_DEBT_SHARE, DEDUCTION_AFTER, POINTS_DEDUCTIONS,
+    rollBoardroomChange, BOARDROOM_CHANGE_CHANCE,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

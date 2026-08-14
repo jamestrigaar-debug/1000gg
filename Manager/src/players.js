@@ -207,6 +207,30 @@
     return clamp(1 - (player.season.injured || 0), 0, 1);
   }
 
+  /* ------------------------------ DURABILITY -------------------------------
+   * A visible fitness read, built only from what a manager could actually
+   * know — the fitness attribute and age — never the hidden injury-proneness
+   * roll that decides the real outcome. This is deliberately not a squad-
+   * selection mechanic: the game simulates a whole season in one pass rather
+   * than match by match, so there is no matchday squad to drop a tired player
+   * from. What it gives instead is the same information in the form a manager
+   * actually uses it — "how many games in a row can I lean on him" — as a
+   * single number and a short, honest projection.
+   *
+   * A player 30 or over loses durability 15% faster per year past 29, which is
+   * the age penalty asked for, applied to the SCORE rather than invented as a
+   * separate day-count the game has no way to honour. */
+  function durability(player) {
+    const fit = player.attrs.fitness || 60;
+    const ageOver = Math.max(0, player.age - 29);
+    const agePenalty = 1 - Math.min(0.6, ageOver * 0.15);
+    const score = clamp(Math.round(((fit - 35) / 60) * 100 * agePenalty), 5, 99);
+    // "Games survived" out of a five-match run at full intensity before he
+    // would be expected to drop below three-quarters effectiveness.
+    const gamesSurvived = clamp(Math.round(score / 20), 0, 5);
+    return { score, gamesSurvived };
+  }
+
   /* --------------------------- VALUE & WAGES ------------------------------ */
   /* Keyed by league ID — the value clubs.leagueId actually holds. It was
    * originally keyed by the four Premier League prestige bands from
@@ -434,7 +458,7 @@
     firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta,
     AGE_CURVE, ageCurve,
     marketValue, expectedWage, ageValueFactor, LEAGUE_WAGE_FACTOR,
-    makePlayer, fromDatabase, generate, resetIds, rollInjury, availability,
+    makePlayer, fromDatabase, generate, resetIds, rollInjury, availability, durability,
     unitRating, keeperRating, squadRatings, squadNeeds, weakestUnit,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

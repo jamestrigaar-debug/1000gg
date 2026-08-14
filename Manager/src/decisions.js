@@ -99,6 +99,22 @@
       // The supporters, so cards can be written about the mood in the ground.
       fans: Math.round(club.fans == null ? 56 : club.fans),
       fanMood: MG.clubs.fanMood(club.fans == null ? 56 : club.fans).label,
+
+      /* The academy's own shortlist — up to two NAMED prospects the coaches
+       * think are ready, not a vague "some youngsters are coming through".
+       * The YOUTH tab lets you promote anyone at any time; this is the same
+       * decision surfacing on its own, the way a real coaching report would
+       * land on a manager's desk, so it is not something you only see if you
+       * remember to go looking for it. */
+      academyReady: (() => {
+        if (!MG.youth) return [];
+        const academy = MG.youth.ensure(club);
+        const level = club.level != null ? club.level : 55;
+        return academy.players
+          .filter((p) => p.overall >= level - 10 || p.potential >= level + 2)
+          .sort((a, b) => (b.potential - b.overall) - (a.potential - a.overall))
+          .slice(0, 2);
+      })(),
     };
   }
 
@@ -377,6 +393,32 @@
         { label: "Not this year — results first", detail: "Seniors only.",
           fx: (api) => { api.youth(-0.04); api.form(1); api.confidence(-2); return `The academy can wait. The board note the youth column will read badly.`; } },
       ],
+    },
+    {
+      id: "pre_academy_promote", category: "YOUTH", weight: 9, req: (c) => c.academyReady && c.academyReady.length > 0,
+      text: (c) => {
+        const names = c.academyReady.map((p) => `${p.name} (${p.pos}, ${p.age})`).join(" and ");
+        return c.academyReady.length > 1
+          ? `The academy coaches bring you a shortlist: ${names}. Either is ready for a first-team squad number, they say.`
+          : `The academy coaches want a decision on ${names}. He has trained with the seniors all pre-season and, in their words, has nothing left to prove down there.`;
+      },
+      choices: (c) => {
+        const opts = c.academyReady.map((p) => ({
+          label: `Promote ${p.name}`,
+          detail: `${p.pos}, ${p.age} · coaches see him reaching ${p.scouted ? `${p.scouted.floor}–${p.scouted.ceiling}` : Math.round(p.potential)}`,
+          fx: (api) => {
+            const promoted = MG.youth.promote(api.club, p.id);
+            if (!promoted) return `${p.name} was moved up before this conversation even finished. Already done.`;
+            api.confidence(1); api.youth(0.05);
+            return `${promoted.name} (${promoted.pos}, ${promoted.age}) is promoted to the first-team squad — the academy staff call it his time.`;
+          },
+        }));
+        opts.push({
+          label: "Leave them in the academy", detail: "Another year of academy football rather than the first-team squad.",
+          fx: () => `You tell the coaches to be patient. Whoever it was stays in the academy a while longer.`,
+        });
+        return opts;
+      },
     },
     {
       id: "pre_facilities", category: "YOUTH", weight: 5, req: (c) => c.budget >= 10,

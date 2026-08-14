@@ -63,7 +63,18 @@
     const single = clubs.length > 24;
 
     const table = {};
-    for (const c of clubs) table[c.id] = newRow(c);
+    for (const c of clubs) {
+      const row = newRow(c);
+      // A points deduction imposed for financial trouble lands at kick-off,
+      // before a ball is played, exactly like the real EFL sanction it is
+      // modelled on — see clubs.checkFinancialHealth.
+      if (c.pendingPointsDeduction) {
+        row.deduction = c.pendingPointsDeduction;
+        row.pts -= row.deduction;
+        c.pendingPointsDeduction = 0;
+      }
+      table[c.id] = row;
+    }
 
     const fixtures = buildFixtures(rng, clubs, single);
     const halfway = Math.floor(fixtures.length / 2);

@@ -344,8 +344,12 @@
       else manager.record.lost++;
     };
 
+    // A stable, ever-increasing id on every entry — what the notification
+    // system uses to know which lines the manager has already seen, since
+    // array position shifts every time the 4000-entry buffer trims.
+    let _newsSeq = 0;
     world.report = (text, type, clubId) => {
-      world.news.push({ season: world.season, year: world.year, type: type || "news", text, clubId: clubId || null });
+      world.news.push({ id: ++_newsSeq, season: world.season, year: world.year, type: type || "news", text, clubId: clubId || null });
       if (world.news.length > 4000) world.news.splice(0, world.news.length - 4000);
       return text;
     };
@@ -548,6 +552,14 @@
         const cupLabel = cupExits[club.id] || "none";
         const prize = (MG.competitions.CUP_PRIZE[cupLabel] || 0) + (euroPrize[club.id] || 0);
         MG.clubs.settleFinances(club, row.position, res.fieldSize, prize);
+        // Two seasons of deep debt costs the NEXT season points at kick-off —
+        // checked right after the money is booked, so it reads this season's
+        // real result rather than a stale one.
+        const deduction = MG.clubs.checkFinancialHealth(club);
+        if (deduction) {
+          const text = `FINANCIAL CRISIS — sustained losses cost ${club.name} a ${deduction}-point deduction next season.`;
+          if (club.id === world.playerClubId || club.reputation >= 55) world.report(text, "sack", club.id);
+        }
         club.lastPosition = row.position;
         const selection = world.selection(club.id);
         const outcome = {
@@ -566,6 +578,9 @@
           leagueId,
           // The European campaign, if there was one.
           europe: euroRuns[club.id] || null,
+          // Points already lost to a deduction imposed at kick-off, if any —
+          // see clubs.checkFinancialHealth from last season.
+          deduction: row.deduction || 0,
           // The raw season, carried through for the supporters: they judge how
           // watchable it was, not just where it finished.
           played: row.played, won: row.won, drawn: row.drawn, lost: row.lost,
@@ -645,6 +660,21 @@
     const loanReturns = MG.transfers.returnLoans(world);
     const { news: retireNews, freeAgents } = MG.transfers.retirementsAndExpiries(world);
     for (const club of world.clubs) MG.clubs.refreshRatings(club);
+    /* Ownership rarely changes hands — about one or two clubs a season across
+     * the whole world — but it has to happen before budgets are set, since a
+     * takeover is exactly the kind of thing that changes how much a club can
+     * spend the same summer it happens. */
+    for (const club of world.clubs) {
+      const change = MG.clubs.rollBoardroomChange(rng, club);
+      if (!change) continue;
+      const label = MG.clubs.OWNER_TYPES[change.to.owner].label;
+      world.report(
+        change.from.owner !== change.to.owner
+          ? `TAKEOVER — ${club.name} come under new ownership. ${label}, and a ${change.to.style.toLowerCase()} boardroom.`
+          : `BOARDROOM CHANGE — ${club.name}'s board turns over. Still ${label.toLowerCase()}, now a ${change.to.style.toLowerCase()} temperament.`,
+        "hire", club.id);
+      MG.clubs.fansReact(club, change.from.owner !== change.to.owner ? 4 : 0, "new ownership at the club");
+    }
     for (const club of world.clubs) MG.clubs.setBudgets(club, rng);
     /* The managed club's own instructions are executed before the AI window
      * opens — you get first refusal on your own targets, and the world reacts
@@ -667,9 +697,15 @@
     const window = MG.transfers.runWindow(world);
     const freeNews = MG.transfers.signFreeAgents(world, freeAgents) || [];
     const fillerNews = MG.transfers.topUpSquads(world) || [];
-    const youthNews = MG.transfers.youthIntake(world);
-    // The academy year: train, promote or release, then take a new intake.
+    /* The academy year: train, promote or release, then take a new intake.
+     * This is now the ONLY source of academy graduates — transfers.youthIntake
+     * used to run alongside it, quietly adding a second batch of teenagers
+     * straight into every senior squad on top of the academy's own intake and
+     * promotions. Two youth pipelines firing every summer was a real part of
+     * the squad-overhaul problem: a club could gain new academy graduates from
+     * BOTH systems in the same window without either mentioning the other. */
     const academyNews = MG.youth ? MG.youth.runSeason(world) : [];
+    const youthNews = [];
     // Last job of the summer: the blocked prospects go out to find games.
     const loansOut = MG.transfers.runLoans(world);
     for (const club of world.clubs) {
@@ -771,7 +807,8 @@
       : o.promoted ? `PROMOTED out of the ${league.name}`
         : o.relegated ? `RELEGATED from the ${league.name}`
           : `${ord(o.position)} in the ${league.name}`;
-    world.report(`— ${label} SEASON REVIEW — ${headline}, ${o.pts} points from ${o.played} games (${o.won}W ${o.drawn}D ${o.lost}L, ${o.gf} scored, ${o.ga} conceded).`, "season", club.id);
+    const deductionNote = o.deduction ? ` (${o.deduction} deducted for financial breaches — ${o.pts + o.deduction} earned on the pitch)` : "";
+    world.report(`— ${label} SEASON REVIEW — ${headline}, ${o.pts} points from ${o.played} games (${o.won}W ${o.drawn}D ${o.lost}L, ${o.gf} scored, ${o.ga} conceded)${deductionNote}.`, "season", club.id);
 
     // Who actually did it.
     const scorers = club.squad.slice().filter((p) => p.season.goals > 0).sort((a, b) => b.season.goals - a.season.goals);

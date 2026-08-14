@@ -151,8 +151,9 @@
   }
 
   /* ------------------------------ THE RADAR --------------------------------
-   * Six axes chosen so that three players who all rate 78 look like three
-   * different footballers.
+   * Six axes, top and then clockwise: Aerial, Mental, Finishing, Pace,
+   * Physical, Defense (Goalkeeping for a keeper) — chosen so that three
+   * players who all rate 78 look like three different footballers.
    *
    * The old set — pace, physical, aerial, stamina, technique, mentality — read
    * the raw attributes almost directly, and the two that separate a technical
@@ -164,38 +165,76 @@
    * make up that quality, and each stretched around the population's midpoint
    * so real differences are visible rather than crowded into the top third:
    *
+   *   AERIAL      heading with height and strength behind it
+   *   MENTAL      the mentality rating on its own axis — the one place
+   *               temperament gets to stand for itself rather than only
+   *               sharpening finishing
    *   FINISHING   the better foot, sharpened by mentality — the quality that
    *               separates a goalscorer from a good footballer
-   *   CREATIVITY  two-footedness and composure: the playmaker's axis, which a
-   *               one-footed poacher scores badly on however good he is
-   *   AERIAL      heading with height and strength behind it
    *   PACE        speed, with stamina deciding how often he can use it
    *   PHYSICAL    strength and build
-   *   ENDURANCE   fitness, the axis that says who is still running in April
+   *   DEFENSE     DEF-ATR (GK-ATR for a keeper) — see defenceAttribute below
    */
   function stretch(v) {
-    // Pull the 40-95 band a population actually occupies out across the dial.
-    return clamp(Math.round((v - 38) * 1.55), 3, 99);
+    // Pull the population's actual band out across the whole dial, so a
+    // difference of a few points reads as a visibly different shape rather
+    // than two nearly-identical hexagons — the same reason 1000goals stretches
+    // its own card radars rather than plotting raw attributes.
+    return clamp(Math.round((v - 34) * 1.7), 2, 99);
   }
   function radarAxes(player) {
     const a = player.attrs || {};
     const foot = Math.max(a.rightFoot || 0, a.leftFoot || 0);
-    const weakFoot = Math.min(a.rightFoot || 0, a.leftFoot || 0);
     const men = player.mentalityRating || 55;
     const height = a.height || 180;
     return [
-      { label: "Finishing", value: stretch(foot * 0.72 + men * 0.28) },
-      { label: "Creativity", value: stretch(weakFoot * 0.45 + foot * 0.25 + men * 0.30) },
       { label: "Aerial", value: stretch((a.heading || 50) * 0.68 + (a.strength || 50) * 0.14 + clamp((height - 165) * 1.1, 0, 60) * 0.18) },
+      { label: "Mental", value: stretch(men) },
+      { label: "Finishing", value: stretch(foot * 0.72 + men * 0.28) },
       { label: "Pace", value: stretch((a.speed || 50) * 0.82 + (a.fitness || 50) * 0.18) },
       { label: "Physical", value: stretch((a.strength || 50) * 0.74 + clamp((height - 165) * 1.1, 0, 60) * 0.26) },
-      { label: "Endurance", value: stretch((a.fitness || 50) * 0.85 + (a.strength || 50) * 0.15) },
+      { label: player.pos === "GK" ? "Goalkeeping" : "Defense", value: stretch(defenceAttribute(player)) },
     ];
+  }
+
+  /* ------------------------------ DEF-ATR / GK-ATR -------------------------
+   * A second read on a player, distinct from his role rating: how much of his
+   * game is built on winning physical duels rather than on the ball — the
+   * number that separates a ball-playing centre-half from a genuine stopper,
+   * or a winger who tracks back from one who does not.
+   *
+   *   DEF_ATR_WEIGHT   how much a position's game is built on defending —
+   *                    1.0 for a centre-half, 0.7 for a forward
+   *   physical         the average of strength, height (rescaled onto the
+   *                    same 0-99 scale as everything else), heading and
+   *                    fitness — the four attributes that actually win a
+   *                    header or a footrace back
+   *
+   * The requested formula (position-weighted overall PLUS the raw physical
+   * average, capped at 99) saturates at the cap for almost any player above a
+   * modest overall — its own worked example already hits the cap on a single
+   * good centre-midfielder. A stat every good player is capped at is not a
+   * stat that differentiates anyone, which is the entire point of having one.
+   * This blends the two terms instead of summing them, which is what keeps it
+   * spread across the same range `overall` already occupies rather than
+   * pinned to the ceiling.
+   *
+   * Goalkeepers get the same shape rather than a genuinely different
+   * calculation: the database bakes a keeper down to one overall number with
+   * no separate reflexes or handling attribute to reweight, so GK_ATR reads
+   * heading as commanding the box and leans on the same physical blend. */
+  const DEF_ATR_WEIGHT = { GK: 1.0, CB: 1.0, FB: 1.0, DM: 0.9, CM: 0.9, AM: 0.75, WG: 0.7, FW: 0.65 };
+  function heightScore(cm) { return clamp(Math.round(((cm || 180) - 160) * 1.8), 10, 99); }
+  function defenceAttribute(player) {
+    const a = player.attrs || {};
+    const weight = DEF_ATR_WEIGHT[player.pos] != null ? DEF_ATR_WEIGHT[player.pos] : 0.8;
+    const physical = ((a.strength || 50) + heightScore(a.height) + (a.heading || 50) + (a.fitness || 50)) / 4;
+    return clamp(Math.round(player.overall * weight * 0.6 + physical * 0.4), 1, 99);
   }
 
   MG.ratings = {
     ROLE_WEIGHTS, ROLE_INFLUENCE, attrValue, roleRating,
     hidden, resetHidden, rollSeasonForm, fatigueFactor,
-    radarAxes,
+    radarAxes, DEF_ATR_WEIGHT, heightScore, defenceAttribute,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -31,6 +31,12 @@
     return `£${Math.round(m * 1000)}k`;
   };
   const ordinal = (n) => { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+  /* Who is behind the cheque book is public knowledge in real football — this
+   * shows the TYPE of owner, never the hidden wealth number behind it. */
+  function ownerLabel(c) {
+    const t = MG.clubs.OWNER_TYPES && MG.clubs.OWNER_TYPES[c.owner];
+    return t ? t.label : "Self-funded";
+  }
 
   const state = {
     world: null, draft: null, manager: null, clubId: null, seed: null,
@@ -42,23 +48,22 @@
     tab: "squad", pendingSlot: null, marketPos: "",
     squadSort: "rating", chooserSort: "rating",
     signCount: 0, signPositions: [], transfersSeason: null, boardRecs: null,
+    lastSeenNewsId: 0, notifOpen: false,
   };
   root.MG_STATE = state;
 
   /* The 1000goals position-colour language, reused so a striker reads red and a
    * centre-half reads blue in both games. */
-  /* Four families, eight shades. Full-backs read as a lighter blue than
-   * centre-halves and wingers as a warmer red than forwards, so a squad list
-   * separates the specialists inside a line at a glance rather than only
-   * telling you "defender" or "attacker". */
+  /* Four families, four colours. Eight shades read as clutter rather than
+   * information — a subtle blue-vs-blue distinction is not a thing you can
+   * act on at a glance across a whole squad list. Back to the simple family
+   * colour; the position ITSELF is what tells you FB from CB, and it now sits
+   * in a clearer boxed badge (see .ppos) rather than leaning on colour to do
+   * that job too. */
   function posClass(pos) {
     if (pos === "GK") return "keeper";
-    if (pos === "FW") return "attack";
-    if (pos === "WG") return "attack wide";
-    if (pos === "AM") return "attack advanced";
-    if (pos === "CB") return "defence";
-    if (pos === "FB") return "defence wide";
-    if (pos === "DM") return "midfield deep";
+    if (pos === "FW" || pos === "WG" || pos === "AM") return "attack";
+    if (pos === "CB" || pos === "FB") return "defence";
     return "midfield";
   }
   const ATTR_ROWS = [
@@ -67,14 +72,16 @@
     { k: "height", label: "HGT", suffix: "cm" }, { k: "weight", label: "WGT", suffix: "kg" },
   ];
   function attrGrid(p) {
+    const defAtr = MG.ratings && MG.ratings.defenceAttribute ? MG.ratings.defenceAttribute(p) : null;
     return `<div class="pattrs">${ATTR_ROWS.map((r) =>
       `<div class="pattr"><span>${r.label}</span><b>${p.attrs[r.k]}${r.suffix || ""}</b></div>`).join("")
-      }<div class="pattr"><span>MEN</span><b>${esc(p.mentality)}</b></div></div>`;
+      }<div class="pattr"><span>MEN</span><b>${esc(p.mentality)}</b></div>${defAtr != null ? `<div class="pattr"><span>${p.pos === "GK" ? "GK-ATR" : "DEF-ATR"}</span><b>${defAtr}</b></div>` : ""}</div>`;
   }
   const SORTS = {
     rating: (a, b) => b.overall - a.overall,
     name: (a, b) => a.name.localeCompare(b.name),
     pos: (a, b) => MG.players.POSITION_KEYS.indexOf(a.pos) - MG.players.POSITION_KEYS.indexOf(b.pos) || b.overall - a.overall,
+    years: (a, b) => a.contract.years - b.contract.years || b.overall - a.overall,
   };
 
   function show(id) {
@@ -206,6 +213,10 @@
     MG.clubs.setSeasonTargets(c, world.clubsInLeague(c.leagueId), world.rng);
     state.lastReport = null; state.lastRow = null; state.outcomes = [];
     state.transfersSeason = null; state.signCount = 0; state.signPositions = [];
+    // A new job at a new club starts its own notification history — a sacked
+    // manager taking his second job does not want ten seasons of a stranger's
+    // transfers marked "unread" the moment he sits down.
+    state.lastSeenNewsId = world.news.length ? world.news[world.news.length - 1].id : 0;
     // Setting up the team is mandatory before anything else happens.
     state.stage = "tactics";
     state.tab = "tactics";
@@ -410,8 +421,44 @@
     $("lastseason").innerHTML = lastSeasonHtml();
     $("stage").innerHTML = stageHtml();
     $("logfeed").innerHTML = logFeedHtml();
+    renderNotifications();
     wireStage();
     renderTab();
+  }
+
+  /* ------------------------------ NOTIFICATIONS ----------------------------
+   * The log is the full record; this is the bit of it a manager should not
+   * have to go looking for. Transfers in and out are the headline case — the
+   * squad changing under you is exactly the kind of thing easy to miss in a
+   * feed that also carries match reports and boardroom chatter — so those are
+   * what the bell counts, with contract news, loans and academy promotions
+   * folded into the panel underneath. */
+  const NOTIFY_TYPES = new Set(["transfer", "contract", "loan", "retirement"]);
+  function renderNotifications() {
+    const world = state.world, c = club();
+    const mine = world.newsFor(state.clubId, 60);
+    const unseen = mine.filter((n) => n.id > state.lastSeenNewsId && NOTIFY_TYPES.has(n.type));
+    const badge = $("notif-badge");
+    if (unseen.length) { badge.style.display = "flex"; badge.textContent = unseen.length > 9 ? "9+" : unseen.length; }
+    else badge.style.display = "none";
+
+    const panel = $("notif-panel");
+    if (!state.notifOpen) { panel.innerHTML = ""; return; }
+    const items = mine.filter((n) => NOTIFY_TYPES.has(n.type)).slice(0, 20);
+    panel.innerHTML = `<div class="notif-panel">
+      <div class="row" style="justify-content:space-between;margin-bottom:6px">
+        <b style="font-size:12px;letter-spacing:1px;color:var(--muted)">AT ${esc(c.name).toUpperCase()}</b>
+        <button class="btn tiny" id="notif-clear">MARK ALL READ</button>
+      </div>
+      ${items.length ? items.map((n) => `<div class="log-entry ${esc(n.type)} ${n.id > state.lastSeenNewsId ? "unseen" : ""}"><span class="muted">${n.year}</span> ${esc(n.text)}</div>`).join("")
+        : `<div class="notif-empty">Nothing to report yet.</div>`}
+    </div>`;
+    const clr = $("notif-clear");
+    if (clr) clr.addEventListener("click", () => { markNotificationsSeen(); renderNotifications(); });
+  }
+  function markNotificationsSeen() {
+    const world = state.world;
+    state.lastSeenNewsId = world.news.length ? world.news[world.news.length - 1].id : state.lastSeenNewsId;
   }
 
   /* --------------------------- LAST SEASON (top) --------------------------- */
@@ -549,8 +596,13 @@
         </div>` : ""}
 
         <div class="wizard-block">
-          <h4>Up for sale <span class="muted">(${listed.length} listed)</span></h4>
-          <div class="muted" style="font-size:12px;margin-bottom:8px">The board's suggestions are tagged <span class="accent2" style="color:var(--accent2)">◆ board</span> — only players you actually <span class="bad">LIST</span> are sold. The board sells whoever it finds a buyer for and reports the rest.</div>
+          <div class="row" style="justify-content:space-between;align-items:baseline">
+            <h4 style="margin:0">Up for sale <span class="muted">(${listed.length} listed)</span></h4>
+            ${state.boardRecs && state.boardRecs.size ? `<button class="btn tiny" id="apply-board-recs">APPLY BOARD CHANGES</button>` : ""}
+          </div>
+          <div class="muted" style="font-size:12px;margin:8px 0">The board's suggestions are tagged <span class="accent2" style="color:var(--accent2)">◆ board</span> —
+          <b>APPLY BOARD CHANGES</b> lists all of them in one go, then untick any you want to keep. Only players you actually
+          <span class="bad">LIST</span> are sold; the board sells whoever it finds a buyer for and reports the rest.</div>
           <div class="table-scroll" style="max-height:240px">${saleList.map((p) => {
             const on = listed.includes(p.id);
             const rec = state.boardRecs && state.boardRecs.has(p.id);
@@ -730,6 +782,21 @@
       render();
     });
     for (const b of document.querySelectorAll("[data-wlist]")) b.addEventListener("click", () => { toggleList(club(), Number(b.dataset.wlist)); render(); });
+    bind("apply-board-recs", () => {
+      const c = club();
+      if (!state.boardRecs) return;
+      c.transferList = c.transferList || [];
+      // List every board recommendation that is not already listed. The
+      // manager then deselects (LIST toggles off) whichever of them he wants
+      // to keep, rather than having to add each one by hand.
+      for (const id of state.boardRecs) {
+        if (c.transferList.includes(id)) continue;
+        c.transferList.push(id);
+        const p = c.squad.find((x) => x.id === id);
+        if (p) p.transferListed = true;
+      }
+      render();
+    });
     bind("confirm-transfers", confirmTransfers);
   }
 
@@ -737,7 +804,7 @@
   function renderTab() {
     for (const b of document.querySelectorAll(".tab")) b.classList.toggle("on", b.dataset.tab === state.tab);
     const el = $("tab-body");
-    const views = { squad: squadHtml, tactics: tacticsHtml, youth: youthHtml, contracts: contractsHtml, table: tableHtml, career: careerHtml, world: worldHtml };
+    const views = { squad: squadHtml, tactics: tacticsHtml, youth: youthHtml, table: tableHtml, career: careerHtml, world: worldHtml };
     el.innerHTML = (views[state.tab] || squadHtml)();
     wireTab();
   }
@@ -749,17 +816,23 @@
     const xi = new Set(MG.tactics.effectiveXI(c).map((p) => p && p.id));
     const listed = c.transferList || [], mentoring = c.mentoring || [];
     const mentorCap = MG.managers.mentorCapacity(m);
+    const reqs = c.contractRequests || {};
 
     return `<div class="panel">
-      <h3 class="muted">SQUAD (${squad.length}) · wage bill ${money(MG.clubs.wageBill(c))} / ${money(c.finances.wageBudget)}</h3>
+      <h3 class="muted">SQUAD (${squad.length}) · wage bill ${money(MG.clubs.wageBill(c))} / ${money(c.finances.wageBudget)} · ${esc(ownerLabel(c))}</h3>
       <div class="sortbar">
         <span class="muted">Sort</span>
-        ${["rating", "pos", "name"].map((k) => `<button class="btn tiny ${state.squadSort === k ? "on-mentor" : ""}" data-squadsort="${k}">${k === "pos" ? "POSITION" : k.toUpperCase()}</button>`).join("")}
-        <span class="muted" style="margin-left:auto">Mentoring ${mentoring.length}/${mentorCap} · <span class="accent">green</span> mentored · <span class="bad">red</span> listed</span>
+        ${["rating", "pos", "name", "years"].map((k) => `<button class="btn tiny ${state.squadSort === k ? "on-mentor" : ""}" data-squadsort="${k}">${k === "pos" ? "POSITION" : k === "years" ? "CONTRACT" : k.toUpperCase()}</button>`).join("")}
+      </div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">
+        <span class="bad">LIST</span> for sale · <span class="accent">MENTOR</span> to develop · <span class="accent">EXTEND</span> /
+        <span class="bad">RELEASE</span> his contract — the board still does every deal, you just point it.
+        Mentoring ${mentoring.length}/${mentorCap}.
       </div>
       ${squad.map((p) => pcard(p, {
         inXI: xi.has(p.id), listed: listed.includes(p.id), mentored: mentoring.includes(p.id),
         canMentor: mentoring.length < mentorCap || mentoring.includes(p.id),
+        contractReq: reqs[p.id],
       })).join("")}
     </div>
     ${loanedOutHtml(c)}`;
@@ -787,24 +860,34 @@
     </div>`;
   }
 
-  /** One donor-style player card, coloured by position, with mentor + list
-   *  actions on the right. Clicking the body opens the full profile. */
+  /** One donor-style player card, coloured by position, with list, mentor and
+   *  contract actions on the right. Clicking the body opens the full profile.
+   *  Contracts used to be a separate tab; the four actions here (list, mentor,
+   *  extend, release) are all the same shape — you state a preference, the
+   *  board executes it and reports back — so they belong on the same card. */
   function pcard(p, opt) {
     const o = opt || {};
     const pc = posClass(p.pos);
     const flags = `${o.inXI ? '<span class="ppos midfield" style="background:rgba(0,208,108,.14)">XI</span>' : ""}`;
+    const natFlag = MG.names ? MG.names.flagFor(p.nationality) : "";
+    const yrs = p.contract.years;
+    const yrsCls = yrs <= 0 ? "bad" : yrs === 1 ? "gold" : "muted";
+    const yrsLabel = yrs <= 0 ? "OUT" : `${yrs}y left`;
     return `<div class="pcard ${o.mentored ? "mentored" : o.listed ? "listed" : o.inXI ? "in-xi" : ""}">
       <div class="prating ${pc}" data-player="${p.id}" style="cursor:pointer">${Math.round(p.overall)}${growthTag(p)}</div>
       <div class="pbody" data-player="${p.id}" style="cursor:pointer">
-        <div class="pname">${flags}${esc(p.name)}${p.homegrown ? ' <span class="hg">HG</span>' : ""}${markTag(p)}</div>
+        <div class="pname">${flags}<span title="${esc(p.nationality)}">${natFlag}</span> ${esc(p.name)}${p.homegrown ? ' <span class="hg">HG</span>' : ""}${markTag(p)}</div>
         <div class="pmeta"><span class="ppos ${pc}">${esc(p.pos)}</span>${p.age}y · pot ${Math.round(p.potential)} · ${money(p.value)} · £${p.contract.wage}k
+          · <span class="${yrsCls}">${yrsLabel}</span>
           ${p.lastSeason && p.lastSeason.apps ? ` · <span class="muted">last yr ${p.lastSeason.apps}a ${p.lastSeason.goals}g</span>` : ""}
-          ${p.season.injured > 0 ? ` · <span class="inj">out ${Math.round(p.season.injured * 100)}%</span>` : ""}</div>
+          ${p.season.injured > 0 ? ` · <span class="inj">out ${Math.round(p.season.injured * 100)}%</span>` : durabilityTag(p)}</div>
       </div>
       ${p.loan ? `<div class="pactions"><span class="trait-chip" style="color:var(--rare);border-color:var(--rare);padding:0 6px">ON LOAN</span></div>`
-        : o.mentored != null ? `<div class="pactions">
+        : o.mentored != null ? `<div class="pactions quad">
         <button class="pbtn ${o.listed ? "on-list" : ""}" data-list="${p.id}">${o.listed ? "◤ LISTED" : "LIST"}</button>
         <button class="pbtn ${o.mentored ? "on-mentor" : ""}" data-mentor="${p.id}" ${!o.canMentor && !o.mentored ? "disabled style=opacity:.4" : ""}>${o.mentored ? "◤ MENTOR" : "MENTOR"}</button>
+        <button class="pbtn ${o.contractReq === "extend" ? "on-mentor" : ""}" data-contract="extend:${p.id}">${o.contractReq === "extend" ? "◤ EXTEND" : "EXTEND"}</button>
+        <button class="pbtn ${o.contractReq === "release" ? "on-list" : ""}" data-contract="release:${p.id}">${o.contractReq === "release" ? "◤ RELEASE" : "RELEASE"}</button>
       </div>` : `<div class="pactions"><span class="muted" style="font-size:11px">${esc(p.pos)}</span></div>`}
     </div>`;
   }
@@ -828,10 +911,35 @@
     return `<span class="pgrow ${d > 0 ? "up" : "down"}">${d > 0 ? "▲" : "▼"}${Math.abs(d)}</span>`;
   }
 
+  /* Only shown when it is actually a concern — a durability rating for every
+   * player in a 26-man squad would be noise, not information. */
+  function durabilityTag(p) {
+    if (!MG.players.durability) return "";
+    const d = MG.players.durability(p);
+    if (d.score >= 45) return "";
+    return ` · <span class="bad">tires early (${d.gamesSurvived}/5)</span>`;
+  }
+
   function moraleDot(m) {
     const v = m == null ? 60 : m;
     const cls = v >= 70 ? "accent" : v >= 45 ? "gold" : "bad";
     return `<span class="${cls}">${Math.round(v)}</span>`;
+  }
+
+  /* A visible fitness read: how many games in a row he can be leaned on
+   * before dropping off, built from fitness and age alone — nothing hidden,
+   * because this is the "you can see it" fitness rating, not a prediction
+   * of when he gets injured. */
+  function durabilityHtml(player) {
+    if (!MG.players.durability) return "";
+    const d = MG.players.durability(player);
+    const cls = d.score >= 70 ? "accent" : d.score >= 45 ? "gold" : "bad";
+    const bars = "●".repeat(d.gamesSurvived) + "○".repeat(5 - d.gamesSurvived);
+    return `<div class="board-note" style="margin-top:10px">
+      <b class="${cls}">${d.score}/100 durability</b> — survives about
+      <span class="${cls}" style="letter-spacing:1px">${bars}</span> ${d.gamesSurvived}/5 matches at full intensity before he needs a rest.
+      ${player.age >= 30 ? `<span class="muted"> Age ${player.age}: recovers slower than a player in his twenties.</span>` : ""}
+    </div>`;
   }
 
   function tacticsHtml() {
@@ -869,7 +977,7 @@
       </div>
       ${matchupHtml(c)}
       ${depthHtml(c)}
-      <div class="panel muted" style="font-size:12px">Signings and sales are handled in the pre-season <b>window</b> (top of the Decisions panel), and contract renewals in the <b>CONTRACTS</b> tab — the board does the dealing, you just point it.</div>`;
+      <div class="panel muted" style="font-size:12px">Signings and sales are handled in the pre-season <b>window</b> (top of the Decisions panel), and listing, mentoring and contracts are on each player's card in the <b>SQUAD</b> tab — the board does the dealing, you just point it.</div>`;
   }
 
   /* How your shape fares against the shapes you will actually meet this season.
@@ -917,41 +1025,6 @@
           <div class="${dc}" style="font-size:11px;font-weight:700">${r.backup ? `${r.rating} (${d >= 0 ? "−" : "+"}${Math.abs(d)})` : "no cover"}</div>
         </div>`;
       }).join("")}</div>
-    </div>`;
-  }
-
-  /* -------------------------- CONTRACTS (tab) -----------------------------
-   * The other place the board acts on your preference rather than your command:
-   * you ask to extend or release, the board decides what it can afford, and it
-   * reports back in the log each summer. Sorted shortest-contract first so the
-   * ones that need attention are at the top. */
-  function contractsHtml() {
-    const c = club();
-    const reqs = c.contractRequests || {};
-    const squad = c.squad.slice().sort((a, b) => a.contract.years - b.contract.years || b.overall - a.overall);
-    return `<div class="panel">
-      <h3 class="muted">CONTRACTS · wages ${money(MG.clubs.wageBill(c))} / ${money(c.finances.wageBudget)}</h3>
-      <div class="muted" style="font-size:12px;margin-bottom:10px">
-        Years remaining, shortest first — the ones near <b>OUT</b> are the ones that need a call.
-        <span class="accent">EXTEND</span> asks the board to tie a player down (it backs you unless the wage bill is out of control);
-        <span class="bad">RELEASE</span> lets his deal run down and leaves on a free when it expires. The board still decides,
-        and reports what it did in the log each summer.
-      </div>
-      ${squad.map((p) => {
-        const req = reqs[p.id], yrs = p.contract.years;
-        const yrsCls = yrs <= 0 ? "expiring" : yrs === 1 ? "soon" : "";
-        return `<div class="crow ${req === "extend" ? "extend" : req === "release" ? "release" : ""}">
-          <div class="crow-yrs ${yrsCls}">${yrs <= 0 ? "OUT" : yrs + "y"}</div>
-          <div class="crow-body">
-            <div class="nm" data-player="${p.id}" style="cursor:pointer">${esc(p.name)} <span class="ppos ${posClass(p.pos)}">${p.pos}</span> <span class="muted" style="font-weight:400">${Math.round(p.overall)} · ${p.age}y</span></div>
-            <div class="muted" style="font-size:12px">£${p.contract.wage}k/wk · ${money(p.value)}</div>
-          </div>
-          <div class="crow-actions">
-            <button class="btn tiny ${req === "extend" ? "primary" : ""}" data-contract="extend:${p.id}">EXTEND</button>
-            <button class="btn tiny ${req === "release" ? "danger" : ""}" data-contract="release:${p.id}">RELEASE</button>
-          </div>
-        </div>`;
-      }).join("")}
     </div>`;
   }
 
@@ -1119,7 +1192,8 @@
         <div class="stat-box"><div class="sb-num">${Math.round(c.ratings.defence)}</div><div class="sb-lab">Defence</div></div>
         <div class="stat-box"><div class="sb-num">${c.reputation}</div><div class="sb-lab">Reputation</div></div>
       </div>
-      <div class="muted" style="font-size:13px;margin-bottom:8px">Manager: <b>${esc(m ? m.name : "—")}</b>${m ? ` · ${esc(m.archetypeName)} · ${esc(m.tactic)} · ${esc(c.formation)}` : ""}</div>
+      <div class="muted" style="font-size:13px;margin-bottom:4px">Manager: <b>${esc(m ? m.name : "—")}</b>${m ? ` · ${esc(m.archetypeName)} · ${esc(m.tactic)} · ${esc(c.formation)}` : ""}</div>
+      <div class="muted" style="font-size:13px;margin-bottom:8px">Boardroom: <b>${esc(c.board.style)}</b> · ${esc(ownerLabel(c))}</div>
       <div class="chooser-list">${squad.slice(0, 24).map((p) => pcard(p, {})).join("")}</div>`);
     for (const el of document.querySelectorAll("[data-player]")) {
       el.addEventListener("click", (e) => { e.stopPropagation(); openPlayer(Number(el.dataset.player)); });
@@ -1164,13 +1238,10 @@
       });
     }
     for (const b of document.querySelectorAll("[data-contract]")) {
-      b.addEventListener("click", () => {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
         const [action, id] = b.dataset.contract.split(":");
-        const pid = Number(id);
-        c.contractRequests = c.contractRequests || {};
-        // A second click on the same directive clears it — one tap on, one off.
-        if (c.contractRequests[pid] === action) delete c.contractRequests[pid];
-        else c.contractRequests[pid] = action;
+        toggleContractReq(c, Number(id), action);
         renderTab();
       });
     }
@@ -1210,6 +1281,15 @@
       const p = c.squad.find((x) => x.id === id);
       if (p) p.transferListed = false;
     }
+  }
+
+  /** Ask the board to extend or release. A second call with the same action
+   *  clears it — one tap on, one off. Shared by the squad card and the
+   *  player-profile modal so the two controls always agree. */
+  function toggleContractReq(c, id, action) {
+    c.contractRequests = c.contractRequests || {};
+    if (c.contractRequests[id] === action) delete c.contractRequests[id];
+    else c.contractRequests[id] = action;
   }
 
   /* ------------------------------- MODALS --------------------------------- */
@@ -1315,6 +1395,7 @@
       })();
     const listed = (c.transferList || []).includes(player.id);
     const mentored = (c.mentoring || []).includes(player.id);
+    const contractReq = (c.contractRequests || {})[player.id];
     const mine = player.clubId === c.id;
     const pc = posClass(player.pos);
     const intl = player.intl;
@@ -1326,7 +1407,7 @@
           <canvas id="radar" width="200" height="200"></canvas>
         </div>
         <div class="profile-meta">
-          <div style="font-size:20px;font-weight:800">${esc(player.name)}</div>
+          <div style="font-size:20px;font-weight:800">${MG.names.flagFor(player.nationality)} ${esc(player.name)}</div>
           <div class="muted"><span class="ppos ${pc}">${esc(player.pos)}</span>${esc(MG.players.POSITIONS[player.pos].name)} · ${player.age} · ${esc(player.nationality)} · ${esc(from)}</div>
           <div style="margin:8px 0">
             <span class="trait-chip">pot ${Math.round(player.potential)}</span>
@@ -1350,6 +1431,7 @@
         <div class="stat-box"><div class="sb-num">${player.career.goals}</div><div class="sb-lab">Career goals</div></div>
         <div class="stat-box"><div class="sb-num">${player.career.apps}</div><div class="sb-lab">Career apps</div></div>
       </div>
+      ${durabilityHtml(player)}
       ${player.season.apps ? `<div class="muted" style="font-size:12px;margin-top:8px">This season: ${player.season.apps} apps, ${player.season.goals} goals, ${player.season.assists} assists.</div>` : ""}
       ${player.lastSeason && player.lastSeason.apps ? `<div class="panel" style="margin:10px 0 0;padding:10px">
         <div class="stage-step" style="margin-bottom:6px">Last season at ${esc(player.lastSeason.club || from)}</div>
@@ -1363,6 +1445,8 @@
       ${mine ? `<div class="row" style="margin-top:12px">
         <button class="btn tiny ${listed ? "danger" : ""}" id="profile-list">${listed ? "REMOVE FROM LIST" : "TRANSFER LIST"}</button>
         <button class="btn tiny ${mentored ? "primary" : ""}" id="profile-mentor">${mentored ? "STOP MENTORING" : "MENTOR"}</button>
+        <button class="btn tiny ${contractReq === "extend" ? "primary" : ""}" id="profile-extend">${contractReq === "extend" ? "◤ EXTEND ASKED" : "ASK BOARD TO EXTEND"}</button>
+        <button class="btn tiny ${contractReq === "release" ? "danger" : ""}" id="profile-release">${contractReq === "release" ? "◤ RELEASE ASKED" : "ASK BOARD TO RELEASE"}</button>
       </div>` : ""}
     `);
 
@@ -1371,6 +1455,10 @@
     if (lb) lb.addEventListener("click", () => { toggleList(c, player.id); closeModal(); renderTab(); });
     const mb = $("profile-mentor");
     if (mb) mb.addEventListener("click", () => { toggleMentor(c, player.id); closeModal(); renderTab(); });
+    const eb = $("profile-extend");
+    if (eb) eb.addEventListener("click", () => { toggleContractReq(c, player.id, "extend"); closeModal(); renderTab(); });
+    const rb = $("profile-release");
+    if (rb) rb.addEventListener("click", () => { toggleContractReq(c, player.id, "release"); closeModal(); renderTab(); });
   }
 
   /** Six-axis radar, drawn the same way 1000goals draws its card radar. */
@@ -1485,6 +1573,18 @@
     for (const b of document.querySelectorAll(".tab")) {
       b.addEventListener("click", () => { state.tab = b.dataset.tab; renderTab(); });
     }
+    $("notif-bell").addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.notifOpen = !state.notifOpen;
+      renderNotifications();
+      // Marked seen a beat after opening, so the panel that just rendered still
+      // shows which lines were the new ones before the badge clears them.
+      if (state.notifOpen) setTimeout(() => { markNotificationsSeen(); renderNotifications(); }, 1500);
+    });
+    // Any click outside the panel closes it — the usual dropdown contract.
+    document.addEventListener("click", (e) => {
+      if (state.notifOpen && !e.target.closest(".notif-wrap")) { state.notifOpen = false; renderNotifications(); }
+    });
     $("seed-input").value = `mg-${Math.random().toString(36).slice(2, 8)}`;
   }
 

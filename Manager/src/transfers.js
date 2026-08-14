@@ -631,6 +631,19 @@
   }
 
   /* --------------------- FREE AGENTS AND SQUAD TOP-UPS -------------------- */
+  /* Free transfers used to be routine squad-building: any position with any
+   * shortfall at all went looking for a free agent, every summer, for every
+   * club in the world. A club that lost a handful of players to retirement or
+   * expiry — completely normal — came back with five or six free signings to
+   * plug the gaps, and the result was a squad that barely resembled itself a
+   * year later. Free transfers are now the LAST resort, not the first: a club
+   * only pursues one when a position is genuinely short-handed — two or more
+   * bodies missing, the "both full-backs are out and there is no cover" case
+   * — never just to round a healthy squad up toward a target headcount.
+   * topUpSquads is still the real safety net for squad SIZE, using generated
+   * journeymen rather than treating the free-agent pool as a shopping list. */
+  const FREE_AGENT_SHORT_THRESHOLD = 2;
+
   function signFreeAgents(world, freeAgents) {
     const rng = world.rng;
     const news = [];
@@ -643,7 +656,7 @@
       const needs = clubNeeds(club);
       for (const need of needs) {
         if (club.squad.length >= MG.players.SQUAD_TARGET) break;
-        if (need.short <= 0 && club.squad.length >= MIN_SQUAD + 2) continue;
+        if (need.short < FREE_AGENT_SHORT_THRESHOLD) continue;
         const idx = pool.findIndex((p) => p.pos === need.pos && p.overall >= bar - 12 && p.overall <= need.currentQuality + 8);
         if (idx === -1) continue;
         const p = pool.splice(idx, 1)[0];
@@ -673,7 +686,15 @@
     for (const club of world.clubs) {
       const league = MG.clubs.LEAGUES[club.leagueId];
       let guard = 0;
-      while (club.squad.length < MIN_SQUAD && guard++ < 20) {
+      /* Fill to a REAL squad size, not the bare legal minimum. The floor used
+       * to be MIN_SQUAD (18), which was fine only because the old youth intake
+       * was separately pushing every squad back up toward the mid-twenties.
+       * With that pipeline gone the floor became the equilibrium: squads
+       * settled at eighteen to twenty-one, the world population fell by a
+       * quarter and the average age climbed past 28, because the only players
+       * entering were the ones this function makes. */
+      const floor = MG.players.SQUAD_TARGET - 4;   // 22
+      while (club.squad.length < floor && guard++ < 20) {
         const { needs } = MG.players.squadNeeds(club.squad);
         const pos = needs.length ? needs.sort((a, b) => b.urgency - a.urgency)[0].pos : rng.pick(MG.players.POSITION_KEYS);
         // clubStrength is on the TEAM rating scale and generate() wants the
@@ -683,7 +704,10 @@
         // same thing harder next year — the whole lower pyramid decayed.
         const level = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
         const target = level - rng.between(4, 12);
-        const p = MG.players.generate(rng, { league: club.leagueId, pos, target, spread: 3, age: rng.int(20, 31) });
+        // Younger than the old 20-31 band: these are most of the world's new
+        // professionals now, so drawing them all from a squad-filler age range
+        // was what pushed the average age of the entire population up.
+        const p = MG.players.generate(rng, { league: club.leagueId, pos, target, spread: 3, age: rng.int(18, 26) });
         p.clubId = club.id;
         p.career.clubs.push(club.name);
         club.squad.push(p);
@@ -799,17 +823,30 @@
     const manager = world.managerById(club.managerId);
     const policy = MG.managers.recruitmentPolicy(manager);
     const overWages = MG.clubs.wageBill(club) > club.finances.wageBudget;
+    const level = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
     const out = [];
     const byPos = {};
     for (const p of club.squad) (byPos[p.pos] = byPos[p.pos] || []).push(p);
-    for (const p of club.squad) {
+    /* Worst first: if the board is going to name players it would move on, it
+     * should start at the bottom of the squad rather than wherever the array
+     * happens to begin. */
+    const ranked = club.squad.slice().filter((p) => !p.loan).sort((a, b) => a.overall - b.overall);
+    for (const p of ranked) {
       if (club.squad.length - out.length <= MIN_SQUAD + 2) break;
       const depth = (byPos[p.pos] || []).length;
       const need = MG.players.POSITIONS[p.pos].need;
-      const surplus = depth > need + 1;
-      const tooOld = p.age > policy.maxAge + 1;
+      /* These were strict enough that a balanced squad produced NO
+       * recommendations at all — a 26-man squad with sensible cover in every
+       * position tripped none of them, so the board never had an opinion and
+       * the "apply the board's changes" shortcut had nothing to apply. A
+       * boardroom always has a view on who it would cash in on. */
+      const surplus = depth > need;
+      const tooOld = p.age > policy.maxAge;
       const pricey = overWages && p.contract.wage >= 40;
-      if (surplus || tooOld || pricey) out.push(p.id);
+      // Well short of the standard the division demands, and old enough that
+      // he is not going to grow into it.
+      const belowLevel = p.overall < level - 6 && p.age >= 24;
+      if (surplus || tooOld || pricey || belowLevel) out.push(p.id);
     }
     return out;
   }
@@ -1083,5 +1120,6 @@
   MG.transfers = {
     MIN_SQUAD, findAndSign, sellOne, sellListed, boardListings, market, runLoans, returnLoans, willJoin, executeManagerRequests, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
     askingPrice, targetScore, clubNeeds, runWindow, signFreeAgents, topUpSquads, youthIntake,
+    FREE_AGENT_SHORT_THRESHOLD,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);
