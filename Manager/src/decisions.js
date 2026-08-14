@@ -380,6 +380,82 @@
           fx: (api) => { api.confidence(-1); return `The plans go back in the drawer. Your successor may find them.`; } },
       ],
     },
+
+    /* ---- FINANCE ---- */
+    {
+      id: "pre_sponsor", category: "FINANCE", weight: 7,
+      text: (c) => `A sponsor has come in with an offer — more money than the club is used to, and more strings than the fans would like.`,
+      choices: (c) => [
+        { label: "Take the big commercial deal", detail: "Money now, a badge on everything.",
+          fx: (api) => { const g = round1(api.club.finances.revenue * 0.09 + 4); api.cash(g); api.budget(g * 0.6); return `The deal is signed. ${api.money(g)} arrives, and some of it reaches the transfer budget. The shirt looks busier.`; } },
+        { label: "A modest, cleaner partnership", detail: "Less money, fewer obligations.",
+          fx: (api) => { api.cash(3); api.rep(1); return `A smaller, quieter deal. The accountants are content and nobody in the stands complains.`; } },
+        { label: "Turn it down on principle", detail: "Keep the club's identity intact.",
+          fx: (api) => { api.rep(2); api.confidence(-2); return `You walk away from the money. The supporters notice; the finance director does not thank you.`; } },
+      ],
+    },
+    {
+      id: "pre_bargain", category: "TRANSFERS", weight: 7, req: (c) => c.budget >= 0.5 && c.budget < 12,
+      text: (c) => `You cannot afford a marquee fix for the ${c.weakUnit}, but the bargain bin is full — cut-price deals and cast-offs for those willing to dig.`,
+      choices: (c) => [
+        { label: `Find a cut-price ${posName(c.weakPositions[0])}`, detail: "Cheap, serviceable, available now.",
+          fx: (api) => { const s = api.sign({ pos: api.ctx.weakPositions[0], quality: "solid", maxFee: 4 }); return s ? `${s.player.name} (${Math.round(s.player.overall)}) arrives from ${s.from} for just ${api.money(s.fee)} — hardly glamorous, but he fills the ${api.ctx.weakUnit}.` : `Even the bargains were beyond you this window. The ${api.ctx.weakUnit} goes uncovered.`; } },
+        { label: "Gamble on a cheap young prospect", detail: "Low fee, high upside.",
+          fx: (api) => { const s = api.sign({ quality: "prospect", maxFee: 4 }); api.youth(0.05); return s ? `${s.player.name} (${s.player.age}, potential ${Math.round(s.player.potential)}) joins for ${api.money(s.fee)}. A punt worth taking at that price.` : `The prospects you liked cost more than you had. Nothing doing.`; } },
+        { label: "Spend nothing — build from within", detail: "Trust the squad and the academy.",
+          fx: (api) => { api.youth(0.06); api.form(0.5); return `You keep the money in your pocket. The younger players get the minutes a signing would have taken.`; } },
+      ],
+    },
+    {
+      id: "pre_setpiece", category: "TACTICS", weight: 6,
+      text: (c) => `A specialist set-piece coach is available. Cheap goals and cheap concessions are decided in these moments, and you have ignored them for too long.`,
+      choices: (c) => [
+        { label: "Hire him — attack the box", detail: "Goals from dead balls.",
+          fx: (api) => { api.unit({ attack: 2 }, 2); api.budget(-1.5); return `Corners and free-kicks become a weapon. It will win you a game or two you had no right to.`; } },
+        { label: "Hire him — defend the box", detail: "Stop leaking soft goals.",
+          fx: (api) => { api.unit({ defence: 2 }, 2); api.budget(-1.5); return `The back post is manned properly now. The soft goals dry up.`; } },
+        { label: "Coach it yourself for free", detail: "Save the money, spread yourself thinner.",
+          fx: (api) => { api.unit({ attack: 1, defence: 1 }, 1); return `You take the sessions personally. A marginal gain at both ends, and one more plate spinning.`; } },
+      ],
+    },
+    {
+      id: "pre_gametime", category: "DRESSING ROOM", weight: 7, req: (c) => c.star,
+      text: (c) => `${c.star.name} has asked, privately, for assurances about his role before he commits to the season.`,
+      choices: (c) => [
+        { label: "Guarantee him the team", detail: "Keep your best player happy.",
+          fx: (api) => { api.form(2); api.unit({ attack: 1 }, 1); api.confidence(-1); return `You promise him the shirt. He is all-in — and the players behind him have heard.`; } },
+        { label: "Tell him to earn it like everyone else", detail: "Standards over stars.",
+          fx: (api) => { api.form(-1); api.unit({ midfield: 1 }, 1); api.rep(1); return `Nobody is guaranteed anything, you tell him. He bristles, then trains like a man with a point to prove.`; } },
+        { label: "Find a compromise on his role", detail: "Manage him, don't fight him.",
+          fx: (api) => { api.form(1); return `A quiet conversation and a clear role. He knows where he stands, and so does the group.`; } },
+      ],
+    },
+    {
+      id: "pre_owner_vanity", category: "BOARDROOM", weight: 6, req: (c) => c.boardStyle === "Aggressive" || c.boardStyle === "Chaotic",
+      text: (c) => `The owner wants a name — someone to sell shirts and make a statement — more than he wants a plan.`,
+      choices: (c) => [
+        { label: "Indulge him with a marquee signing", detail: "A statement, funded from above.",
+          fx: (api) => { api.budget(api.club.finances.revenue * 0.1); const s = api.sign({ quality: "star" }); api.confidence(4); return s ? `${s.player.name} (${Math.round(s.player.overall)}) is unveiled to a packed house. The owner is beaming; the fee was mostly his money.` : `The names you chased all said no. The owner is unimpressed, the budget intact.`; } },
+        { label: "Talk him into a smarter buy", detail: "Spend his enthusiasm well.",
+          fx: (api) => { const s = api.sign({ quality: "solid" }); api.rep(1); return s ? `You steer him toward ${s.player.name} (${Math.round(s.player.overall)}) from ${s.from} — a better player than the one he wanted, for less.` : `You argue for restraint and end up signing nobody. He wanted a party.`; } },
+        { label: "Refuse to sign for the sake of it", detail: "Protect the wage structure.",
+          fx: (api) => { api.confidence(-4); api.rep(2); api.wage(3); return `You tell him no. The wage structure survives; his goodwill takes a hit.`; } },
+      ],
+    },
+
+    /* ---- MEDIA ---- */
+    {
+      id: "pre_tour", category: "MEDIA", weight: 6,
+      text: (c) => `Pre-season is a choice: a lucrative overseas tour, or a quiet, focused camp at home.`,
+      choices: (c) => [
+        { label: "The commercial tour", detail: "Money and jet lag.",
+          fx: (api) => { api.cash(5); api.rep(1); api.form(-1); api.injuryRisk(1.1); return `Three continents in two weeks. ${api.money(5)} banked, and a squad that comes back tired.`; } },
+        { label: "A hard training camp", detail: "Fitness over air miles.",
+          fx: (api) => { api.train("fitness", 1); api.form(1.5); return `A fortnight of double sessions in the hills. No money made, but they are ready.`; } },
+        { label: "A balanced pre-season", detail: "A little of both.",
+          fx: (api) => { api.cash(2); api.form(0.5); return `One friendly abroad, the rest at home. Modest money, no disruption.`; } },
+      ],
+    },
   ];
 
   /* -------------------------- END-OF-SEASON CARDS -------------------------- */
@@ -570,6 +646,88 @@
             fx: (api) => { api.unit({ attack: 1, midfield: 1, defence: 1 }, 2); api.form(-1); return `Two shapes, drilled in parallel. Harder to prepare for, harder to perfect.`; } },
         ];
       },
+    },
+
+    /* ---- FINANCE ---- */
+    {
+      id: "end_windfall", category: "FINANCE", weight: 8, req: (c) => c.champion || c.promoted || c.beatTarget,
+      text: (c) => `The season brought money in — prize money, gate receipts, a run that paid. The board want to know where it goes.`,
+      choices: (c) => [
+        { label: "Straight into the transfer budget", detail: "Push on while it's good.",
+          fx: (api) => { api.budget(api.club.finances.revenue * 0.14); api.confidence(2); return `You reinvest the lot. Next summer's window will be your biggest yet.`; } },
+        { label: "Into the training ground", detail: "Compound the advantage for years.",
+          fx: (api) => { api.facilities({ training: 5, youth: 4 }); api.confidence(1); return `The money goes into concrete and coaching. Every player who comes through here benefits now.`; } },
+        { label: "Bank it against a rainy day", detail: "The board's finance metric approves.",
+          fx: (api) => { api.cash(api.club.finances.revenue * 0.12); api.confidence(4); return `You put it away. The board sleep easier, and so does the wage bill.`; } },
+      ],
+    },
+    {
+      id: "end_debt", category: "FINANCE", weight: 9, req: (c) => c.inDebt,
+      text: (c) => `The books are in the red and the board have stopped asking politely. Something has to give.`,
+      choices: (c) => [
+        { label: "Cash in on your biggest asset", detail: "Solve it in one sale.",
+          fx: (api) => { const s = api.sell("star"); api.confidence(3); return s ? `${s.player.name} is sold to ${s.to} for ${api.money(s.fee)}. The hole in the accounts closes; the one in the team opens.` : `You offer your best player and, remarkably, nobody meets the price. The debt remains.`; } },
+        { label: "Sell two squad players and trim wages", detail: "Death by a thousand cuts.",
+          fx: (api) => { const a = api.sell("fringe"); const b = api.sell("veteran"); api.wage(4); const g = [a, b].filter(Boolean); return g.length ? `${g.map((s) => s.player.name).join(" and ")} move on for ${api.money(g.reduce((t, s) => t + s.fee, 0))}. The wage bill comes down with them.` : `You try to trim the squad and find no takers. The board are not amused.`; } },
+        { label: "Refuse to sell and demand patience", detail: "Bet your job on it coming good.",
+          fx: (api) => { api.confidence(-8); api.flag("last_chance", 1); return `You tell them the squad stays. It is the bravest thing you have said all year, and possibly the last.`; } },
+      ],
+    },
+
+    /* ---- DRESSING ROOM ---- */
+    {
+      id: "end_unsettled", category: "DRESSING ROOM", weight: 8, req: (c) => c.star && c.star.overall >= 78,
+      text: (c) => `${c.star.name} has let it be known, through his agent, that he thinks he has outgrown the club.`,
+      choices: (c) => [
+        { label: "Sell him at the peak of his value", detail: "Take the money while it's there.",
+          fx: (api) => { const s = api.sell("star"); api.budget(s ? s.fee * 0.7 : 0); api.confidence(2); return s ? `${s.player.name} gets his move to ${s.to} for ${api.money(s.fee)}, and most of it comes back to you to spend.` : `You put him up for sale and the bids never match his opinion of himself. Awkward.`; } },
+        { label: "Talk him round for one more year", detail: "Keep him, manage the mood.",
+          fx: (api) => { api.form(1); api.confidence(-2); api.flag("unsettled_star", 1); return `A long conversation and a bigger role. He stays, for now — everyone knows it is temporary.`; } },
+        { label: "Freeze him out until he apologises", detail: "Make an example of him.",
+          fx: (api) => { api.unit({ attack: -2 }, 1); api.rep(1); api.form(-1); return `He trains with the under-23s. The message is unmistakable, and it costs you his goals in the meantime.`; } },
+      ],
+    },
+
+    /* ---- YOUTH ---- */
+    {
+      id: "end_academy_sale", category: "YOUTH", weight: 6, req: (c) => c.prospect && c.prospect.value >= 6 && (c.inDebt || c.budget < 8),
+      text: (c) => `The one way to balance the books without weakening the first team is to sell ${c.prospect.name} before he has truly broken through.`,
+      choices: (c) => [
+        { label: "Sell the academy graduate", detail: "Pure profit, a piece of the future gone.",
+          fx: (api) => { const p = api.ctx.prospect; api.cash(p.value * 2); api.budget(p.value * 1.2); api.club.squad = api.club.squad.filter((x) => x.id !== p.id); MG.clubs.refreshRatings(api.club); api.confidence(3); api.rep(-2); return `${p.name} is sold for ${api.money(p.value * 2)} of almost pure profit. The academy staff are furious.`; } },
+        { label: "Keep him and find the money elsewhere", detail: "Protect the crown jewel.",
+          fx: (api) => { api.wage(-2); api.confidence(-3); api.rep(1); return `You refuse to sell him and cut costs elsewhere instead. The board grumble; the academy adores you.`; } },
+        { label: "Sell him but insert a buy-back", detail: "Have it both ways, at a discount.",
+          fx: (api) => { const p = api.ctx.prospect; api.cash(p.value * 1.6); api.budget(p.value * 0.9); api.club.squad = api.club.squad.filter((x) => x.id !== p.id); MG.clubs.refreshRatings(api.club); api.flag("buyback", 4); return `${p.name} leaves for ${api.money(p.value * 1.6)} — less than his worth, but you kept the right to bring him home.`; } },
+      ],
+    },
+
+    /* ---- BOARDROOM ---- */
+    {
+      id: "end_stadium", category: "BOARDROOM", weight: 5, req: (c) => c.champion || c.promoted || c.managerRep >= 55,
+      text: (c) => `The board are weighing a stadium expansion against another summer of investment in the squad. They want your view.`,
+      choices: (c) => [
+        { label: "Back the stadium — think long-term", detail: "Bigger ground, bigger club.",
+          fx: (api) => { api.confidence(3); api.rep(2); api.budget(-api.club.finances.transferBudget * 0.2); return `You side with the bricks and mortar. The budget is trimmed to pay for it, but the club is building something.`; } },
+        { label: "Demand it all goes on the squad", detail: "Win now, expand later.",
+          fx: (api) => { api.budget(api.club.finances.revenue * 0.1); api.confidence(-3); api.flag("promised", 2); return `You get the money on the pitch instead. The expectation that comes with it is, again, yours.`; } },
+        { label: "Let the board decide", detail: "Stay out of the politics.",
+          fx: (api) => { api.confidence(1); return `You tell them it is their call. They appreciate a manager who knows his lane.`; } },
+      ],
+    },
+
+    /* ---- TRANSFERS ---- */
+    {
+      id: "end_free_agent", category: "TRANSFERS", weight: 7, req: (c) => c.wageRoom >= 4,
+      text: (c) => `A well-known name is out of contract and available on a free — no fee, but wages to match his reputation.`,
+      choices: (c) => [
+        { label: "Sign him — experience for nothing", detail: "No fee, a big wage, a known quantity.",
+          fx: (api) => { const s = api.sign({ quality: "solid", maxFee: 0.1 }); api.wage(-4); return s ? `${s.player.name} (${Math.round(s.player.overall)}) signs on a free. Not a penny in fees; the wage bill feels it.` : `The free agents worth having wanted more than you could offer. He signs elsewhere.`; } },
+        { label: "Sign a hungry younger free agent instead", detail: "Lower wage, more upside.",
+          fx: (api) => { const s = api.sign({ quality: "prospect", maxFee: 0.1 }); return s ? `${s.player.name} (${s.player.age}) comes in on a free — cheaper, younger, and with something to prove.` : `Nothing on the free market fit the brief. You pass.`; } },
+        { label: "Keep the wage room clear", detail: "Discipline over a bargain.",
+          fx: (api) => { api.confidence(2); return `You resist the free transfer. The wage structure stays clean, and the board notice the restraint.`; } },
+      ],
     },
   ];
 

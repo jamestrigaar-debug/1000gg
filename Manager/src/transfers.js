@@ -89,25 +89,67 @@
       club.squad = keep;
 
       // Contract renewals and releases. A club renews the players it rates and
-      // can afford; everyone else runs down and walks.
+      // can afford; everyone else runs down and walks. On the managed club the
+      // manager's own extend/release requests steer this, but the board still
+      // has the final word — it will not fund a renewal it cannot afford, and
+      // it says so, which is what turns up in the log.
       const manager = world.managerById(club.managerId);
       const policy = MG.managers.recruitmentPolicy(manager);
+      const requests = club.contractRequests || {};
+      const isPlayerClub = club.id === world.playerClubId;
+      const affordableNow = () => club.finances.wageBill < club.finances.wageBudget * 1.05;
+      // The board backs a renewal the manager explicitly asks for — keeping a
+      // player you already have is cheap next to signing one. Clubs structurally
+      // run over their notional wage budget (an elite side sits well above it),
+      // so the only thing that stops an extension is genuine crisis: a club
+      // forced into a fire-sale, or one deep enough in the red that it cannot
+      // add a single pound of wage. That rare refusal is the interesting case —
+      // the skint club that cannot keep everyone.
+      const canExtend = () => !club.mustSell && club.finances.balance > -club.finances.revenue * 0.5;
+
+      // Early renewals: a player the manager asked to tie down who is NOT yet
+      // expiring gets a fresh term now if the board can carry it.
+      for (const p of club.squad) {
+        if (requests[p.id] !== "extend" || p.contract.years <= 0) continue;
+        if (canExtend()) {
+          p.contract.years = Math.max(p.contract.years, rng.int(2, 4));
+          if (isPlayerClub) news.push({ type: "contract", text: `Contract — ${p.name} signs a new deal to ${p.contract.years} years. The board backed your call.`, clubId: club.id });
+        } else if (isPlayerClub) {
+          news.push({ type: "contract", text: `Contract — the board would not fund a new deal for ${p.name}; the wage bill is already stretched.`, clubId: club.id });
+        }
+      }
+
       const stillHere = [];
       for (const p of club.squad) {
         if (p.contract.years > 0) { stillHere.push(p); continue; }
+        const req = requests[p.id];
         const squadRank = club.squad.filter((q) => q.pos === p.pos && q.overall > p.overall).length;
         const wanted = squadRank < MG.players.POSITIONS[p.pos].need && p.age <= policy.maxAge + 3;
-        const affordable = club.finances.wageBill < club.finances.wageBudget * 1.05;
-        if (wanted && affordable && rng.chance(0.8)) {
+        const affordable = affordableNow();
+        // The manager's request overrides the board's default inclination, but
+        // affordability still gates an extend, and a release is always honoured.
+        let renew;
+        if (req === "release") renew = false;
+        else if (req === "extend") renew = canExtend();
+        else renew = wanted && affordable && rng.chance(0.8);
+        if (renew) {
           p.contract.years = rng.int(2, 4);
           p.contract.wage = round1(MG.players.expectedWage(p, club.leagueId) * rng.between(1.0, 1.15));
           stillHere.push(p);
+          if (isPlayerClub && req === "extend") news.push({ type: "contract", text: `Contract — ${p.name} renews for ${p.contract.years} years, as you asked.`, clubId: club.id });
         } else {
           p.clubId = null;
           freeAgents.push(p);
+          if (isPlayerClub) {
+            const why = req === "release" ? "released on your instruction"
+              : req === "extend" ? "let go — the board would not fund the extension you wanted"
+                : "runs down his contract and leaves on a free";
+            news.push({ type: "contract", text: `Contract — ${p.name} ${why}.`, clubId: club.id });
+          }
         }
       }
       club.squad = stillHere;
+      club.contractRequests = {};
     }
     return { news, freeAgents };
   }
@@ -435,6 +477,64 @@
    * market, the same prices, but a single deal made deliberately rather than a
    * whole window simulated. */
 
+  /** Find a plausible buyer for one specific player and complete the sale now.
+   *  The same reach-gated, level-appropriate buyer search the summer window uses,
+   *  but aimed at a single player the manager has listed. Returns a result the
+   *  UI can put straight into the log, success or refusal. */
+  function sellListed(world, club, playerId) {
+    const player = club.squad.find((p) => p.id === playerId);
+    if (!player) return { ok: false, reason: "he is no longer at the club" };
+    if (club.squad.length <= MIN_SQUAD) return { ok: false, player, reason: "the squad is already too thin to sell" };
+    const fee = round1(player.value * 0.95);
+    const buyer = world.clubs
+      .filter((c) => c.id !== club.id
+        && c.finances.balance >= fee
+        && c.squad.length < MG.players.SQUAD_TARGET + 3
+        && (c.level || 50) >= player.overall - 12
+        && player.overall >= (c.level || 50) - 13
+        && (!MG.network || MG.network.canRecruit(c, club)))
+      .sort((a, b) => b.finances.transferBudget - a.finances.transferBudget)[0];
+    if (!buyer) return { ok: false, player, reason: "no club in your reach bid for him" };
+
+    club.squad = club.squad.filter((p) => p.id !== player.id);
+    club.finances.balance = round1(club.finances.balance + fee);
+    club.finances.received = round1(club.finances.received + fee);
+    club.finances.transferBudget = round1(club.finances.transferBudget + fee);
+    buyer.squad.push(player);
+    buyer.finances.balance = round1(buyer.finances.balance - fee);
+    buyer.finances.spent = round1(buyer.finances.spent + fee);
+    player.clubId = buyer.id;
+    player.transferListed = false;
+    player.contract = { years: 3, wage: MG.players.expectedWage(player, buyer.leagueId) };
+    player.career.clubs.push(buyer.name);
+    MG.clubs.refreshRatings(club);
+    MG.clubs.refreshRatings(buyer);
+    return { ok: true, player, to: buyer.name, fee };
+  }
+
+  /** Which of a club's own players the board would put up for sale unprompted:
+   *  surplus in a position, past the manager's age profile, or on wages the club
+   *  cannot carry. Returns ids, best-known first, so the UI can show and log the
+   *  board's own recommendations without committing to them. */
+  function boardListings(world, club) {
+    const manager = world.managerById(club.managerId);
+    const policy = MG.managers.recruitmentPolicy(manager);
+    const overWages = MG.clubs.wageBill(club) > club.finances.wageBudget;
+    const out = [];
+    const byPos = {};
+    for (const p of club.squad) (byPos[p.pos] = byPos[p.pos] || []).push(p);
+    for (const p of club.squad) {
+      if (club.squad.length - out.length <= MIN_SQUAD + 2) break;
+      const depth = (byPos[p.pos] || []).length;
+      const need = MG.players.POSITIONS[p.pos].need;
+      const surplus = depth > need + 1;
+      const tooOld = p.age > policy.maxAge + 1;
+      const pricey = overWages && p.contract.wage >= 40;
+      if (surplus || tooOld || pricey) out.push(p.id);
+    }
+    return out;
+  }
+
   /** Sign the best player the club can afford in a given mould. */
   function findAndSign(world, club, opts) {
     const rng = world.rng;
@@ -694,7 +794,7 @@
   function fmtFee(f) { return f >= 10 ? `£${Math.round(f)}m` : `£${round1(f)}m`; }
 
   MG.transfers = {
-    MIN_SQUAD, findAndSign, sellOne, market, executeManagerRequests, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
+    MIN_SQUAD, findAndSign, sellOne, sellListed, boardListings, market, executeManagerRequests, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
     askingPrice, targetScore, clubNeeds, runWindow, signFreeAgents, topUpSquads, youthIntake,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

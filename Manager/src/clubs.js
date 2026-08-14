@@ -200,6 +200,8 @@
       recruitment: [],      // positions the board is told to sign this window
       transferList: [],     // player ids offered for sale
       targets: [],          // specific players bid for (advanced/legacy path)
+      contractRequests: {}, // { [playerId]: "extend" | "release" } — the board actions these
+      boardListed: [],      // player ids the BOARD itself decided to list (fed back to you)
       /* Levers the decision layer pulls. Everything here is applied by the
        * simulation and then decayed at the end of the season, so a choice made
        * in the summer shapes the campaign that follows it and no more —

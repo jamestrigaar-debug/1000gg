@@ -41,6 +41,7 @@
     endingEntry: null, endingView: null, endingOutcome: null,
     tab: "squad", pendingSlot: null, marketPos: "",
     squadSort: "rating", chooserSort: "rating",
+    signCount: 0, signPositions: [], transfersSeason: null, boardRecs: null,
   };
   root.MG_STATE = state;
 
@@ -191,6 +192,7 @@
     c.transferList = []; c.targets = [];
     MG.clubs.setSeasonTargets(c, world.clubsInLeague(c.leagueId), world.rng);
     state.lastReport = null; state.lastRow = null; state.outcomes = [];
+    state.transfersSeason = null; state.signCount = 0; state.signPositions = [];
     // Setting up the team is mandatory before anything else happens.
     state.stage = "tactics";
     state.tab = "tactics";
@@ -210,7 +212,52 @@
     while (state.recent.length > 6) state.recent.shift();
   }
 
+  /* Pre-season now opens with the board's transfer brief — how many to sign,
+   * where, and who is up for sale — before the narrative cards. This is the
+   * "everything runs through decisions" principle: the market is a decision,
+   * not a separate tab you have to remember to visit. */
   function beginPreSeason() {
+    const c = club();
+    state.signCount = 0;
+    state.signPositions = [];
+    // Once per pre-season the board makes its OWN recommendations — surplus,
+    // ageing or over-paid players it would move on. They are SUGGESTED (shown
+    // and logged), never sold behind your back: you choose what actually goes
+    // up for sale. That is the difference between the board advising you and
+    // the board overruling you.
+    state.boardRecs = new Set(MG.transfers.boardListings(state.world, c));
+    if (state.transfersSeason !== state.world.season) {
+      state.transfersSeason = state.world.season;
+      for (const id of state.boardRecs) {
+        const p = c.squad.find((x) => x.id === id);
+        if (p) state.world.report(`The board suggest ${p.name} (${p.pos}, ${Math.round(p.overall)}) could be moved on this summer.`, "contract", c.id);
+      }
+    }
+    state.stage = "transfers";
+    render();
+  }
+
+  /* The board goes to work: it pursues one signing per position you asked for,
+   * sells everyone it can find a buyer for, and reports each result — the deals
+   * it lands AND the ones it cannot — straight into the log. */
+  function confirmTransfers() {
+    const world = state.world, c = club();
+    for (const pos of state.signPositions) {
+      const s = MG.transfers.findAndSign(world, c, { pos, quality: "solid" });
+      const name = (MG.players.POSITIONS[pos] || {}).name || pos;
+      if (s) world.report(`IN — ${s.player.name} (${s.player.pos}, ${Math.round(s.player.overall)}) signs from ${s.from} for ${money(s.fee)}.`, "transfer", c.id);
+      else world.report(`NO DEAL — the board could not land a ${name} within budget and reach.`, "sack", c.id);
+    }
+    for (const id of (c.transferList || []).slice()) {
+      const res = MG.transfers.sellListed(world, c, id);
+      if (res.ok) {
+        world.report(`OUT — ${res.player.name} joins ${res.to} for ${money(res.fee)}.`, "transfer", c.id);
+        c.transferList = c.transferList.filter((x) => x !== id);
+      } else if (res.player) {
+        world.report(`NO SALE — ${res.player.name}: ${res.reason}. He stays listed.`, "sack", c.id);
+      }
+    }
+    MG.clubs.refreshRatings(c);
     state.stage = "preseason";
     drawCards(MG.decisions.PRESEASON);
     if (!state.cards.length) state.stage = "ready";
@@ -334,19 +381,60 @@
     $("board-style").className = `board-${board.style.toLowerCase()}`;
     $("board-brief").textContent = board.targets ? board.targets.summary : "";
 
-    $("dashboard").innerHTML = dashboardHtml();
+    $("lastseason").innerHTML = lastSeasonHtml();
     $("stage").innerHTML = stageHtml();
+    $("logfeed").innerHTML = logFeedHtml();
     wireStage();
     renderTab();
   }
 
-  /* ---------------------------- TIER 1: CAREER ---------------------------- */
-  function dashboardHtml() {
-    const m = state.manager, row = state.lastRow;
+  /* --------------------------- LAST SEASON (top) --------------------------- */
+  /* A tight, one-panel reminder of where you finished — the full career record
+   * lives in its own CAREER tab now, so this stays a glance, not a wall. */
+  function lastSeasonHtml() {
+    const row = state.lastRow;
+    if (!row) return `<div class="panel"><div class="muted">Your first season has not been played yet — set up the team and get going.</div></div>`;
+    const tone = row.champion || row.promoted ? "great" : row.relegated ? "awful" : "ok";
+    return `<div class="panel">
+      <div class="result-banner ${tone}" style="margin-bottom:10px">
+        ${row.champion ? "🏆 Champions" : row.promoted ? "📈 Promoted" : row.relegated ? "📉 Relegated" : `Finished ${ordinal(row.position)}`}
+        <span class="muted" style="font-weight:400;font-size:13px"> · ${esc(row.leagueName)}</span>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="sb-num">${row.pts}</div><div class="sb-lab">Points</div></div>
+        <div class="stat-box"><div class="sb-num">${row.won}</div><div class="sb-lab">W</div></div>
+        <div class="stat-box"><div class="sb-num">${row.drawn}</div><div class="sb-lab">D</div></div>
+        <div class="stat-box"><div class="sb-num bad">${row.lost}</div><div class="sb-lab">L</div></div>
+        <div class="stat-box"><div class="sb-num">${row.gf}</div><div class="sb-lab">GF</div></div>
+        <div class="stat-box"><div class="sb-num">${row.ga}</div><div class="sb-lab">GA</div></div>
+      </div>
+      <div class="muted" style="font-size:12px">
+        Cup: ${esc(cupLabel(row.cupRound))} · Board's verdict: <b>${esc(state.lastReport ? state.lastReport.verdict : "—")}</b>
+        · <span class="muted">full record in the CAREER tab</span>
+      </div>
+    </div>`;
+  }
+
+  /* ------------------------------ THE LOG (top) ---------------------------- */
+  /* Kept open on the main screen: the board reports back here — what it signed,
+   * what it tried and could not, who it renewed or let go. The world's own
+   * noise stays in the WORLD tab; this is your club only. */
+  function logFeedHtml() {
+    const world = state.world;
+    const mine = world.newsFor(state.clubId, 14);
+    if (!mine.length) return `<div class="panel"><div class="muted" style="font-size:13px">Nothing has happened at this club yet. Play a season and the board will report back here.</div></div>`;
+    return `<div class="panel"><div class="table-scroll" style="max-height:230px">
+      ${mine.map((n) => `<div class="log-entry ${esc(n.type)}"><span class="muted">${n.year}</span> ${esc(n.text)}</div>`).join("")}
+    </div></div>`;
+  }
+
+  /* ----------------------------- CAREER (tab) ----------------------------- */
+  function careerHtml() {
+    const m = state.manager;
     const played = m.record.played || 1;
-    const career = `
+    return `
       <div class="panel">
-        <h3 class="muted">CAREER</h3>
+        <h3 class="muted">CAREER TO DATE</h3>
         <div class="stat-grid">
           <div class="stat-box"><div class="sb-num">${m.record.seasons}</div><div class="sb-lab">Seasons</div></div>
           <div class="stat-box"><div class="sb-num gold">${m.honours.titles}</div><div class="sb-lab">Titles</div></div>
@@ -356,35 +444,10 @@
           <div class="stat-box"><div class="sb-num">${m.reputation}</div><div class="sb-lab">Reputation</div></div>
         </div>
         <div class="muted" style="font-size:12px;margin-top:8px">
-          ${m.record.won}W ${m.record.drawn}D ${m.record.lost}L in ${m.record.played} matches · age ${m.age}
+          ${m.record.won}W ${m.record.drawn}D ${m.record.lost}L in ${m.record.played} matches · ${esc(m.name)}, age ${m.age}
         </div>
-      </div>`;
-
-    const last = row ? `
-      <div class="panel">
-        <h3 class="muted">LAST SEASON — ${esc(row.leagueName)}</h3>
-        <div class="result-banner ${row.champion || row.promoted ? "great" : row.relegated ? "awful" : "ok"}">
-          ${row.champion ? "🏆 Champions" : row.promoted ? "📈 Promoted" : row.relegated ? "📉 Relegated" : `Finished ${ordinal(row.position)}`}
-        </div>
-        <div class="stat-grid">
-          <div class="stat-box"><div class="sb-num">${row.pts}</div><div class="sb-lab">Points</div></div>
-          <div class="stat-box"><div class="sb-num">${row.won}</div><div class="sb-lab">Won</div></div>
-          <div class="stat-box"><div class="sb-num">${row.drawn}</div><div class="sb-lab">Drawn</div></div>
-          <div class="stat-box"><div class="sb-num bad">${row.lost}</div><div class="sb-lab">Lost</div></div>
-          <div class="stat-box"><div class="sb-num">${row.gf}</div><div class="sb-lab">For</div></div>
-          <div class="stat-box"><div class="sb-num">${row.ga}</div><div class="sb-lab">Against</div></div>
-        </div>
-        <div class="muted" style="font-size:12px;margin-top:8px">
-          Cup: ${esc(cupLabel(row.cupRound))} · Board's verdict: ${esc(state.lastReport ? state.lastReport.verdict : "—")}
-        </div>
-      </div>` : `
-      <div class="panel">
-        <h3 class="muted">LAST SEASON</h3>
-        <div class="muted">Your first season has not been played yet.</div>
-      </div>`;
-    // Last Season leads (the report's high-priority context); the career
-    // totals sit second as reference rather than headline.
-    return last + career;
+      </div>
+      ${state.career.length ? careerTableHtml() : `<div class="panel muted">No seasons on the record yet.</div>`}`;
   }
 
   const CUP_LABELS = { none: "did not enter", R1: "first round", R2: "second round", R3: "third round",
@@ -394,6 +457,7 @@
   /* --------------------------- TIER 2: DECISIONS -------------------------- */
   function stageHtml() {
     if (state.stage === "tactics") return tacticsSetupHtml();
+    if (state.stage === "transfers") return transfersWizardHtml();
     if (state.stage === "preseason" || state.stage === "endseason") return cardHtml();
     if (state.stage === "endseason-done") {
       return outcomesHtml() + windowReportHtml()
@@ -423,6 +487,57 @@
         ${report.problems ? `<div class="outcome" style="border-left-color:var(--gold)">${report.problems} player${report.problems === 1 ? " is" : "s are"} out of position. That costs you.</div>` : ""}
         <div class="decision-choices" style="margin-top:12px">
           <button class="btn primary" id="confirm-tactics">CONFIRM TEAM AND CONTINUE</button>
+        </div>
+      </div>`;
+  }
+
+  /* The pre-season transfer wizard: count -> positions -> who is for sale.
+   * Deliberately three short questions rather than a spreadsheet — the board
+   * does the actual dealing, you just point it. */
+  function transfersWizardHtml() {
+    const c = club();
+    const wageRoom = c.finances.wageBudget - MG.clubs.wageBill(c);
+    const reach = MG.network ? MG.network.reachLabel(c) : null;
+    const listed = c.transferList || [];
+    const maxPos = state.signCount >= 3 ? 4 : state.signCount;
+    const saleList = c.squad.slice().sort(SORTS.rating);
+    return `
+      <div class="decision boardroom">
+        <div class="decision-tag">PRE-SEASON · THE WINDOW</div>
+        <div class="decision-text">The board are ready to back you in the market. Tell them how many to sign and where — they do the deals and report back in the log.</div>
+        <div class="board-note">To spend: <b>${money(c.finances.transferBudget)}</b> · wage room <b>${money(wageRoom)}</b>${reach ? ` · reach: ${esc(reach)}` : ""}</div>
+
+        <div class="wizard-block">
+          <h4>How many players do you want to sign?</h4>
+          <div class="seg">${[0, 1, 2, 3].map((n) => `<button class="${state.signCount === n ? "on" : ""}" data-signcount="${n}">${n === 3 ? "3+" : n}</button>`).join("")}</div>
+        </div>
+
+        ${state.signCount > 0 ? `<div class="wizard-block">
+          <h4>Which positions? <span class="muted">(${state.signPositions.length}/${maxPos})</span></h4>
+          <div class="seg">${MG.players.POSITION_KEYS.map((k) => {
+            const n = state.signPositions.filter((x) => x === k).length;
+            return `<button class="${n ? "on" : ""}" data-signpos="${k}">${k}${n ? ` ×${n}` : ""}</button>`;
+          }).join("")}</div>
+          <div class="muted" style="font-size:12px;margin-top:6px">${state.signPositions.length ? `The board will chase: ${state.signPositions.map((p) => `<span class="ppos ${posClass(p)}">${p}</span>`).join(" ")}` : "Pick the positions to strengthen — one player per slot."}</div>
+        </div>` : ""}
+
+        <div class="wizard-block">
+          <h4>Up for sale <span class="muted">(${listed.length} listed)</span></h4>
+          <div class="muted" style="font-size:12px;margin-bottom:8px">The board's suggestions are tagged <span class="accent2" style="color:var(--accent2)">◆ board</span> — only players you actually <span class="bad">LIST</span> are sold. The board sells whoever it finds a buyer for and reports the rest.</div>
+          <div class="table-scroll" style="max-height:240px">${saleList.map((p) => {
+            const on = listed.includes(p.id);
+            const rec = state.boardRecs && state.boardRecs.has(p.id);
+            return `<div class="crow ${on ? "release" : ""}">
+              <div class="prating ${posClass(p.pos)}" style="width:38px;height:38px;font-size:15px;cursor:pointer" data-player="${p.id}">${Math.round(p.overall)}</div>
+              <div class="crow-body"><div class="nm">${esc(p.name)} <span class="ppos ${posClass(p.pos)}">${p.pos}</span>${rec ? ` <span class="trait-chip" style="color:var(--accent2);border-color:var(--accent2);padding:0 6px">◆ board</span>` : ""}</div>
+                <div class="muted" style="font-size:12px">${p.age}y · ${money(p.value)} · £${p.contract.wage}k/wk</div></div>
+              <div class="crow-actions"><button class="btn tiny ${on ? "danger" : ""}" data-wlist="${p.id}">${on ? "◤ LISTED" : "LIST"}</button></div>
+            </div>`;
+          }).join("")}</div>
+        </div>
+
+        <div class="decision-choices" style="margin-top:12px">
+          <button class="btn primary" id="confirm-transfers">CONFIRM — THE BOARD GO TO WORK ▶</button>
         </div>
       </div>`;
   }
@@ -462,7 +577,7 @@
     const c = club(), t = c.board.targets, r = c.ratings;
     const injured = c.squad.filter((p) => (p.season.injured || 0) > 0);
     const report = MG.tactics.xiReport(c);
-    const signings = (c.recruitment || []).length, sales = (c.transferList || []).length, mentees = (c.mentoring || []).length;
+    const sales = (c.transferList || []).length, mentees = (c.mentoring || []).length;
     return `${outcomesHtml()}
       <div class="panel">
         <div class="stage-step">The season ahead</div>
@@ -477,8 +592,7 @@
         </div>
         <div class="muted" style="font-size:12px">
           Focus: <b>${c.focus ? esc(MG.clubs.FOCUS[c.focus].label) : "none"}</b> ·
-          ${report.problems ? `<span class="bad">${report.problems} out of position</span>` : "eleven in position"} ·
-          ${signings ? `${signings} signing${signings === 1 ? "" : "s"} requested` : "no signings requested"}${sales ? ` · ${sales} listed` : ""}${mentees ? ` · ${mentees} mentored` : ""}
+          ${report.problems ? `<span class="bad">${report.problems} out of position</span>` : "eleven in position"}${sales ? ` · ${sales} still listed` : ""}${mentees ? ` · ${mentees} mentored` : ""}
         </div>
         ${injured.length ? `<div class="muted" style="font-size:12px;margin-top:6px">Treatment room: ${injured.sort((a, b) => b.season.injured - a.season.injured).slice(0, 4).map((p) => `${esc(p.name)} (${Math.round(p.season.injured * 100)}%)`).join(", ")}</div>` : ""}
       </div>
@@ -549,13 +663,29 @@
       if (!c.focus) c.focus = "league";
       beginPreSeason();
     });
+    // Transfer wizard.
+    for (const b of document.querySelectorAll("[data-signcount]")) b.addEventListener("click", () => {
+      state.signCount = Number(b.dataset.signcount);
+      const max = state.signCount >= 3 ? 4 : state.signCount;
+      if (state.signPositions.length > max) state.signPositions = state.signPositions.slice(0, max);
+      render();
+    });
+    for (const b of document.querySelectorAll("[data-signpos]")) b.addEventListener("click", () => {
+      const max = state.signCount >= 3 ? 4 : state.signCount;
+      const k = b.dataset.signpos, idx = state.signPositions.indexOf(k);
+      if (idx >= 0) state.signPositions.splice(idx, 1);
+      else if (state.signPositions.length < max) state.signPositions.push(k);
+      render();
+    });
+    for (const b of document.querySelectorAll("[data-wlist]")) b.addEventListener("click", () => { toggleList(club(), Number(b.dataset.wlist)); render(); });
+    bind("confirm-transfers", confirmTransfers);
   }
 
   /* ------------------------ TIER 3: CLUB AND WORLD ------------------------ */
   function renderTab() {
     for (const b of document.querySelectorAll(".tab")) b.classList.toggle("on", b.dataset.tab === state.tab);
     const el = $("tab-body");
-    const views = { squad: squadHtml, tactics: tacticsHtml, table: tableHtml, log: logHtml, world: worldHtml };
+    const views = { squad: squadHtml, tactics: tacticsHtml, contracts: contractsHtml, table: tableHtml, career: careerHtml, world: worldHtml };
     el.innerHTML = (views[state.tab] || squadHtml)();
     wireTab();
   }
@@ -641,33 +771,41 @@
           <span class="muted" style="font-size:12px">Click a shirt to change who plays there.</span>
         </div>
       </div>
-      ${recruitmentHtml(c)}`;
+      <div class="panel muted" style="font-size:12px">Signings and sales are handled in the pre-season <b>window</b> (top of the Decisions panel), and contract renewals in the <b>CONTRACTS</b> tab — the board does the dealing, you just point it.</div>`;
   }
 
-  /* The transfer directive lives here now, not in a separate tab: you tell the
-   * board which positions to strengthen and it does the buying in the summer,
-   * within the budget, from the shared pool. Selling is on the squad tab. */
-  function recruitmentHtml(c) {
-    const m = state.manager;
-    const cap = MG.managers.recruitCapacity(m);
-    const rec = c.recruitment || [];
-    const wageRoom = c.finances.wageBudget - MG.clubs.wageBill(c);
-    const reach = MG.network ? MG.network.reachLabel(c) : null;
+  /* -------------------------- CONTRACTS (tab) -----------------------------
+   * The other place the board acts on your preference rather than your command:
+   * you ask to extend or release, the board decides what it can afford, and it
+   * reports back in the log each summer. Sorted shortest-contract first so the
+   * ones that need attention are at the top. */
+  function contractsHtml() {
+    const c = club();
+    const reqs = c.contractRequests || {};
+    const squad = c.squad.slice().sort((a, b) => a.contract.years - b.contract.years || b.overall - a.overall);
     return `<div class="panel">
-      <h3 class="muted">RECRUITMENT · the board will fund ${money(c.finances.transferBudget)} · wage room ${money(wageRoom)}</h3>
-      <div class="muted" style="font-size:12px;margin-bottom:8px">
-        Tell the board which positions to strengthen — it signs the best it can afford in each, in the summer.
-        You can direct up to <b>${cap}</b> signing${cap === 1 ? "" : "s"} (set by your transfer acumen).
-        ${reach ? `<br>Your agents' <b>reach</b> is ${reach} — grow the club's reputation to widen the market.` : ""}
+      <h3 class="muted">CONTRACTS · wages ${money(MG.clubs.wageBill(c))} / ${money(c.finances.wageBudget)}</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:10px">
+        Years remaining, shortest first — the ones near <b>OUT</b> are the ones that need a call.
+        <span class="accent">EXTEND</span> asks the board to tie a player down (it backs you unless the wage bill is out of control);
+        <span class="bad">RELEASE</span> lets his deal run down and leaves on a free when it expires. The board still decides,
+        and reports what it did in the log each summer.
       </div>
-      <div class="seg">${MG.players.POSITION_KEYS.map((k) => {
-        const n = rec.filter((x) => x === k).length;
-        return `<button class="${n ? "on" : ""}" data-recruit="${k}">${k}${n ? ` ×${n}` : ""}</button>`;
-      }).join("")}</div>
-      <div class="row" style="margin-top:8px">
-        <button class="btn tiny" id="recruit-clear">CLEAR</button>
-        <span class="muted" style="font-size:12px">${rec.length ? `Instructed: ${rec.map((p) => `<span class="ppos ${posClass(p)}">${p}</span>`).join(" ")}` : "No signings requested."} ${rec.length > cap ? `<span class="bad">(only the first ${cap} will be actioned)</span>` : ""}</span>
-      </div>
+      ${squad.map((p) => {
+        const req = reqs[p.id], yrs = p.contract.years;
+        const yrsCls = yrs <= 0 ? "expiring" : yrs === 1 ? "soon" : "";
+        return `<div class="crow ${req === "extend" ? "extend" : req === "release" ? "release" : ""}">
+          <div class="crow-yrs ${yrsCls}">${yrs <= 0 ? "OUT" : yrs + "y"}</div>
+          <div class="crow-body">
+            <div class="nm" data-player="${p.id}" style="cursor:pointer">${esc(p.name)} <span class="ppos ${posClass(p.pos)}">${p.pos}</span> <span class="muted" style="font-weight:400">${Math.round(p.overall)} · ${p.age}y</span></div>
+            <div class="muted" style="font-size:12px">£${p.contract.wage}k/wk · ${money(p.value)}</div>
+          </div>
+          <div class="crow-actions">
+            <button class="btn tiny ${req === "extend" ? "primary" : ""}" data-contract="extend:${p.id}">EXTEND</button>
+            <button class="btn tiny ${req === "release" ? "danger" : ""}" data-contract="release:${p.id}">RELEASE</button>
+          </div>
+        </div>`;
+      }).join("")}
     </div>`;
   }
 
@@ -800,20 +938,17 @@
     for (const b of document.querySelectorAll("[data-mentor]")) {
       b.addEventListener("click", (e) => { e.stopPropagation(); toggleMentor(c, Number(b.dataset.mentor)); renderTab(); });
     }
-    for (const b of document.querySelectorAll("[data-recruit]")) {
+    for (const b of document.querySelectorAll("[data-contract]")) {
       b.addEventListener("click", () => {
-        c.recruitment = c.recruitment || [];
-        // Left-click adds one of that position; it cycles off once you exceed
-        // what the board will action, so a position is easy to add and remove.
-        const cap = MG.managers.recruitCapacity(state.manager);
-        if (c.recruitment.filter((x) => x === b.dataset.recruit).length >= cap) {
-          c.recruitment = c.recruitment.filter((x) => x !== b.dataset.recruit);
-        } else c.recruitment.push(b.dataset.recruit);
+        const [action, id] = b.dataset.contract.split(":");
+        const pid = Number(id);
+        c.contractRequests = c.contractRequests || {};
+        // A second click on the same directive clears it — one tap on, one off.
+        if (c.contractRequests[pid] === action) delete c.contractRequests[pid];
+        else c.contractRequests[pid] = action;
         renderTab();
       });
     }
-    const clear = $("recruit-clear");
-    if (clear) clear.addEventListener("click", () => { c.recruitment = []; renderTab(); });
     for (const b of document.querySelectorAll("[data-league]")) {
       b.addEventListener("click", () => openLeague(b.dataset.league));
     }

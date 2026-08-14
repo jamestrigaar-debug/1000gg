@@ -589,6 +589,10 @@
         // that everything touching your club shows up in your own feed.
         for (const b of managerWindow.bought) world.report(`IN — ${b.player.name} (${b.player.pos}, ${Math.round(b.player.overall)}) signs from ${b.from} for ${money(b.fee)}.`, "transfer", pc.id);
         for (const s of managerWindow.sold) world.report(`OUT — ${s.player.name} joins ${s.to} for ${money(s.fee)}.`, "transfer", pc.id);
+        // The board reporting back on what it tried and could not do — the log
+        // is where the manager sees the deals that fell through, not just the
+        // ones that landed.
+        for (const r of managerWindow.refused) world.report(`NO DEAL — ${r.player.name}: ${r.reason}.`, "sack", pc.id);
       }
     }
     const window = MG.transfers.runWindow(world);
