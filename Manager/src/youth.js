@@ -145,15 +145,17 @@
     }
   }
 
-  /** Move a prospect up. Returns the player, or null if he is not there. */
-  function promote(club, playerId) {
+  /** Move a prospect up. Returns the player, or null if he is not there.
+   *  `season` is optional — callers that have a world handy pass it so the
+   *  promotion shows a year on the player's career history. */
+  function promote(club, playerId, season) {
     const a = ensure(club);
     const i = a.players.findIndex((p) => p.id === playerId);
     if (i < 0) return null;
     const p = a.players.splice(i, 1)[0];
     p.academy = false;
     p.clubId = club.id;
-    p.career.clubs.push(club.name);
+    MG.players.recordMove(p, club.name, season);
     MG.tactics.initMorale(p);
     club.squad.push(p);
     MG.clubs.refreshRatings(club);
@@ -183,7 +185,7 @@
       if (p.age >= PROMOTE_AGE - 1 && ready && !isPlayerClub) {
         p.academy = false;
         p.clubId = club.id;
-        p.career.clubs.push(club.name);
+        MG.players.recordMove(p, club.name, world.season);
         MG.tactics.initMorale(p);
         club.squad.push(p);
         continue;

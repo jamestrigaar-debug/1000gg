@@ -315,6 +315,20 @@
     return p;
   }
 
+  /* A player's move is recorded twice: `career.clubs` (a flat name list, the
+   * original field — kept so nothing that already reads it breaks) and
+   * `career.history` (club, season, age), which is what a profile actually
+   * needs to show a career as a timeline rather than a bag of names. Season
+   * is best-effort — a few sites (initial squad generation, an academy
+   * promotion reached through a code path with no world in scope) cannot
+   * always supply one, and the profile just leaves the year blank there
+   * rather than guessing. */
+  function recordMove(player, clubName, season) {
+    player.career.clubs.push(clubName);
+    if (!player.career.history) player.career.history = [];
+    player.career.history.push({ club: clubName, season: season != null ? season : null, age: player.age });
+  }
+
   /** Convert a record from src/data.js into a live player. */
   function fromDatabase(rng, raw, currentYear, firstSeason, league) {
     const age = inferAge(rng, raw, currentYear, firstSeason);
@@ -340,6 +354,34 @@
     return p;
   }
 
+  /* ------------------------------- MENTALITY -------------------------------
+   * The database's own mentalityRating (src/data.js) averages 66 across the
+   * real 2025/26 squads, spanning 35-94 with real width either side. Every
+   * GENERATED player used to get a synthetic version of the same number
+   * centred on 45 — twenty points below the real data — which is why regens
+   * read as uniformly timid: not wrong on any one player, wrong on every one
+   * of them the same way. Recentred here to sit where the real data sits,
+   * with the same spread and the same gentle lean toward the player's own
+   * quality the original formula had.
+   *
+   * The mentality TRAIT (the label, "Composed"/"Mercurial"/etc.) was never
+   * rolled for a generated player at all — makePlayer's own default
+   * ("Balanced") is a real trait, but it appears in barely 1% of the actual
+   * database, so every regen in the world showing it was the same bug from
+   * the other side: an unrolled field standing in as if it were the roll. */
+  const MENTALITY_TRAITS = {
+    high: ["Composed", "Fearless", "Leader", "Determined", "Professional", "Unflappable", "Big Game Player", "Talisman", "Winner", "Ice Cold"],
+    mid: ["Reliable", "Measured", "Steady", "Focused", "Consistent", "Dependable", "Diligent", "Adaptable", "Calm", "Balanced"],
+    low: ["Mercurial", "Temperamental", "Maverick", "Modest", "Quiet", "Understated", "Grounded", "Honest"],
+  };
+  function rollMentalityRating(rng, overall) {
+    return clamp(Math.round(60 + rng.gauss() * 16 + (overall - 60) * 0.25), 20, 96);
+  }
+  function rollMentalityTrait(rng, rating) {
+    const pool = rating >= 70 ? MENTALITY_TRAITS.high : rating >= 50 ? MENTALITY_TRAITS.mid : MENTALITY_TRAITS.low;
+    return rng.pick(pool);
+  }
+
   /** A generated player of roughly `target` quality. */
   function generate(rng, opts) {
     const league = opts.league || "Championship";
@@ -354,6 +396,7 @@
     const tall = pos === "CB" || pos === "GK" || pos === "FW";
     const quick = pos === "WG" || pos === "FB" || pos === "FW";
     const around = (base, spread) => clamp(Math.round(base + rng.gauss() * spread), 25, 99);
+    const mentalityRating = rollMentalityRating(rng, overall);
     const p = makePlayer({
       name: MG.names.personName(rng, nationality),
       nationality, pos, age, overall,
@@ -367,7 +410,8 @@
         height: pos === "GK" ? rng.int(185, 199) : tall ? rng.int(182, 196) : rng.int(168, 186),
         weight: rng.int(66, 92),
       },
-      mentalityRating: clamp(Math.round(45 + rng.gauss() * 15 + (overall - 60) * 0.25), 20, 95),
+      mentality: rollMentalityTrait(rng, mentalityRating),
+      mentalityRating,
       contract: { years: rng.int(1, 4), wage: 0 },
       homegrown: !!opts.homegrown,
     });
@@ -456,9 +500,9 @@
   MG.players = {
     POSITIONS, POSITION_KEYS, SQUAD_TARGET,
     firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta,
-    AGE_CURVE, ageCurve,
+    AGE_CURVE, ageCurve, MENTALITY_TRAITS, rollMentalityRating, rollMentalityTrait,
     marketValue, expectedWage, ageValueFactor, LEAGUE_WAGE_FACTOR,
-    makePlayer, fromDatabase, generate, resetIds, rollInjury, availability, durability,
+    makePlayer, fromDatabase, generate, resetIds, rollInjury, availability, durability, recordMove,
     unitRating, keeperRating, squadRatings, squadNeeds, weakestUnit,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

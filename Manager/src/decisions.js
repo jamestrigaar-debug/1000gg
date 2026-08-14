@@ -417,7 +417,7 @@
           label: `Promote ${p.name}`,
           detail: `${p.pos}, ${p.age} · coaches see him reaching ${p.scouted ? `${p.scouted.floor}–${p.scouted.ceiling}` : Math.round(p.potential)}`,
           fx: (api) => {
-            const promoted = MG.youth.promote(api.club, p.id);
+            const promoted = MG.youth.promote(api.club, p.id, api.world.season);
             if (!promoted) return `${p.name} was moved up before this conversation even finished. Already done.`;
             api.confidence(1); api.youth(0.05);
             return `${promoted.name} (${promoted.pos}, ${promoted.age}) is promoted to the first-team squad — the academy staff call it his time.`;

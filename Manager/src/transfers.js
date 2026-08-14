@@ -437,7 +437,7 @@
       buyer.finances.balance = round1(buyer.finances.balance - fee);
       player.clubId = buyer.id;
       player.contract = { years: rng.int(2, 5), wage };
-      player.career.clubs.push(buyer.name);
+      MG.players.recordMove(player, buyer.name, world.season);
       player.value = MG.players.marketValue(player);
       st.budget -= fee;
       st.wageRoom -= wage * 52 / 1000;
@@ -669,7 +669,7 @@
         const p = pool.splice(idx, 1)[0];
         p.clubId = club.id;
         p.contract = { years: rng.int(1, 3), wage: MG.players.expectedWage(p, club.leagueId) };
-        p.career.clubs.push(club.name);
+        MG.players.recordMove(p, club.name, world.season);
         club.squad.push(p);
         /* Every arrival at the managed club is reported. This pass, the squad
          * top-up and the youth intake all used to add players silently, which
@@ -716,7 +716,7 @@
         // was what pushed the average age of the entire population up.
         const p = MG.players.generate(rng, { league: club.leagueId, pos, target, spread: 3, age: rng.int(18, 26) });
         p.clubId = club.id;
-        p.career.clubs.push(club.name);
+        MG.players.recordMove(p, club.name, world.season);
         club.squad.push(p);
         if (club.id === world.playerClubId) {
           news.push({ type: "transfer", text: `SQUAD FILLER — ${p.name} (${p.pos}, ${p.age}, ${Math.round(p.overall)}) is brought in to make up the numbers.`, clubId: club.id });
@@ -768,7 +768,7 @@
         p.potential = clamp(Math.max(p.overall + 3, ceiling), p.overall, 96);
         p.contract = { years: rng.int(2, 4), wage: MG.players.expectedWage(p, club.leagueId) };
         p.clubId = club.id;
-        p.career.clubs.push(club.name);
+        MG.players.recordMove(p, club.name, world.season);
         club.squad.push(p);
         if (club.id === world.playerClubId) {
           news.push({ type: "youth", text: `ACADEMY — ${p.name} (${p.pos}, ${p.age}) steps up from the youth team${p.potential >= 86 ? " — the coaches think he can play at the very top" : ` (potential ${Math.round(p.potential)})`}.`, clubId: club.id });
@@ -816,7 +816,7 @@
     player.clubId = buyer.id;
     player.transferListed = false;
     player.contract = { years: 3, wage: MG.players.expectedWage(player, buyer.leagueId) };
-    player.career.clubs.push(buyer.name);
+    MG.players.recordMove(player, buyer.name, world.season);
     MG.clubs.refreshRatings(club);
     MG.clubs.refreshRatings(buyer);
     return { ok: true, player, to: buyer.name, fee };
@@ -908,7 +908,7 @@
     club.finances.transferBudget = round1(Math.max(0, club.finances.transferBudget - bestFee));
     player.clubId = club.id;
     player.contract = { years: rng.int(3, 5), wage: round1(wage * rng.between(1.0, 1.2)) };
-    player.career.clubs.push(club.name);
+    MG.players.recordMove(player, club.name, world.season);
     player.value = MG.players.marketValue(player);
     // He arrives for pre-season fit. Without this he carries the injury rolled
     // for him at his old club and a marquee signing could lower the very rating
@@ -960,7 +960,7 @@
     buyer.finances.spent = round1(buyer.finances.spent + fee);
     player.clubId = buyer.id;
     player.contract = { years: 3, wage: MG.players.expectedWage(player, buyer.leagueId) };
-    player.career.clubs.push(buyer.name);
+    MG.players.recordMove(player, buyer.name, world.season);
     MG.clubs.refreshRatings(club);
     MG.clubs.refreshRatings(buyer);
     return { player, fee, to: buyer.name };
@@ -1042,7 +1042,7 @@
       player.clubId = buyer.id;
       player.transferListed = false;
       player.contract = { years: 3, wage: MG.players.expectedWage(player, buyer.leagueId) };
-      player.career.clubs.push(buyer.name);
+      MG.players.recordMove(player, buyer.name, world.season);
       MG.clubs.refreshRatings(buyer);
       sold.push({ player, fee, to: buyer.name });
     }
@@ -1092,7 +1092,7 @@
       player.transferListed = false;
       player.season.injured = 0;
       player.contract = { years: rng.int(3, 5), wage };
-      player.career.clubs.push(club.name);
+      MG.players.recordMove(player, club.name, world.season);
       player.value = MG.players.marketValue(player);
       MG.clubs.refreshRatings(seller);
       bought.push({ player, fee, from: seller.name });

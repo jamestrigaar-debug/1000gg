@@ -105,7 +105,7 @@
       club.squad = raw.map((p) => {
         const player = MG.players.fromDatabase(world.rng, p, world.year, firstSeason, club.leagueId);
         player.clubId = club.id;
-        player.career.clubs.push(club.name);
+        MG.players.recordMove(player, club.name, world.season);
         return player;
       });
       realSquads.push(club);
@@ -239,7 +239,10 @@
           league: club.leagueId, pos, age, target: level - drop, spread: 3.2,
         });
         p.clubId = club.id;
-        p.career.clubs.push(club.name);
+        // Only ever called at world creation (season 1) — this is a player's
+        // starting club, not a move, so the season is simply known rather
+        // than threaded through as a parameter nothing else needs.
+        MG.players.recordMove(p, club.name, 1);
         squad.push(p);
       }
     }

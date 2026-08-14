@@ -151,52 +151,52 @@
   }
 
   /* ------------------------------ THE RADAR --------------------------------
-   * Six axes, top and then clockwise: Aerial, Mental, Finishing, Pace,
-   * Physical, Defense (Goalkeeping for a keeper) — chosen so that three
-   * players who all rate 78 look like three different footballers.
+   * Six axes, top and then clockwise: Defending, Physical, Speed, Attacking,
+   * Aerial, Mental — chosen so that three players who all rate 78 look like
+   * three different footballers.
    *
-   * The old set — pace, physical, aerial, stamina, technique, mentality — read
-   * the raw attributes almost directly, and the two that separate a technical
-   * forward from a centre-half (technique and aerial) were single numbers with
-   * everything else shared. A poacher, a playmaker and a stopper all came out
-   * as roughly the same hexagon.
-   *
-   * These axes are COMPOSITES, each built from the attributes that actually
-   * make up that quality, and each stretched around the population's midpoint
-   * so real differences are visible rather than crowded into the top third:
-   *
+   *   DEFENDING   DEF-ATR (GK-ATR for a keeper) — unchanged, see
+   *               defenceAttribute below
+   *   PHYSICAL    strength and fitness — the database's own conditioning
+   *               attributes, not height, which has its own job on Aerial
+   *   SPEED       raw speed, on its own — stamina's job moved to Physical, so
+   *               this axis is no longer two things pretending to be one
+   *   ATTACKING   the average of both feet — the technical read the report
+   *               asks for. Not position-weighted: an earlier version
+   *               discounted this for defenders and midfielders (the DEF-ATR
+   *               idea run in reverse) and it went too far, reading a
+   *               genuinely composed centre-half's distribution as barely
+   *               better than a goalkeeper's. Reverted.
    *   AERIAL      heading with height and strength behind it
-   *   MENTAL      the mentality rating on its own axis — the one place
-   *               temperament gets to stand for itself rather than only
-   *               sharpening finishing
-   *   FINISHING   the better foot, sharpened by mentality — the quality that
-   *               separates a goalscorer from a good footballer
-   *   PACE        speed, with stamina deciding how often he can use it
-   *   PHYSICAL    strength and build
-   *   DEFENSE     DEF-ATR (GK-ATR for a keeper) — see defenceAttribute below
+   *   MENTAL      the mentality rating on its own axis
    */
   function stretch(v) {
-    // Pull the population's actual band out across the whole dial, so a
-    // difference of a few points reads as a visibly different shape rather
-    // than two nearly-identical hexagons — the same reason 1000goals stretches
-    // its own card radars rather than plotting raw attributes.
-    return clamp(Math.round((v - 34) * 1.7), 2, 99);
+    /* Contrast-stretch AROUND THE POPULATION'S OWN CENTRE (measured across
+     * every attribute in the game, ~55-58) rather than up from a low floor.
+     * The previous version anchored at 34 with a 1.7x slope: its break-even
+     * point — the raw value that displays unchanged — worked out at 82.6,
+     * so almost every ordinary attribute (the population sits at 55 on
+     * average) displayed BELOW its true value, and mentality in particular
+     * (which averages nearer 45 for a generated player) read as barely
+     * there. Anchoring on the centre instead means a typical attribute shows
+     * roughly itself; the amplification only shows up as real spread moves
+     * away from that centre in either direction, which is what stops one
+     * elite attribute (paciest wingers, a maxed heading score) pinning the
+     * whole top end of the dial to 99 the way the old anchor did. */
+    const CENTRE = 56, SLOPE = 1.15;
+    return clamp(Math.round(CENTRE + (v - CENTRE) * SLOPE), 2, 99);
   }
   function radarAxes(player) {
     const a = player.attrs || {};
     const men = player.mentalityRating || 55;
     const height = a.height || 180;
     return [
+      { label: player.pos === "GK" ? "Goalkeeping" : "Defending", value: stretch(defenceAttribute(player)) },
+      { label: "Physical", value: stretch((a.strength || 50) * 0.5 + (a.fitness || 50) * 0.5) },
+      { label: "Speed", value: stretch(a.speed || 50) },
+      { label: "Attacking", value: stretch(((a.leftFoot || 50) + (a.rightFoot || 50)) / 2) },
       { label: "Aerial", value: stretch((a.heading || 50) * 0.68 + (a.strength || 50) * 0.14 + clamp((height - 165) * 1.1, 0, 60) * 0.18) },
       { label: "Mental", value: stretch(men) },
-      { label: "Finishing", value: stretch(finishingAttribute(player)) },
-      { label: "Pace", value: stretch((a.speed || 50) * 0.82 + (a.fitness || 50) * 0.18) },
-      // Strength and fitness — the database's own physical attributes — not
-      // height, which already has its own job on the Aerial axis. Folding
-      // height in here too made every tall player read as "physical" whatever
-      // his actual strength or conditioning said.
-      { label: "Physical", value: stretch((a.strength || 50) * 0.5 + (a.fitness || 50) * 0.5) },
-      { label: player.pos === "GK" ? "Goalkeeping" : "Defense", value: stretch(defenceAttribute(player)) },
     ];
   }
 
@@ -235,35 +235,9 @@
     return clamp(Math.round(player.overall * weight * 0.6 + physical * 0.4), 1, 99);
   }
 
-  /* -------------------------------- FINISHING -------------------------------
-   * The mirror image of DEF-ATR, and the fix for a real problem: the database's
-   * rightFoot/leftFoot ratings are a broad "how good is he with that foot"
-   * number — passing, dribbling, tricks and shooting all folded into one — not
-   * a shooting rating specifically. Reading that number straight for every
-   * position produced technically excellent CENTRE-BACKS showing up with
-   * finishing to rival a striker, because a ball-playing defender's foot
-   * rating is genuinely high even though he is never actually asked to shoot.
-   *
-   * FINISHING_WEIGHT debuffs the foot component by how much of a position's
-   * job is actually about getting shots away — heaviest for the back line,
-   * lighter through midfield, none at all for a forward, the same shape as
-   * DEF_ATR_WEIGHT but pointed the other way. Mentality (composure in front of
-   * goal) is left unweighted — a defender who is calm under pressure is calm
-   * under pressure whatever his position — only the technical foot rating is
-   * discounted. */
-  const FINISHING_WEIGHT = { GK: 0.15, CB: 0.30, FB: 0.45, DM: 0.50, CM: 0.65, AM: 0.85, WG: 0.85, FW: 1.0 };
-  function finishingAttribute(player) {
-    const a = player.attrs || {};
-    const weight = FINISHING_WEIGHT[player.pos] != null ? FINISHING_WEIGHT[player.pos] : 0.8;
-    const foot = Math.max(a.rightFoot || 50, a.leftFoot || 50);
-    const men = player.mentalityRating || 55;
-    return clamp(Math.round(foot * weight * 0.72 + men * 0.28), 1, 99);
-  }
-
   MG.ratings = {
     ROLE_WEIGHTS, ROLE_INFLUENCE, attrValue, roleRating,
     hidden, resetHidden, rollSeasonForm, fatigueFactor,
     radarAxes, DEF_ATR_WEIGHT, heightScore, defenceAttribute,
-    FINISHING_WEIGHT, finishingAttribute,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

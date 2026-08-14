@@ -66,6 +66,18 @@
     if (pos === "CB" || pos === "FB") return "defence";
     return "midfield";
   }
+  /* A quality ring for the rating badge — see the .rtier CSS. Relative to the
+   * CLUB's own level rather than a flat world number, because "elite" only
+   * ever fires for the Premier League on an absolute scale and a National
+   * League manager needs to spot his own standout just as easily as a big
+   * club's does. Only the two tails light up; most of a squad reads plain. */
+  function ratingTierClass(overall, level) {
+    if (level == null) return "";
+    const diff = overall - level;
+    if (diff >= 8) return "rtier-elite";
+    if (diff <= -10) return "rtier-poor";
+    return "";
+  }
   const ATTR_ROWS = [
     { k: "heading", label: "HDR" }, { k: "fitness", label: "FIT" }, { k: "strength", label: "STR" },
     { k: "leftFoot", label: "LF" }, { k: "rightFoot", label: "RF" }, { k: "speed", label: "SPD" },
@@ -73,10 +85,9 @@
   ];
   function attrGrid(p) {
     const defAtr = MG.ratings && MG.ratings.defenceAttribute ? MG.ratings.defenceAttribute(p) : null;
-    const finAtr = MG.ratings && MG.ratings.finishingAttribute && p.pos !== "GK" ? MG.ratings.finishingAttribute(p) : null;
     return `<div class="pattrs">${ATTR_ROWS.map((r) =>
       `<div class="pattr"><span>${r.label}</span><b>${p.attrs[r.k]}${r.suffix || ""}</b></div>`).join("")
-      }<div class="pattr"><span>MEN</span><b>${esc(p.mentality)}</b></div>${defAtr != null ? `<div class="pattr"><span>${p.pos === "GK" ? "GK-ATR" : "DEF-ATR"}</span><b>${defAtr}</b></div>` : ""}${finAtr != null ? `<div class="pattr"><span>FIN-ATR</span><b>${finAtr}</b></div>` : ""}</div>`;
+      }<div class="pattr"><span>MEN</span><b>${esc(p.mentality)}</b></div>${defAtr != null ? `<div class="pattr"><span>${p.pos === "GK" ? "GK-ATR" : "DEF-ATR"}</span><b>${defAtr}</b></div>` : ""}</div>`;
   }
   const SORTS = {
     rating: (a, b) => b.overall - a.overall,
@@ -106,11 +117,21 @@
   }
 
   const STEP_TITLES = {
-    archetype: "WHAT KIND OF MANAGER ARE YOU?",
-    reputation: "WHAT IS YOUR NAME WORTH?",
-    nationality: "WHERE ARE YOU FROM?",
+    tactic: "HOW DO YOU WANT YOUR TEAM TO PLAY?",
+    origin: "WHERE ARE YOU FROM?",
+    career: "HOW DID YOU GET HERE?",
+    personality: "WHO ARE YOU LIKE, IN THE DUGOUT?",
+    attributes: "WHOSE COACHING SHAPE DID YOU LEARN?",
   };
 
+  /* Deliberately the LAST place in the game that reads like a stat sheet.
+   * The old draft screen showed a rarity tag and a full bar chart of
+   * attributes for every roll — which meant you could see exactly what you
+   * had before you had played a single season with it. This one shows what
+   * a chairman or a fan would actually know about a man before he took the
+   * job: his story, not his numbers. Reputation, coaching badge, club
+   * affiliation's effect, hidden traits and agent level never appear here at
+   * all — see draft.js. */
   function renderDraft() {
     const d = state.draft, step = d.currentStep();
     $("draft-step-title").textContent = STEP_TITLES[step] || "";
@@ -120,40 +141,36 @@
 
     const reel = $("draft-reel");
     let cls = "reel", html = "";
-    if (step === "archetype") {
-      const a = MG.managers.ARCHETYPES[d.landed.archetype];
-      cls += ` ${a.rarity.toLowerCase()}`;
+    if (step === "tactic") {
+      const t = MG.managers.TACTICS[d.landed.tactic];
       html = `
-        <div class="reel-rarity">${esc(a.rarity)}</div>
-        <div class="reel-headline">${esc(a.name)}</div>
-        <div class="reel-sub">in the mould of ${esc(a.basedOn)}</div>
-        <p class="reel-blurb">${esc(a.blurb)}</p>
-        <div class="reel-grid">
-          <div><span>System</span><b>${esc(MG.managers.TACTICS[a.tactic].label)}</b></div>
-          <div><span>Traits</span><b>${a.traits.map(esc).join(", ")}</b></div>
-          <div><span>Temperament</span><b>${esc(a.personality)}</b></div>
-        </div>
-        <div class="attr-bars">${attrBars(a.attrs)}</div>`;
-    } else if (step === "reputation") {
-      const t = d.landed.tier;
-      if (t.key === "elite") cls += " legendary"; else if (t.key === "established") cls += " rare";
-      html = `<div class="reel-rarity">${esc(t.label)}</div>
-        <div class="reel-headline">Reputation ${d.landed.reputation}</div>
+        <div class="reel-headline">${esc(t.label)}</div>
         <p class="reel-blurb">${esc(t.blurb)}</p>`;
+    } else if (step === "origin") {
+      const flag = MG.names.flagFor ? MG.names.flagFor(d.landed.nationality) : "";
+      html = `
+        <div class="reel-headline">${flag} ${esc(d.landed.nationality)}</div>
+        <p class="reel-blurb">Where you learned the game.${d.landed.affiliation ? ` A boyhood attachment to <b>${esc(d.landed.affiliation)}</b> that never quite went away.` : ""}</p>`;
+    } else if (step === "career") {
+      const path = MG.draft.CAREER_PATHS[d.landed.career.key];
+      const second = d.landed.career.second ? MG.draft.SECOND_CAREERS[d.landed.career.second] : null;
+      html = `
+        <div class="reel-headline">${esc(path.label)}</div>
+        <p class="reel-blurb">${esc(path.blurb)}${second ? ` And before that, ${esc(second.text)}.` : ""}</p>`;
     } else {
-      html = `<div class="reel-headline">${esc(d.landed.nationality)}</div>
-        <p class="reel-blurb">Where you learned the game — and where you will always be able to find work.</p>`;
+      // personality / attributes — the same ten-name pool, asked two
+      // different questions of it.
+      const legend = MG.draft.LEGENDS[d.landed[step]];
+      const rarityCls = legend.rarity.toLowerCase();
+      cls += ` ${rarityCls}`;
+      html = `
+        <div class="reel-rarity">${esc(legend.rarity)}</div>
+        <div class="reel-headline">${esc(legend.name)}</div>
+        <div class="reel-sub">in the mould of ${esc(legend.basedOn)}</div>
+        <p class="reel-blurb">${esc(legend.blurb)}</p>`;
     }
     reel.className = cls;
     reel.innerHTML = html;
-  }
-
-  function attrBars(attrs) {
-    const labels = { attacking: "Attacking", defending: "Defending", development: "Development",
-      manManagement: "Man-management", transferAcumen: "Transfer acumen", adaptability: "Adaptability", discipline: "Discipline" };
-    return Object.entries(attrs).map(([k, v]) => `
-      <div class="bar-row"><span class="muted">${esc(labels[k] || k)}</span>
-        <div class="bar"><i style="width:${clamp(v, 0, 99)}%"></i></div><b>${Math.round(v)}</b></div>`).join("");
   }
 
   function draftAccept() {
@@ -218,9 +235,11 @@
     // manager taking his second job does not want ten seasons of a stranger's
     // transfers marked "unread" the moment he sits down.
     state.lastSeenNewsId = world.news.length ? world.news[world.news.length - 1].id : 0;
-    // Setting up the team is mandatory before anything else happens.
-    state.stage = "tactics";
-    state.tab = "tactics";
+    // A new job opens with an introduction to the club before anything is
+    // asked of the manager — team set-up is still mandatory, it just comes
+    // after he has actually met the place.
+    state.stage = "intro";
+    state.tab = "squad";
     render();
     show("screen-career");
   }
@@ -530,11 +549,12 @@
 
   /* --------------------------- TIER 2: DECISIONS -------------------------- */
   function stageHtml() {
+    if (state.stage === "intro") return clubIntroHtml();
     if (state.stage === "tactics") return tacticsSetupHtml();
     if (state.stage === "transfers") return transfersWizardHtml();
     if (state.stage === "preseason" || state.stage === "endseason") return cardHtml();
     if (state.stage === "endseason-done") {
-      return outcomesHtml() + windowReportHtml()
+      return outcomesHtml() + windowReportHtml() + contractsUpHtml(club())
         + `<button class="btn primary big" id="to-preseason" style="margin-top:12px">PRE-SEASON ▶</button>`;
     }
     if (state.stage === "ready") return readyHtml();
@@ -543,6 +563,56 @@
   }
 
   const outcomesHtml = () => state.outcomes.map((o) => `<div class="outcome">${esc(o.outcome)}</div>`).join("");
+
+  /* The first thing a new job used to show a manager was a formation picker.
+   * No club, no squad, no sense of what he had just walked into — the
+   * mechanics started before the introduction did. This is the introduction:
+   * who they are, who he answers to, who is actually any good, and who he is
+   * about to be judged against, before team set-up asks him to decide anything. */
+  function clubIntroHtml() {
+    const c = club(), m = state.manager;
+    const board = MG.clubs.BOARD_STYLES[c.board.style];
+    const key = c.squad.slice().sort((a, b) => b.overall - a.overall).slice(0, 5);
+    const rivals = state.world.clubsInLeague(c.leagueId)
+      .filter((x) => x.id !== c.id)
+      .sort((a, b) => MG.clubs.clubStrength(b) - MG.clubs.clubStrength(a))
+      .slice(0, 3);
+    const r = c.ratings;
+    return `
+      <div class="decision boardroom">
+        <div class="decision-tag">WELCOME TO ${esc(c.name.toUpperCase())}</div>
+        <div class="decision-text">${esc(m.name)} takes charge of ${esc(c.name)}, ${esc(MG.clubs.LEAGUES[c.leagueId].name)}${c.reputation >= 70 ? " — one of the biggest jobs in the game" : c.reputation <= 25 ? ", a long way down the pyramid" : ""}.</div>
+        <div class="stat-grid">
+          <div class="stat-box"><div class="sb-num">${Math.round(r.attack)}</div><div class="sb-lab">Attack</div></div>
+          <div class="stat-box"><div class="sb-num">${Math.round(r.midfield)}</div><div class="sb-lab">Midfield</div></div>
+          <div class="stat-box"><div class="sb-num">${Math.round(r.defence)}</div><div class="sb-lab">Defence</div></div>
+          <div class="stat-box"><div class="sb-num">${c.reputation}</div><div class="sb-lab">Club rep</div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3 class="muted">THE BOARDROOM</h3>
+        <div class="muted" style="font-size:13px;margin-bottom:6px"><b>${esc(c.board.style)}</b> — ${esc(board.blurb)} · ${esc(ownerLabel(c))}</div>
+        <div class="result-banner ok" style="margin-top:6px">${esc(c.board.targets ? c.board.targets.summary : "No brief set")}</div>
+      </div>
+
+      <div class="panel">
+        <h3 class="muted">PLAYERS TO BUILD AROUND</h3>
+        <div class="muted" style="font-size:12px;margin-bottom:8px">The five best players already at the club, before you change anything about it.</div>
+        ${key.map((p) => pcard(p, { level: c.level })).join("")}
+      </div>
+
+      ${rivals.length ? `<div class="panel">
+        <h3 class="muted">WHO YOU ARE UP AGAINST</h3>
+        <div class="muted" style="font-size:12px;margin-bottom:8px">The strongest clubs in ${esc(MG.clubs.LEAGUES[c.leagueId].name)} this season.</div>
+        ${rivals.map((x) => `<div class="crow" data-club="${x.id}" style="cursor:pointer">
+          <div class="prating ${x.reputation >= c.reputation ? "attack" : "midfield"}" style="width:38px;height:38px;font-size:14px">${Math.round(MG.clubs.clubStrength(x))}</div>
+          <div class="crow-body"><div class="nm">${esc(x.name)}</div><div class="muted" style="font-size:12px">reputation ${x.reputation}</div></div>
+        </div>`).join("")}
+      </div>` : ""}
+
+      <button class="btn primary big" id="to-team-setup" style="margin-top:12px">MEET THE SQUAD, THEN SET UP THE TEAM ▶</button>`;
+  }
 
   function tacticsSetupHtml() {
     const c = club();
@@ -576,10 +646,14 @@
     const maxPos = state.signCount >= 3 ? 4 : state.signCount;
     // A player here on loan is not yours to sell.
     const saleList = c.squad.filter((p) => !p.loan).sort(SORTS.rating);
+    const row = state.lastRow;
+    const kickoff = row
+      ? `Season ${state.world.season} begins. Last time out: ${row.champion ? "champions" : row.promoted ? "promoted" : row.relegated ? "relegated" : `${ordinal(row.position)} in the ${row.leagueName}`}.`
+      : `Season ${state.world.season} begins.`;
     return `
       <div class="decision boardroom">
         <div class="decision-tag">PRE-SEASON · THE WINDOW</div>
-        <div class="decision-text">The board are ready to back you in the market. Tell them how many to sign and where — they do the deals and report back in the log.</div>
+        <div class="decision-text">${esc(kickoff)} The board are ready to back you in the market — tell them how many to sign and where, and they do the deals and report back in the log.</div>
         <div class="board-note">To spend: <b>${money(c.finances.transferBudget)}</b> · wage room <b>${money(wageRoom)}</b>${reach ? ` · reach: ${esc(reach)}` : ""}</div>
 
         <div class="wizard-block">
@@ -687,6 +761,39 @@
       ${w.bought.map((b) => line(`IN — ${b.player.name} (${b.player.pos}, ${Math.round(b.player.overall)}) from ${b.from} for ${money(b.fee)}.`)).join("")}
       ${w.sold.map((b) => line(`OUT — ${b.player.name} to ${b.to} for ${money(b.fee)}.`)).join("")}
       ${w.refused.map((b) => `<div class="log-entry sack">NO DEAL — ${esc(b.player.name)}: ${esc(b.reason)}.</div>`).join("")}
+    </div>`;
+  }
+
+  /* End of season, before the next window opens — exactly when a manager
+   * actually thinks about who is running down. Missing this used to mean
+   * finding out a squad player left for nothing three windows later, buried
+   * in the log with everything else that happened that summer. */
+  function contractsUpHtml(c) {
+    const expiring = c.squad.filter((p) => !p.loan && p.contract.years <= 1)
+      .sort((a, b) => a.contract.years - b.contract.years || b.overall - a.overall);
+    if (!expiring.length) return "";
+    const reqs = c.contractRequests || {};
+    const runOut = expiring.filter((p) => p.contract.years <= 0).length;
+    return `<div class="panel">
+      <h3 class="muted">CONTRACTS UP · ${expiring.length} player${expiring.length === 1 ? "" : "s"}</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">
+        ${runOut ? `<b class="bad">${runOut} run${runOut === 1 ? "s" : ""} out completely</b> before the window opens — a free
+        release if nothing is done. ` : ""}Ask the board to extend or release now; anyone left alone just keeps running down.
+      </div>
+      <div class="table-scroll" style="max-height:320px">${expiring.map((p) => {
+        const req = reqs[p.id];
+        const outNow = p.contract.years <= 0;
+        return `<div class="crow ${outNow ? "release" : ""}">
+          <div class="prating ${posClass(p.pos)}" style="width:38px;height:38px;font-size:15px;cursor:pointer" data-player="${p.id}">${Math.round(p.overall)}</div>
+          <div class="crow-body"><div class="nm">${esc(p.name)} <span class="ppos ${posClass(p.pos)}">${p.pos}</span></div>
+            <div class="muted" style="font-size:12px">${p.age}y · ${money(p.value)} · £${p.contract.wage}k/wk ·
+            <span class="${outNow ? "bad" : "gold"}">${outNow ? "contract runs out" : "1 year left"}</span></div></div>
+          <div class="crow-actions" style="display:flex;gap:4px">
+            <button class="btn tiny ${req === "extend" ? "primary" : ""}" data-contractup="extend:${p.id}">${req === "extend" ? "◤ EXTEND" : "EXTEND"}</button>
+            <button class="btn tiny ${req === "release" ? "danger" : ""}" data-contractup="release:${p.id}">${req === "release" ? "◤ RELEASE" : "RELEASE"}</button>
+          </div>
+        </div>`;
+      }).join("")}</div>
     </div>`;
   }
 
@@ -799,6 +906,23 @@
       render();
     });
     bind("confirm-transfers", confirmTransfers);
+    bind("to-team-setup", () => { state.stage = "tactics"; render(); });
+    for (const b of document.querySelectorAll("#stage [data-club]")) {
+      b.addEventListener("click", () => openClub(Number(b.dataset.club)));
+    }
+    // Contracts-up panel (end of season) and any other stage-level rating
+    // badge that opens a profile.
+    for (const b of document.querySelectorAll("[data-contractup]")) {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const [action, id] = b.dataset.contractup.split(":");
+        toggleContractReq(club(), Number(id), action);
+        render();
+      });
+    }
+    for (const el of document.querySelectorAll("#stage [data-player]")) {
+      el.addEventListener("click", (e) => { e.stopPropagation(); openPlayer(Number(el.dataset.player)); });
+    }
   }
 
   /* ------------------------ TIER 3: CLUB AND WORLD ------------------------ */
@@ -833,7 +957,7 @@
       ${squad.map((p) => pcard(p, {
         inXI: xi.has(p.id), listed: listed.includes(p.id), mentored: mentoring.includes(p.id),
         canMentor: mentoring.length < mentorCap || mentoring.includes(p.id),
-        contractReq: reqs[p.id],
+        contractReq: reqs[p.id], level: c.level,
       })).join("")}
     </div>
     ${loanedOutHtml(c)}`;
@@ -894,8 +1018,9 @@
       : o.mentored == null
         ? `<div class="pactions"><span class="muted" style="font-size:11px">${esc(p.pos)}</span></div>`
         : "";
+    const tierCls = ratingTierClass(p.overall, o.level);
     return `<div class="pcard ${o.mentored ? "mentored" : o.listed ? "listed" : o.inXI ? "in-xi" : ""}">
-      <div class="prating ${pc}" data-player="${p.id}" style="cursor:pointer">${ratingNum}${!scouted ? growthTag(p) : ""}</div>
+      <div class="prating ${pc} ${tierCls}" data-player="${p.id}" style="cursor:pointer">${ratingNum}${!scouted ? growthTag(p) : ""}</div>
       <div class="pbody" data-player="${p.id}" style="cursor:pointer">
         <div class="pname">${flags}<span title="${esc(p.nationality)}">${natFlag}</span> ${esc(p.name)}${p.homegrown ? ' <span class="hg">HG</span>' : ""}${markTag(p)}</div>
         <div class="pmeta"><span class="ppos ${pc}">${esc(p.pos)}</span>${p.age}y · ${scouted ? `<span class="${scoutCls}">scouted ${scouted.floor}–${scouted.ceiling}</span>` : `pot ${Math.round(p.potential)}`} · ${money(p.value)} · £${p.contract.wage}k
@@ -954,6 +1079,25 @@
       <b class="${cls}">${d.score}/100 durability</b> — survives about
       <span class="${cls}" style="letter-spacing:1px">${bars}</span> ${d.gamesSurvived}/5 matches at full intensity before he needs a rest.
       ${player.age >= 30 ? `<span class="muted"> Age ${player.age}: recovers slower than a player in his twenties.</span>` : ""}
+    </div>`;
+  }
+
+  /* Where he has actually been — the "so we can see movement" ask. Every
+   * signing, sale, loan return, board sale and academy promotion now records
+   * a {club, season, age} entry (players.js's recordMove); this just reads
+   * that back as a short timeline instead of the flat name list career.clubs
+   * always was, which no screen ever showed. Only appears once there is an
+   * actual PATH to show — his very first club is not a career yet. */
+  function careerPathHtml(player) {
+    const hist = (player.career.history || []).slice().reverse();
+    if (hist.length < 2) return "";
+    const shown = hist.slice(0, 8);
+    return `<div class="panel" style="margin:10px 0 0;padding:10px">
+      <div class="stage-step" style="margin-bottom:6px">Career path${hist.length > shown.length ? ` <span class="muted" style="font-weight:400">(${hist.length} clubs — most recent shown)</span>` : ""}</div>
+      <div style="display:flex;flex-direction:column;gap:4px;font-size:13px">
+        ${shown.map((h, i) => `<div>${i === 0 ? '<b class="accent">NOW</b>' : `<span class="muted">${h.season != null ? `S${h.season}` : "—"}</span>`}
+          — ${esc(h.club)}${h.age != null ? ` <span class="muted">· ${h.age}y</span>` : ""}</div>`).join("")}
+      </div>
     </div>`;
   }
 
@@ -1293,7 +1437,7 @@
       </div>
       <div class="muted" style="font-size:13px;margin-bottom:4px">Manager: <b>${esc(m ? m.name : "—")}</b>${m ? ` · ${esc(m.archetypeName)} · ${esc(m.tactic)} · ${esc(c.formation)}` : ""}</div>
       <div class="muted" style="font-size:13px;margin-bottom:8px">Boardroom: <b>${esc(c.board.style)}</b> · ${esc(ownerLabel(c))}</div>
-      <div class="chooser-list">${squad.slice(0, 24).map((p) => pcard(p, rep ? { scoutRange: MG.scouting.playerBand(world, mine, c, p) } : {})).join("")}</div>`);
+      <div class="chooser-list">${squad.slice(0, 24).map((p) => pcard(p, Object.assign({ level: c.level }, rep ? { scoutRange: MG.scouting.playerBand(world, mine, c, p) } : {}))).join("")}</div>`);
     for (const el of document.querySelectorAll("[data-player]")) {
       el.addEventListener("click", (e) => { e.stopPropagation(); openPlayer(Number(el.dataset.player)); });
     }
@@ -1321,7 +1465,7 @@
     }
     for (const b of document.querySelectorAll("[data-promote]")) {
       b.addEventListener("click", () => {
-        const p = MG.youth.promote(c, Number(b.dataset.promote));
+        const p = MG.youth.promote(c, Number(b.dataset.promote), state.world.season);
         if (p) state.world.report(`ACADEMY — ${p.name} (${p.pos}, ${p.age}) is promoted to the first team.`, "youth", c.id);
         render();
       });
@@ -1530,6 +1674,7 @@
             ? `<span>Development <b class="${player.overall > player.lastSeason.overall ? "accent" : "bad"}">${player.overall > player.lastSeason.overall ? "+" : ""}${Math.round(player.overall - player.lastSeason.overall)}</b> since last year</span>` : ""}
         </div>
       </div>` : ""}
+      ${careerPathHtml(player)}
       ${mine ? `<div class="row" style="margin-top:12px">
         <button class="btn tiny ${listed ? "danger" : ""}" id="profile-list">${listed ? "REMOVE FROM LIST" : "TRANSFER LIST"}</button>
         <button class="btn tiny ${mentored ? "primary" : ""}" id="profile-mentor">${mentored ? "STOP MENTORING" : "MENTOR"}</button>
