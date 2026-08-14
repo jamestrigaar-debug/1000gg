@@ -178,12 +178,13 @@
       // compounding forever, and it is why a badly run big club eventually
       // stops being a big club.
       if (club.mustSell) {
-        const byValue = club.squad.slice().sort((a, b) => b.value - a.value);
+        const byValue = club.squad.filter((p) => !p.loan).sort((a, b) => b.value - a.value);
         for (const p of byValue.slice(0, 3)) listed.push({ player: p, club, forced: true, fireSale: true });
       }
 
       for (let i = 0; i < ranked.length; i++) {
         const p = ranked[i];
+        if (p.loan) continue;                      // on loan here: not ours to sell
         if (club.squad.length <= MIN_SQUAD + 2) break;
         const depth = club.squad.filter((q) => q.pos === p.pos).length;
         const need = MG.players.POSITIONS[p.pos].need;
@@ -278,48 +279,108 @@
     return needs.sort((a, b) => b.urgency - a.urgency);
   }
 
+  /* --------------------------- PLAYER AGENCY -------------------------------
+   * A transfer needs three parties to agree, and until now the player was not
+   * one of them: any deal the two clubs could afford simply happened. So a
+   * first-choice forward at a Champions League club would move to a mid-table
+   * side without a murmur, because nobody ever asked him.
+   *
+   * What he weighs is the step: the standing of the club coming for him against
+   * the one he is at, whether he is actually playing where he is, and the money.
+   * A fringe player will drop a division to play. A starter at a big club will
+   * not, however good the offer. */
+  function willJoin(rng, player, seller, buyer, wage) {
+    const sellerLeague = MG.clubs.LEAGUES[seller.leagueId];
+    const buyerLeague = MG.clubs.LEAGUES[buyer.leagueId];
+    const step = buyerLeague.prestige - sellerLeague.prestige;   // + = moving up
+
+    // Where he stands in the pecking order now. A man who is not getting on the
+    // pitch is a great deal more interested in a move than a first-choice one.
+    const better = seller.squad.filter((q) => q.overall > player.overall).length;
+    const fringe = better >= 11;
+    const starter = better <= 4;
+
+    let accept = 0.88 + step * 0.7;
+    if (step < -0.05 && starter) accept -= 0.42;   // dropping down while first choice
+    if (fringe) accept += 0.3;                     // anything for a game
+    // Standing within the same division still counts: a bigger name persuades.
+    accept += (buyer.reputation - seller.reputation) / 180;
+    // Money talks, and for the ordinary professional it talks loudest.
+    const now = player.contract.wage || 1;
+    if (wage > now * 1.4) accept += 0.22;
+    else if (wage < now * 0.9) accept -= 0.2;
+    // A young player with a career in front of him wants to play, not to sit in
+    // a bigger dressing room.
+    if (player.age <= 22 && player.potential - player.overall >= 8 && step > 0.2 && !fringe) accept -= 0.18;
+    return rng.chance(clamp(accept, 0.04, 0.97));
+  }
+
+  /* ------------------------------ THE WINDOW -------------------------------
+   * A market, not a queue.
+   *
+   * The window used to be a single richest-first walk: each club in turn took
+   * the best player it could afford at the asking price and moved on. Nobody
+   * ever competed for anybody, so no fee was ever driven up, the wealthiest
+   * club always got its first choice, and a transfer window read as a list of
+   * unopposed transactions.
+   *
+   * Now every club NOMINATES its top target, and any player wanted by more than
+   * one club goes to AUCTION. The winner is whoever values him most and pays
+   * just above what the runner-up would have gone to, so a contested signing
+   * genuinely costs more than an uncontested one. Clubs that lose an auction
+   * keep their money and come back for someone else in the next round, which is
+   * how a window actually unfolds.
+   */
+  const WINDOW_ROUNDS = 6;
+
   function runWindow(world) {
     const rng = world.rng;
     const news = [];
-    let deals = 0;
+    let deals = 0, contested = 0, rejections = 0;
     const listings = buildListings(world);
     const listedSet = new Set(listings.map((l) => l.player.id));
     const index = indexPlayers(world);
 
-    // Richest first — the pecking order of a real window.
-    const buyers = world.clubs.slice().sort((a, b) => b.finances.transferBudget - a.finances.transferBudget);
-
-    for (const buyer of buyers) {
-      const manager = world.managerById(buyer.managerId);
+    /* Each club's shopping state, carried across rounds so a club that loses a
+     * bidding war still has its budget intact when it goes back to the market. */
+    const states = new Map();
+    for (const club of world.clubs) {
+      const manager = world.managerById(club.managerId);
       const policy = MG.managers.recruitmentPolicy(manager);
-      const acumen = manager ? manager.attrs.transferAcumen : 50;
-      // policy.spend lets a chequebook manager stretch and a loyalist hold
-      // back, but never past what the club actually has — that overshoot was
-      // how clubs ran up nine-figure debts they could never trade out of.
-      let budget = Math.min(
-        buyer.finances.transferBudget * policy.spend,
-        Math.max(0, buyer.finances.balance) + buyer.finances.revenue * 0.2
-      );
-      let wageRoom = buyer.finances.wageBudget - MG.clubs.wageBill(buyer);
+      states.set(club.id, {
+        club, policy,
+        acumen: manager ? manager.attrs.transferAcumen : 50,
+        // policy.spend lets a chequebook manager stretch and a loyalist hold
+        // back, but never past what the club actually has — that overshoot was
+        // how clubs ran up nine-figure debts they could never trade out of.
+        budget: Math.min(
+          club.finances.transferBudget * policy.spend,
+          Math.max(0, club.finances.balance) + club.finances.revenue * 0.2
+        ),
+        wageRoom: club.finances.wageBudget - MG.clubs.wageBill(club),
+        signings: 0,
+        maxSignings: clamp(Math.round(2 + policy.churn), 1, 6),
+        passed: new Set(),      // players he has already lost out on or been refused by
+      });
+    }
 
+    /** The single player this club most wants right now, and the most it would
+     *  pay for him. Returns null when it has nothing left to chase. */
+    function nominate(st) {
+      const { club: buyer, policy, acumen } = st;
+      if (st.signings >= st.maxSignings) return null;
+      if (st.budget < 0.05 && st.wageRoom <= 0) return null;
       const needs = clubNeeds(buyer);
-      const maxSignings = clamp(Math.round(2 + policy.churn + (budget > 60 ? 2 : 0)), 1, 6);
-      let signings = 0;
 
       for (const need of needs) {
-        if (signings >= maxSignings) break;
-        if (budget < 0.05 && wageRoom <= 0) break;
         const pool = index[need.pos] || [];
-
-        // Walk candidates around and below the club's own level. Scanning the
-        // whole world for every club would be both slow and unrealistic — a
-        // League Two side is not evaluating Real Madrid's back four.
         let evaluated = 0;
-        let best = null, bestScore = 0, bestFee = 0;
+        let best = null, bestScore = 0, bestFee = 0, bestWage = 0;
         for (const entry of pool) {
           if (evaluated > 60) break;
           const { player, club: seller } = entry;
           if (seller.id === buyer.id || player.retired || player.clubId === buyer.id) continue;
+          if (st.passed.has(player.id)) continue;
           // Reach: the buyer can only sign out of leagues its agent network can
           // actually touch. A National League side does not have the channels
           // to prise a player out of La Liga, however much it might want to.
@@ -330,38 +391,53 @@
           // already left and add him to a second squad, and the same striker
           // would turn out for five clubs at once.
           if (player.clubId !== seller.id) continue;
+          if (player.loan) continue;                                 // not his club's to sell
           if (player.overall > need.currentQuality + 14) continue;   // out of reach
           evaluated++;
           if (seller.squad.length <= MIN_SQUAD) continue;
           const fee = askingPrice(entry, buyer, listedSet);
-          if (fee > budget) continue;
+          if (fee > st.budget) continue;
           const wage = MG.players.expectedWage(player, buyer.leagueId) * rng.between(1.0, 1.2);
-          if (wage * 52 / 1000 > wageRoom) continue;
+          if (wage * 52 / 1000 > st.wageRoom) continue;
           // A better negotiator gets more player for the money.
           const score = targetScore(player, buyer, policy, need) * (1 + (acumen - 50) / 250) - fee * 0.35;
-          if (score > bestScore) { best = entry; bestScore = score; bestFee = fee; }
+          if (score > bestScore) { best = entry; bestScore = score; bestFee = fee; bestWage = wage; }
         }
+        if (best) {
+          /* The ceiling this club would go to. Urgency and a chequebook manager
+           * push it above the asking price; that headroom is what an auction
+           * eats into, and what stops every contested player going to whoever
+           * happens to be richest. */
+          const urgency = clamp(need.urgency - 1, 0, 1.2);
+          const willingness = 1 + urgency * 0.3 + (policy.spend - 1) * 0.35;
+          const ceiling = Math.min(st.budget, bestFee * clamp(willingness, 1, 1.9));
+          return { st, entry: best, base: bestFee, ceiling, wage: bestWage, score: bestScore };
+        }
+      }
+      return null;
+    }
 
-        if (!best) continue;
-        const { player, club: seller } = best;
-        const wage = round1(MG.players.expectedWage(player, buyer.leagueId) * rng.between(1.0, 1.2));
+    function completeDeal(st, entry, fee, wageRaw) {
+      const buyer = st.club;
+      const { player, club: seller } = entry;
+      const wage = round1(wageRaw);
 
-        // Complete the deal.
-        seller.squad = seller.squad.filter((p) => p.id !== player.id);
-        seller.finances.received = round1(seller.finances.received + bestFee);
-        seller.finances.balance = round1(seller.finances.balance + bestFee);
-        buyer.squad.push(player);
-        buyer.finances.spent = round1(buyer.finances.spent + bestFee);
-        buyer.finances.balance = round1(buyer.finances.balance - bestFee);
-        player.clubId = buyer.id;
-        player.contract = { years: rng.int(2, 5), wage };
-        player.career.clubs.push(buyer.name);
-        player.value = MG.players.marketValue(player);
-        budget -= bestFee;
-        wageRoom -= wage * 52 / 1000;
-        signings++;
-        deals++;
-        listedSet.delete(player.id);
+      seller.squad = seller.squad.filter((p) => p.id !== player.id);
+      seller.finances.received = round1(seller.finances.received + fee);
+      seller.finances.balance = round1(seller.finances.balance + fee);
+      buyer.squad.push(player);
+      buyer.finances.spent = round1(buyer.finances.spent + fee);
+      buyer.finances.balance = round1(buyer.finances.balance - fee);
+      player.clubId = buyer.id;
+      player.contract = { years: rng.int(2, 5), wage };
+      player.career.clubs.push(buyer.name);
+      player.value = MG.players.marketValue(player);
+      st.budget -= fee;
+      st.wageRoom -= wage * 52 / 1000;
+      st.signings++;
+      deals++;
+      listedSet.delete(player.id);
+      const bestFee = fee;
 
         if (bestFee >= 12 || player.overall >= 80) {
           news.push({
@@ -386,9 +462,172 @@
             MG.clubs.fansReact(buyer, marquee ? 5 : 1.5, marquee ? `${player.name} was a statement signing` : `${player.name} came in`);
           }
         }
+    }
+
+    /* ---- the rounds: nominate, group, auction, repeat ---- */
+    for (let round = 0; round < WINDOW_ROUNDS; round++) {
+      // Richest first only decides who is READ first; who wins is decided by
+      // the auction, which is the point of the rewrite.
+      const order = world.clubs.slice().sort((a, b) => b.finances.transferBudget - a.finances.transferBudget);
+      const bids = new Map();          // playerId -> [{ st, entry, base, ceiling, wage }]
+      for (const club of order) {
+        const st = states.get(club.id);
+        const nom = nominate(st);
+        if (!nom) continue;
+        const id = nom.entry.player.id;
+        if (!bids.has(id)) bids.set(id, []);
+        bids.get(id).push(nom);
+      }
+      if (!bids.size) break;
+
+      for (const [, list] of bids) {
+        // Highest ceiling wins; ties broken by who wanted him most.
+        list.sort((a, b) => b.ceiling - a.ceiling || b.score - a.score);
+        const winner = list[0];
+        const runnerUp = list[1];
+        const { player, club: seller } = winner.entry;
+        // The seller may already have gone below the minimum squad in this same
+        // round, or the player may have moved — re-check before completing.
+        if (player.clubId !== seller.id || seller.squad.length <= MIN_SQUAD) continue;
+
+        /* The price. Uncontested, he goes for the asking price. Contested, the
+         * winner pays just past what the runner-up would have gone to — which
+         * is what makes a bidding war expensive without letting it run away. */
+        let fee = winner.base;
+        if (runnerUp) {
+          contested++;
+          fee = round1(clamp(Math.max(winner.base, runnerUp.ceiling * 1.05), winner.base, winner.ceiling));
+        }
+        if (fee > winner.st.budget) { winner.st.passed.add(player.id); continue; }
+
+        // And finally the player himself, who until now was never asked.
+        let taker = null, takerFee = fee;
+        for (const cand of list) {
+          const candFee = cand === winner ? fee : cand.base;
+          if (candFee > cand.st.budget) continue;
+          if (willJoin(rng, player, seller, cand.st.club, cand.wage)) { taker = cand; takerFee = candFee; break; }
+          rejections++;
+          cand.st.passed.add(player.id);
+          if (world.playerClubId === cand.st.club.id) {
+            news.push({ type: "sack", text: `NO DEAL — ${player.name} turned down the move; he is not convinced by the step.`, clubId: cand.st.club.id });
+          }
+        }
+        if (!taker) continue;
+
+        // Everyone who did not get him remembers not to chase him again.
+        for (const cand of list) if (cand !== taker) cand.st.passed.add(player.id);
+        completeDeal(taker.st, taker.entry, takerFee, taker.wage);
       }
     }
-    return { news, listings: listings.length, deals };
+
+    /* ---- the clearing pass ----
+     * A window does not end with the clubs that lost their auctions having done
+     * no business at all. Without this the market punished the poor twice over:
+     * a small club was outbid on every contested target, ran out of rounds, and
+     * went into the season having signed nobody — measured, it left the bottom
+     * of the Premier League on 16 points against a real 26, with one club down
+     * to nineteen players. So anyone with money and an unfilled squad now takes
+     * the best player still available at the asking price, unopposed, exactly as
+     * the old window worked. The auction decides who gets the players everybody
+     * wants; this decides who gets everybody else. */
+    for (const club of world.clubs) {
+      const st = states.get(club.id);
+      let guard = 0;
+      while (st.signings < st.maxSignings && guard++ < 6) {
+        const nom = nominate(st);
+        if (!nom) break;
+        const { player, club: seller } = nom.entry;
+        if (player.clubId !== seller.id || seller.squad.length <= MIN_SQUAD) { st.passed.add(player.id); continue; }
+        if (nom.base > st.budget) { st.passed.add(player.id); continue; }
+        if (!willJoin(rng, player, seller, club, nom.wage)) {
+          rejections++;
+          st.passed.add(player.id);
+          continue;
+        }
+        completeDeal(st, nom.entry, nom.base, nom.wage);
+      }
+    }
+    return { news, listings: listings.length, deals, contested, rejections };
+  }
+
+  /* -------------------------------- LOANS ----------------------------------
+   * The answer to a problem the game had no way of solving: a nineteen-year-old
+   * with a real future, stuck behind two better players, who therefore never
+   * played, and therefore never developed, and was still the same player at
+   * twenty-three. Development is driven by minutes — so a prospect who cannot
+   * get them has to go and find them somewhere else.
+   *
+   * A loanee stays the property of his parent club and plays, trains and
+   * develops at the club he is lent to. He comes home in the summer, usually
+   * better than he left. While he is away nobody can sell him: he is not the
+   * loan club's to trade.
+   */
+  function returnLoans(world) {
+    const news = [];
+    for (const club of world.clubs) {
+      const staying = [];
+      for (const p of club.squad) {
+        if (!p.loan) { staying.push(p); continue; }
+        const parent = world.clubById(p.loan.parentId);
+        if (!parent) { p.loan = null; staying.push(p); continue; }   // parent gone: he stays
+        const spell = p.loan;
+        p.loan = null;
+        p.clubId = parent.id;
+        parent.squad.push(p);
+        if (parent.id === world.playerClubId) {
+          const grew = spell.overallAtStart != null ? Math.round(p.overall - spell.overallAtStart) : 0;
+          news.push({
+            type: "loan",
+            text: `LOAN ENDS — ${p.name} (${p.pos}, ${p.age}) is back from ${club.name}: ${p.season.apps || 0} appearances, ${p.season.goals || 0} goals${grew > 0 ? `, and ${grew} better for it` : ""}.`,
+            clubId: parent.id,
+          });
+        }
+      }
+      club.squad = staying;
+    }
+    return news;
+  }
+
+  /** Send the blocked prospects out to play. */
+  function runLoans(world) {
+    const news = [];
+    let sent = 0;
+    for (const club of world.clubs) {
+      // Who is going nowhere here: young, still improving, and behind enough
+      // bodies in his own position that he will not get on the pitch.
+      const blocked = club.squad.filter((p) => {
+        if (p.loan || p.retired) return false;
+        if (p.age > 21) return false;
+        if (p.potential - p.overall < 4) return false;
+        const ahead = club.squad.filter((q) => q.pos === p.pos && q.overall > p.overall).length;
+        return ahead >= MG.players.POSITIONS[p.pos].starters;
+      }).sort((a, b) => (b.potential - b.overall) - (a.potential - a.overall));
+
+      for (const p of blocked.slice(0, 3)) {
+        if (club.squad.length <= MIN_SQUAD + 1) break;
+        /* Somewhere he would actually play: a club whose own level he is at or
+         * above, so he walks into the side, but not so far below him that the
+         * football teaches him nothing. */
+        const dest = world.clubs.filter((c) => c.id !== club.id
+          && c.squad.length < MG.players.SQUAD_TARGET + 2
+          && p.overall >= (c.level != null ? c.level : 50) - 4
+          && p.overall <= (c.level != null ? c.level : 50) + 12
+          && (!MG.network || MG.network.canRecruit(c, club)))
+          .sort((a, b) => (p.overall - (b.level || 50)) - (p.overall - (a.level || 50)))[0];
+        if (!dest) continue;
+
+        club.squad = club.squad.filter((x) => x.id !== p.id);
+        p.loan = { parentId: club.id, parentName: club.name, overallAtStart: p.overall };
+        p.clubId = dest.id;
+        dest.squad.push(p);
+        sent++;
+        if (club.id === world.playerClubId) {
+          news.push({ type: "loan", text: `LOAN — ${p.name} (${p.pos}, ${p.age}, potential ${Math.round(p.potential)}) goes to ${dest.name} for the season to get games.`, clubId: club.id });
+        }
+      }
+      MG.clubs.refreshRatings(club);
+    }
+    return { news, sent };
   }
 
   /* --------------------- FREE AGENTS AND SQUAD TOP-UPS -------------------- */
@@ -506,6 +745,7 @@
   function sellListed(world, club, playerId) {
     const player = club.squad.find((p) => p.id === playerId);
     if (!player) return { ok: false, reason: "he is no longer at the club" };
+    if (player.loan) return { ok: false, player, reason: "he is only here on loan" };
     if (club.squad.length <= MIN_SQUAD) return { ok: false, player, reason: "the squad is already too thin to sell" };
     const fee = round1(player.value * 0.95);
     const buyer = world.clubs
@@ -581,6 +821,7 @@
     for (const entry of (index[pos] || [])) {
       const { player, seller } = { player: entry.player, seller: entry.club };
       if (seller.id === club.id || player.retired || player.clubId !== seller.id) continue;
+      if (player.loan) continue;                   // not his club's to sell
       if (MG.network && !MG.network.canRecruit(club, seller)) continue;
       if (seller.squad.length <= MIN_SQUAD) continue;
       if (o.quality === "prospect" && player.age > 22) continue;
@@ -619,10 +860,11 @@
   /** Cash in on someone. `which`: "star" | "veteran" | "fringe". */
   function sellOne(world, club, which) {
     if (club.squad.length <= MIN_SQUAD) return null;
-    const ranked = club.squad.slice().sort((a, b) => b.overall - a.overall);
+    const own = club.squad.filter((p) => !p.loan);       // loanees are not ours to sell
+    const ranked = own.slice().sort((a, b) => b.overall - a.overall);
     let player;
     if (which === "star") player = ranked[0];
-    else if (which === "veteran") player = club.squad.slice().sort((a, b) => b.age - a.age)[0];
+    else if (which === "veteran") player = own.slice().sort((a, b) => b.age - a.age)[0];
     else player = ranked[ranked.length - 1];
     if (!player) return null;
 
@@ -688,7 +930,7 @@
       // same one the board would actually be able to buy from.
       if (MG.network && !MG.network.canRecruit(club, seller)) continue;
       for (const p of seller.squad) {
-        if (p.retired) continue;
+        if (p.retired || p.loan) continue;
         // Only show players who would realistically consider the move: within
         // reach of the club's level, and not so far below it as to be pointless.
         if (p.overall > level + 12) continue;
@@ -771,6 +1013,12 @@
         refused.push({ player, reason: "his club will not sell to a rival" });
         continue;
       }
+      // And the player himself has a view on it, exactly as he does when an AI
+      // club comes calling.
+      if (!willJoin(rng, player, seller, club, wage)) {
+        refused.push({ player, reason: "he turned the move down" });
+        continue;
+      }
 
       seller.squad = seller.squad.filter((p) => p.id !== player.id);
       seller.finances.balance = round1(seller.finances.balance + fee);
@@ -816,7 +1064,7 @@
   function fmtFee(f) { return f >= 10 ? `£${Math.round(f)}m` : `£${round1(f)}m`; }
 
   MG.transfers = {
-    MIN_SQUAD, findAndSign, sellOne, sellListed, boardListings, market, executeManagerRequests, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
+    MIN_SQUAD, findAndSign, sellOne, sellListed, boardListings, market, runLoans, returnLoans, willJoin, executeManagerRequests, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
     askingPrice, targetScore, clubNeeds, runWindow, signFreeAgents, topUpSquads, youthIntake,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

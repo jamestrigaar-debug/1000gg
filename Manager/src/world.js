@@ -353,6 +353,25 @@
       const last = world.history[world.history.length - 1];
       return last && last.leagues[leagueId] ? last.leagues[leagueId].table : null;
     };
+    /* The managed club's own matches, kept so the season can be told back to
+     * the player. Only his club — 46 records a season instead of five thousand,
+     * which is what makes narrating a season affordable in a game that
+     * simulates ten divisions in under half a second. */
+    world.playerMatches = [];
+    world.recordPlayerMatch = (m) => {
+      if (!world.playerClubId) return;
+      world.playerMatches.push(m);
+    };
+    /* The prospects a club has out getting games elsewhere. They live in the
+     * loan club's squad, so without this the manager loses sight of his own
+     * players the moment he sends them away. */
+    world.loanedOut = (clubId) => {
+      const out = [];
+      for (const c of world.clubs) {
+        for (const p of c.squad) if (p.loan && p.loan.parentId === clubId) out.push({ player: p, at: c });
+      }
+      return out;
+    };
     world.newsFor = (clubId, limit) =>
       world.news.filter((n) => n.clubId === clubId).slice(-(limit || 20)).reverse();
     world.recentNews = (limit) => world.news.slice(-(limit || 40)).reverse();
@@ -423,6 +442,8 @@
     const seasonNews = [];
     const results = {};
     const carousel = [];
+    // Last season's match record is done with; this season writes its own.
+    world.playerMatches = [];
 
     /* ---- 1. every division, with a winter sacking window ---- */
     const midSeason = (leagueId, table) => {
@@ -555,6 +576,11 @@
 
     for (const club of world.clubs) {
       if (!club._outcome) continue;
+      /* Mark every player in the world for the season he just had, before the
+       * squads are aged and the numbers are gone. Doing it for all clubs rather
+       * than just the managed one means a rival's squad reads the same way when
+       * you scout it. */
+      if (MG.narrative) MG.narrative.rateSquad(club, club._outcome);
       boardReports[club.id] = MG.clubs.evaluateSeason(club, club._outcome, rng);
       // Morale settles on what the season delivered and who got to play in it.
       MG.tactics.settleMorale(club, club._outcome);
@@ -593,6 +619,10 @@
     const intlNews = MG.international ? MG.international.runSeason(world) : [];
     for (const n of intlNews) world.report(n.text, n.type, n.clubId);
     MG.transfers.developSquads(world);
+    /* Loanees develop on the minutes they got at the club they were lent to,
+     * so they come home AFTER the development pass and before contracts are
+     * settled — his deal is with his parent club, not the one he played for. */
+    const loanReturns = MG.transfers.returnLoans(world);
     const { news: retireNews, freeAgents } = MG.transfers.retirementsAndExpiries(world);
     for (const club of world.clubs) MG.clubs.refreshRatings(club);
     for (const club of world.clubs) MG.clubs.setBudgets(club, rng);
@@ -618,12 +648,15 @@
     MG.transfers.signFreeAgents(world, freeAgents);
     MG.transfers.topUpSquads(world);
     const youthNews = MG.transfers.youthIntake(world);
+    // Last job of the summer: the blocked prospects go out to find games.
+    const loansOut = MG.transfers.runLoans(world);
     for (const club of world.clubs) {
       MG.clubs.refreshRatings(club);
       delete club._outcome;
     }
 
-    for (const n of retireNews.concat(window.news.slice(0, 60)).concat(youthNews)) {
+    for (const n of retireNews.concat(window.news.slice(0, 60)).concat(youthNews)
+      .concat(loanReturns).concat(loansOut.news)) {
       world.report(n.text, n.type, n.clubId);
       seasonNews.push(n);
     }
@@ -639,6 +672,9 @@
       carousel,
       awards,
       transferCount: window.deals,
+      contestedDeals: window.contested || 0,
+      transferRejections: window.rejections || 0,
+      loansOut: loansOut.sent,
       bigTransfers: window.news.length,
       managerWindow,
       news: world.news.filter((n) => n.season === world.season),
@@ -723,6 +759,15 @@
       world.report(`Top scorer: ${top.name} with ${top.season.goals} in ${top.season.apps} appearances${rest ? ` · then ${rest}` : ""}.`, "season", club.id);
     }
     world.report(`Cup: the club ${CUP_WORDS[o.cupRound] || "did not enter"}.`, "season", club.id);
+
+    /* The matches that decided it, each with the reason it went that way —
+     * read off the expected goals the engine already computed rather than
+     * invented after the fact. */
+    if (MG.narrative) {
+      for (const line of MG.narrative.seasonStory(world, club, o)) {
+        world.report(line, "match", club.id);
+      }
+    }
 
     // The two verdicts that matter, side by side.
     if (report) {

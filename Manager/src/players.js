@@ -115,26 +115,55 @@
    *   minutes   0-1, share of available minutes played — a player who does not
    *             play does not improve, which is what makes squad selection and
    *             loans matter later */
+  /* ------------------------- AGEING BY POSITION ---------------------------
+   * A goalkeeper at 32 is in his prime; a winger at 32 is finished. The curve
+   * used to be one shape for everybody — grow to 23, improve to 27, plateau to
+   * 30, decline — which made every squad age at the same rate and quietly
+   * removed one of the real judgements in football: when to sell.
+   *
+   *   grow      the age up to which a player still has real upward movement
+   *   peakEnd   the last year before decline starts
+   *   decline   how steeply he falls once it does
+   *
+   * Wingers and attacking midfielders live on speed, so they rise early and go
+   * early. Keepers and centre-halves live on reading the game and rise late. */
+  const AGE_CURVE = {
+    GK: { grow: 27, peakEnd: 34, decline: 0.30 },
+    CB: { grow: 25, peakEnd: 32, decline: 0.38 },
+    FB: { grow: 24, peakEnd: 29, decline: 0.48 },
+    DM: { grow: 25, peakEnd: 31, decline: 0.40 },
+    CM: { grow: 24, peakEnd: 30, decline: 0.44 },
+    AM: { grow: 23, peakEnd: 28, decline: 0.52 },
+    WG: { grow: 23, peakEnd: 28, decline: 0.58 },
+    FW: { grow: 24, peakEnd: 30, decline: 0.50 },
+  };
+  const DEFAULT_CURVE = { grow: 24, peakEnd: 30, decline: 0.45 };
+  function ageCurve(pos) { return AGE_CURVE[pos] || DEFAULT_CURVE; }
+
   function developmentDelta(rng, player, coaching, minutes) {
     const age = player.age;
     const headroom = player.potential - player.overall;
     const coach = (coaching - 50) / 50;                  // -1 .. +1
     const played = clamp(minutes, 0, 1);
+    const curve = ageCurve(player.pos);
 
-    if (age <= 23) {
+    // The steep early years: a teenager with headroom moves fast if he plays.
+    if (age <= curve.grow - 1) {
       const base = headroom > 0 ? 1.6 + headroom * 0.14 : 0.2;
       const gain = base * (0.45 + played * 0.75) * (1 + coach * 0.45) + rng.gauss() * 0.8;
       return Math.max(-1, gain);
     }
-    if (age <= 27) {
+    // Still improving, more slowly, into the start of the peak.
+    if (age <= curve.grow + 3) {
       const base = headroom > 0 ? 0.7 + headroom * 0.08 : 0;
       return base * (0.5 + played * 0.6) * (1 + coach * 0.3) + rng.gauss() * 0.7;
     }
-    if (age <= 30) return rng.gauss() * 0.7 - 0.15 + coach * 0.25;
+    // The plateau: drifting either way, holding his level.
+    if (age <= curve.peakEnd) return rng.gauss() * 0.7 - 0.15 + coach * 0.25;
     // Decline, steepening with age and softened a little by good coaching and
     // by the player's own fitness attribute.
     const fitness = (player.attrs.fitness - 60) / 60;
-    const steep = (age - 30) * 0.45;
+    const steep = (age - curve.peakEnd) * curve.decline;
     return -(steep) * (1 - fitness * 0.25) * (1 - coach * 0.15) + rng.gauss() * 0.6;
   }
 
@@ -401,6 +430,7 @@
   MG.players = {
     POSITIONS, POSITION_KEYS, SQUAD_TARGET,
     firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta,
+    AGE_CURVE, ageCurve,
     marketValue, expectedWage, ageValueFactor, LEAGUE_WAGE_FACTOR,
     makePlayer, fromDatabase, generate, resetIds, rollInjury, availability,
     unitRating, keeperRating, squadRatings, squadNeeds, weakestUnit,

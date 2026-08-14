@@ -518,7 +518,8 @@
     const reach = MG.network ? MG.network.reachLabel(c) : null;
     const listed = c.transferList || [];
     const maxPos = state.signCount >= 3 ? 4 : state.signCount;
-    const saleList = c.squad.slice().sort(SORTS.rating);
+    // A player here on loan is not yours to sell.
+    const saleList = c.squad.filter((p) => !p.loan).sort(SORTS.rating);
     return `
       <div class="decision boardroom">
         <div class="decision-tag">PRE-SEASON · THE WINDOW</div>
@@ -752,6 +753,29 @@
         inXI: xi.has(p.id), listed: listed.includes(p.id), mentored: mentoring.includes(p.id),
         canMentor: mentoring.length < mentorCap || mentoring.includes(p.id),
       })).join("")}
+    </div>
+    ${loanedOutHtml(c)}`;
+  }
+
+  /* Your own prospects, out getting the games they could not get here. They sit
+   * in the loan club's squad, so without their own section they would simply
+   * disappear from the game for a season. */
+  function loanedOutHtml(c) {
+    const out = state.world.loanedOut ? state.world.loanedOut(c.id) : [];
+    if (!out.length) return "";
+    return `<div class="panel">
+      <h3 class="muted">OUT ON LOAN (${out.length})</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">
+        Young players the board sent out to get minutes — development runs on games played, so a season elsewhere is
+        worth more than a season in your reserves. They come back in the summer.
+      </div>
+      ${out.map(({ player, at }) => `<div class="crow">
+        <div class="prating ${posClass(player.pos)}" style="width:38px;height:38px;font-size:15px;cursor:pointer" data-player="${player.id}">${Math.round(player.overall)}</div>
+        <div class="crow-body">
+          <div class="nm">${esc(player.name)} <span class="ppos ${posClass(player.pos)}">${player.pos}</span></div>
+          <div class="muted" style="font-size:12px">${player.age}y · potential ${Math.round(player.potential)} · at <b>${esc(at.name)}</b> · ${player.season.apps || 0} apps this season</div>
+        </div>
+      </div>`).join("")}
     </div>`;
   }
 
@@ -762,17 +786,38 @@
     const pc = posClass(p.pos);
     const flags = `${o.inXI ? '<span class="ppos midfield" style="background:rgba(0,208,108,.14)">XI</span>' : ""}`;
     return `<div class="pcard ${o.mentored ? "mentored" : o.listed ? "listed" : o.inXI ? "in-xi" : ""}">
-      <div class="prating ${pc}" data-player="${p.id}" style="cursor:pointer">${Math.round(p.overall)}</div>
+      <div class="prating ${pc}" data-player="${p.id}" style="cursor:pointer">${Math.round(p.overall)}${growthTag(p)}</div>
       <div class="pbody" data-player="${p.id}" style="cursor:pointer">
-        <div class="pname">${flags}${esc(p.name)}${p.homegrown ? ' <span class="hg">HG</span>' : ""}</div>
+        <div class="pname">${flags}${esc(p.name)}${p.homegrown ? ' <span class="hg">HG</span>' : ""}${markTag(p)}</div>
         <div class="pmeta"><span class="ppos ${pc}">${esc(p.pos)}</span>${p.age}y · pot ${Math.round(p.potential)} · ${money(p.value)} · £${p.contract.wage}k
+          ${p.lastSeason && p.lastSeason.apps ? ` · <span class="muted">last yr ${p.lastSeason.apps}a ${p.lastSeason.goals}g</span>` : ""}
           ${p.season.injured > 0 ? ` · <span class="inj">out ${Math.round(p.season.injured * 100)}%</span>` : ""}</div>
       </div>
-      ${o.mentored != null ? `<div class="pactions">
+      ${p.loan ? `<div class="pactions"><span class="trait-chip" style="color:var(--rare);border-color:var(--rare);padding:0 6px">ON LOAN</span></div>`
+        : o.mentored != null ? `<div class="pactions">
         <button class="pbtn ${o.listed ? "on-list" : ""}" data-list="${p.id}">${o.listed ? "◤ LISTED" : "LIST"}</button>
         <button class="pbtn ${o.mentored ? "on-mentor" : ""}" data-mentor="${p.id}" ${!o.canMentor && !o.mentored ? "disabled style=opacity:.4" : ""}>${o.mentored ? "◤ MENTOR" : "MENTOR"}</button>
       </div>` : `<div class="pactions"><span class="muted" style="font-size:11px">${esc(p.pos)}</span></div>`}
     </div>`;
+  }
+
+  /* Last season's mark out of ten, on the football scale where 6 is unremarkable
+   * and 8 wins awards. This is the answer to "why is my star playing poorly" —
+   * it is on his card, not buried in a report. */
+  function markTag(p) {
+    const r = p.lastSeason && p.lastSeason.rating;
+    if (r == null) return "";
+    const cls = r >= 7.4 ? "mark-great" : r >= 6.7 ? "mark-good" : r >= 6.0 ? "mark-ok" : "mark-poor";
+    return ` <span class="pmark ${cls}" title="Average rating last season">${r.toFixed(1)}</span>`;
+  }
+
+  /* How far he moved in the last year. The single clearest signal that a young
+   * signing is working out — or that a thirty-three-year-old is going. */
+  function growthTag(p) {
+    if (!p.lastSeason || p.lastSeason.overall == null) return "";
+    const d = Math.round(p.overall - p.lastSeason.overall);
+    if (d === 0) return "";
+    return `<span class="pgrow ${d > 0 ? "up" : "down"}">${d > 0 ? "▲" : "▼"}${Math.abs(d)}</span>`;
   }
 
   function moraleDot(m) {
@@ -1004,6 +1049,8 @@
 
   /** Toggle a player on the transfer list (sell directive). */
   function toggleList(c, id) {
+    const target = c.squad.find((x) => x.id === id);
+    if (target && target.loan) return;               // borrowed, not ours to sell
     c.transferList = c.transferList || [];
     const i = c.transferList.indexOf(id);
     if (i >= 0) c.transferList.splice(i, 1); else c.transferList.push(id);
@@ -1164,6 +1211,15 @@
         <div class="stat-box"><div class="sb-num">${player.career.apps}</div><div class="sb-lab">Career apps</div></div>
       </div>
       ${player.season.apps ? `<div class="muted" style="font-size:12px;margin-top:8px">This season: ${player.season.apps} apps, ${player.season.goals} goals, ${player.season.assists} assists.</div>` : ""}
+      ${player.lastSeason && player.lastSeason.apps ? `<div class="panel" style="margin:10px 0 0;padding:10px">
+        <div class="stage-step" style="margin-bottom:6px">Last season at ${esc(player.lastSeason.club || from)}</div>
+        <div class="row" style="gap:14px;font-size:13px">
+          <span>Rating <b class="${player.lastSeason.rating >= 7 ? "accent" : player.lastSeason.rating >= 6 ? "gold" : "bad"}">${player.lastSeason.rating != null ? player.lastSeason.rating.toFixed(1) : "—"}</b></span>
+          <span class="muted">${player.lastSeason.apps} apps · ${player.lastSeason.goals} goals · ${player.lastSeason.assists} assists</span>
+          ${player.lastSeason.overall != null && Math.round(player.overall - player.lastSeason.overall) !== 0
+            ? `<span>Development <b class="${player.overall > player.lastSeason.overall ? "accent" : "bad"}">${player.overall > player.lastSeason.overall ? "+" : ""}${Math.round(player.overall - player.lastSeason.overall)}</b> since last year</span>` : ""}
+        </div>
+      </div>` : ""}
       ${mine ? `<div class="row" style="margin-top:12px">
         <button class="btn tiny ${listed ? "danger" : ""}" id="profile-list">${listed ? "REMOVE FROM LIST" : "TRANSFER LIST"}</button>
         <button class="btn tiny ${mentored ? "primary" : ""}" id="profile-mentor">${mentored ? "STOP MENTORING" : "MENTOR"}</button>

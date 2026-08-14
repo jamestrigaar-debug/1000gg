@@ -83,6 +83,20 @@
         MG.match.recordAppearances(rng, as);
         world.recordManagerResult(home.id, res.homeGoals, res.awayGoals);
         world.recordManagerResult(away.id, res.awayGoals, res.homeGoals);
+        /* The engine already knows WHY this result happened — how many chances
+         * each side deserved, whether it was an upset, whether it was a derby —
+         * and used to throw all of it away the moment the score was recorded.
+         * Keeping it for the managed club is what lets the season be explained
+         * back rather than just tallied. */
+        if (world.playerClubId === home.id || world.playerClubId === away.id) {
+          world.recordPlayerMatch({
+            round: i + 1, competition: league.name,
+            homeId: home.id, awayId: away.id, homeName: home.name, awayName: away.name,
+            hg: res.homeGoals, ag: res.awayGoals,
+            homeXG: res.homeXG, awayXG: res.awayXG,
+            upset: res.upset, derby,
+          });
+        }
       }
     };
 
