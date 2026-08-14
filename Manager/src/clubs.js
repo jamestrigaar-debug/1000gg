@@ -234,7 +234,7 @@
       // from then on, changes in results come from changes in the squad.
       identity: { attack: 0, midfield: 0, defence: 0 },
       ratings: { attack: 0, midfield: 0, defence: 0, keeper: 0 },
-      facilities: { training: 50, youth: 50 },
+      facilities: { training: 50, youth: 50, scouting: 50 },
       academyTier: "Average",
       managerId: null,
       finances: {
@@ -246,6 +246,7 @@
       form: 0,
       lastPosition: null,
       formation: "4-4-2",   // overwritten per club at creation
+      trainingFocus: "balanced",  // overwritten when a manager takes the job
       xi: null,             // null = auto-pick the best available side
       focus: null,          // "league" | "cup" | "europe" — the season's priority
       mentoring: [],        // player ids the manager is personally developing
@@ -291,12 +292,17 @@
     }
   }
 
-  /** Training and youth quality. Rich, well-run clubs coach better. */
+  /** Training, youth and scouting quality. Rich, well-run clubs coach better
+   *  and see further. Scouting is deliberately the least reputation-driven of
+   *  the three — a big name buys a training ground faster than it buys a
+   *  network of contacts, which is why boardroom wealth and morale (see
+   *  scouting.js) do more of the work for that one. */
   function calibrateFacilities(club, academyTier) {
     const tierBonus = { "World Class": 22, Strong: 12, Average: 0, Weak: -10 }[academyTier] || 0;
     club.academyTier = academyTier || "Average";
     club.facilities.training = clamp(Math.round(28 + club.reputation * 0.55 + tierBonus * 0.5), 15, 95);
     club.facilities.youth = clamp(Math.round(25 + club.reputation * 0.45 + tierBonus), 10, 95);
+    club.facilities.scouting = clamp(Math.round(30 + club.reputation * 0.40 + tierBonus * 0.3), 15, 90);
   }
 
   /** Recompute the three unit ratings from the squad plus the fixed identity
@@ -516,6 +522,7 @@
     const scale = f.revenue > 0 ? surplus / f.revenue : 0;
     club.facilities.training = clamp(Math.round(club.facilities.training + scale * 1.6), 15, 99);
     club.facilities.youth = clamp(Math.round(club.facilities.youth + scale * 1.3), 10, 99);
+    club.facilities.scouting = clamp(Math.round((club.facilities.scouting || 50) + scale * 1.1), 15, 99);
     return surplus;
   }
 

@@ -96,6 +96,11 @@
       flags: club.flags || {},
       facilities: club.facilities,
 
+      // How well the system, the shape, the training week and the manager
+      // himself agree with each other — see tactics.js. Cards can read this
+      // to react to a side that is fighting itself, or one that has clicked.
+      synergy: MG.tactics && MG.tactics.synergyScore ? MG.tactics.synergyScore(club, manager) : null,
+
       // The supporters, so cards can be written about the mood in the ground.
       fans: Math.round(club.fans == null ? 56 : club.fans),
       fanMood: MG.clubs.fanMood(club.fans == null ? 56 : club.fans).label,
@@ -154,7 +159,12 @@
       facilities(f) {
         if (f.training) club.facilities.training = clamp(club.facilities.training + f.training, 10, 99);
         if (f.youth) club.facilities.youth = clamp(club.facilities.youth + f.youth, 10, 99);
+        if (f.scouting) club.facilities.scouting = clamp((club.facilities.scouting || 50) + f.scouting, 10, 99);
       },
+      // Which of the six weekly training focuses the club runs — the report's
+      // Performance/Improvement lever (tactics.js). The tactics screen lets
+      // the manager set this directly too; this is the same switch.
+      trainingFocus(key) { if (MG.tactics && MG.tactics.setTrainingFocus) MG.tactics.setTrainingFocus(club, key); },
       rep(n) { manager.reputation = clamp(manager.reputation + n, 1, 99); },
       /* The supporters. Separate from board confidence on purpose: pleasing the
        * crowd and pleasing the owner are frequently not the same act, and the
@@ -722,6 +732,41 @@
             fx: (api) => { api.unit({ attack: 1, midfield: 1, defence: 1 }, 2); api.form(-1); return `Two shapes, drilled in parallel. Harder to prepare for, harder to perfect.`; } },
         ];
       },
+    },
+    {
+      id: "end_synergy_review", category: "TACTICS", weight: 7, req: (c) => !!c.synergy,
+      text: (c) => c.synergy.clash
+        ? `The staff's honest verdict on how this club is put together: the system, the shape, the training week and your own instincts are not agreeing with each other, and it shows on the pitch.`
+        : c.synergy.aligned
+          ? `Everything about how this club is set up points the same way — the staff can see it even on the days the man in the technical area cannot explain why it worked.`
+          : `The set-up is coherent enough. Not the smoothest side in the league, not the most chaotic either.`,
+      choices: (c) => {
+        const best = MG.tactics.TRAINING_FOCUS_KEYS.slice()
+          .sort((a, b) => MG.tactics.trainingFit(b, c.tactic) - MG.tactics.trainingFit(a, c.tactic))[0];
+        const bestLabel = MG.tactics.TRAINING_FOCUS[best].label;
+        const opts = [];
+        if (c.synergy.score < 60) {
+          opts.push({ label: `Rebuild the training week around ${bestLabel}`, detail: "Training catches up with the system, at a short-term cost.",
+            fx: (api) => { api.trainingFocus(best); api.form(-1); return `The week is reorganised around ${bestLabel.toLowerCase()}. It costs a little sharpness while it beds in — the alignment is worth more than the wobble.`; } });
+        }
+        opts.push({ label: "Trust the staff, leave it alone", detail: "Keep doing what you are doing.",
+          fx: (api) => { api.form(0.5); return `Nothing changes. The staff carry on as they were.`; } });
+        opts.push({ label: "Trust your own reading over the alignment chart", detail: "Sometimes a contradiction is a feature, not a bug.",
+          fx: (api) => { api.confidence(1); api.rep(1); return `You back your own read of the game over what the report says. Either conviction or stubbornness — results will decide which.`; } });
+        return opts;
+      },
+    },
+    {
+      id: "end_scouting_investment", category: "TACTICS", weight: 6, req: (c) => c.budget >= 2,
+      text: (c) => `The chief scout wants a bigger budget — more staff, more games watched in person, better data on the rest of the world. It is a hard thing to show the board a return on.`,
+      choices: (c) => [
+        { label: "Fund it properly", detail: "A real department, built for years rather than one window.",
+          fx: (api) => { api.budget(-3); api.facilities({ scouting: 8 }); return `${api.money(3)} goes into scouts, software and travel. Reports on the rest of the world get sharper from here on.`; } },
+        { label: "A modest top-up", detail: "Something, not everything.",
+          fx: (api) => { api.budget(-1); api.facilities({ scouting: 3 }); return `A smaller investment. The department is a little better resourced than it was.`; } },
+        { label: "Not this year", detail: "The money is needed elsewhere.",
+          fx: (api) => { api.confidence(1); return `The scouting budget stays where it is. Somewhere out there, a rival you cannot properly read gets stronger.`; } },
+      ],
     },
 
     /* ---- FINANCE ---- */

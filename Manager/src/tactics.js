@@ -384,10 +384,159 @@
     return clamp(Math.round(100 - avgDrop * 5 - missing * 8), 0, 100);
   }
 
+  /* ---------------------------- TACTICAL SYNERGY ---------------------------
+   * Report formula 6. A club's football is not one decision, it is four:
+   *
+   *   PLAYSTYLE   the manager's system (MG.managers.TACTICS) — the
+   *               philosophical identity, High Press or Route One
+   *   TACTIC      the shape it is played in — the formation, above
+   *   TRAINING    what the week is actually spent on — see TRAINING_FOCUS
+   *   MANAGER     the man himself — is this the football he is actually
+   *               built to coach, or a system the board asked him to bolt on
+   *
+   * When the four agree the side is more than the sum of its ratings: smoother
+   * transitions, better pass completion, fewer defensive gaps, all of which
+   * show up as one thing the match engine can actually use — a small
+   * multiplier on expected goals. When they fight each other the same
+   * multiplier works against you.
+   *
+   * The report's own worked example puts this at "+15% xG" for a perfectly
+   * synergetic side over a mismatched one. That is too big a lever: the
+   * formation-matchup table above caps out at a fifth of a goal precisely so
+   * that shape tilts a match rather than deciding it, and this system is the
+   * same kind of thing at the level of a whole season's set-up. SWING below is
+   * +/-7% — a side that has everything pointing the same way plays a shade
+   * better than its ratings say, a side fighting itself plays a shade worse,
+   * and neither ever stops a stronger squad from winning. */
+  const TRAINING_FOCUS = {
+    /* `axis` is the report's Performance <-> Improvement bar: 1 is pure
+     * short-term (this Saturday), 0 is pure long-term (next year). It feeds
+     * developmentMultiplier below, independently of how well the focus suits
+     * the manager's system. */
+    matchSharpness:   { label: "Match Sharpness", axis: 1.0,
+      blurb: "Shape, patterns, finishing practice. Sharper for the games ahead, no eye on next year." },
+    setPieces:        { label: "Set Pieces", axis: 0.8,
+      blurb: "Routines from corners and free-kicks. A cheap route to a goal, this season only." },
+    highIntensity:    { label: "High-Intensity", axis: 0.6,
+      blurb: "Conditioning and pressing triggers. Suits a team built to hunt the ball back." },
+    balanced:         { label: "Balanced", axis: 0.5,
+      blurb: "A bit of everything. Nothing sharpened, nothing neglected." },
+    possessionDrill:  { label: "Possession Drilling", axis: 0.4,
+      blurb: "Rondos and patient build-up. Suits a team built to keep the ball." },
+    youthDevelopment: { label: "Youth Development", axis: 0.0,
+      blurb: "Coaching time spent on growth rather than Saturday. Pays off in years, not weeks." },
+  };
+  const TRAINING_FOCUS_KEYS = Object.keys(TRAINING_FOCUS);
+
+  /* How well each playstyle suits each formation — hand-authored the same way
+   * MATCHUP is: 1.0 is textbook, low numbers are actively contradictory (a
+   * high press with a back five, a possession game with no one between the
+   * lines). Not every combination is listed; anything missing defaults to a
+   * fair middle value in formationFit(). */
+  const FORMATION_FIT = {
+    Possession:     { "4-4-2": 0.45, "4-3-3": 0.80, "4-2-3-1": 0.95, "3-5-2": 0.70, "5-3-2": 0.25, "4-5-1": 0.50 },
+    Counter:        { "4-4-2": 0.70, "4-3-3": 0.50, "4-2-3-1": 0.55, "3-5-2": 0.60, "5-3-2": 0.60, "4-5-1": 0.50 },
+    "High Press":   { "4-4-2": 0.50, "4-3-3": 0.85, "4-2-3-1": 1.00, "3-5-2": 0.60, "5-3-2": 0.20, "4-5-1": 0.60 },
+    Direct:         { "4-4-2": 0.90, "4-3-3": 0.50, "4-2-3-1": 0.50, "3-5-2": 0.50, "5-3-2": 0.55, "4-5-1": 0.70 },
+    "Park the Bus": { "4-4-2": 0.40, "4-3-3": 0.15, "4-2-3-1": 0.20, "3-5-2": 0.40, "5-3-2": 1.00, "4-5-1": 0.75 },
+    "Route One":    { "4-4-2": 0.80, "4-3-3": 0.30, "4-2-3-1": 0.35, "3-5-2": 0.40, "5-3-2": 0.65, "4-5-1": 0.55 },
+  };
+  function formationFit(tacticKey, formationKey) {
+    const row = FORMATION_FIT[tacticKey];
+    const v = row ? row[formationKey] : null;
+    return v == null ? 0.5 : v;
+  }
+
+  /* How well each training focus serves each playstyle — a high press wants
+   * high-intensity conditioning, a possession side wants the ball drilled
+   * into its feet, and a team parking the bus gets more from set pieces than
+   * from rondos. Youth development and a flat balanced week are deliberately
+   * never terrible at anything and never ideal for anything either. */
+  const TRAINING_FIT = {
+    matchSharpness:   { Possession: 0.60, Counter: 0.80, "High Press": 0.70, Direct: 0.70, "Park the Bus": 0.60, "Route One": 0.60 },
+    setPieces:        { Possession: 0.40, Counter: 0.60, "High Press": 0.40, Direct: 0.80, "Park the Bus": 0.80, "Route One": 1.00 },
+    highIntensity:    { Possession: 0.50, Counter: 0.60, "High Press": 1.00, Direct: 0.60, "Park the Bus": 0.30, "Route One": 0.40 },
+    balanced:         { Possession: 0.55, Counter: 0.55, "High Press": 0.55, Direct: 0.55, "Park the Bus": 0.55, "Route One": 0.55 },
+    possessionDrill:  { Possession: 1.00, Counter: 0.30, "High Press": 0.70, Direct: 0.30, "Park the Bus": 0.30, "Route One": 0.20 },
+    youthDevelopment: { Possession: 0.40, Counter: 0.40, "High Press": 0.40, Direct: 0.40, "Park the Bus": 0.40, "Route One": 0.40 },
+  };
+  function trainingFit(focusKey, tacticKey) {
+    const row = TRAINING_FIT[focusKey];
+    const v = row ? row[tacticKey] : null;
+    return v == null ? 0.5 : v;
+  }
+
+  /* Whether the manager is playing his own natural game. ARCHETYPES carries
+   * the system he was drafted to play; TACTICS cards (pre_system, the summer
+   * decision) let the club talk him into something else. A perfectionist
+   * forced into Route One is exactly the mismatch the report's "Manager
+   * Style" element is about — an adaptable coach absorbs it better than a
+   * rigid one does. */
+  function managerFit(manager) {
+    if (!manager) return 0.5;
+    const archetype = MG.managers && MG.managers.ARCHETYPES ? MG.managers.ARCHETYPES[manager.archetype] : null;
+    const native = archetype ? archetype.tactic : null;
+    if (!native || native === manager.tactic) return 1;
+    const adapt = (manager.attrs && manager.attrs.adaptability) || 50;
+    return clamp(0.25 + (adapt - 40) / 130, 0.15, 0.75);
+  }
+
+  /** The synergy read for a club right now: 0-100 score, the xG multiplier the
+   *  match engine applies, and the three factors that produced it (for the
+   *  tactics screen — this is meant to be legible, not a hidden dice roll). */
+  function synergyScore(club, manager) {
+    if (!manager) return { score: 50, xgMult: 1, aligned: false, clash: false, factors: { formation: 0.5, training: 0.5, manager: 0.5 } };
+    const focusKey = club.trainingFocus && TRAINING_FOCUS[club.trainingFocus] ? club.trainingFocus : "balanced";
+    const fFit = formationFit(manager.tactic, club.formation || "4-4-2");
+    const tFit = trainingFit(focusKey, manager.tactic);
+    const mFit = managerFit(manager);
+    const score = (fFit + tFit + mFit) / 3;
+    const SWING = 0.07;   // +/-7% of a side's xG, top to bottom — see the header note
+    const xgMult = clamp(1 + (score - 0.5) * SWING * 2, 1 - SWING, 1 + SWING);
+    return {
+      score: Math.round(score * 100), xgMult,
+      aligned: score >= 0.8, clash: score <= 0.32,
+      factors: { formation: fFit, training: tFit, manager: mFit }, focusKey,
+    };
+  }
+
+  /** The OTHER half of Training Focus — development speed, independent of
+   *  whether the focus suits the manager's system. Read by developSquads in
+   *  transfers.js as a multiplier on coaching quality. A club that never
+   *  touches this (every AI club, by default) gets exactly 1 — "balanced"
+   *  sits at axis 0.5, the formula's own neutral point, so leaving the world
+   *  alone leaves the world's development rates alone. */
+  function developmentMultiplier(club) {
+    const focus = (club.trainingFocus && TRAINING_FOCUS[club.trainingFocus]) || TRAINING_FOCUS.balanced;
+    return clamp(1 + (0.5 - focus.axis) * 0.24, 0.88, 1.12);
+  }
+
+  function setTrainingFocus(club, key) {
+    if (!TRAINING_FOCUS[key]) return;
+    club.trainingFocus = key;
+  }
+
+  /* A sensible default for a manager nobody has told what to do — set once,
+   * when he takes the job (world.js's appointManager), the same moment his
+   * tactic and formation are set. The player can then change it like any
+   * other tactics-screen lever; the AI never revisits it. */
+  function autoTrainingFocus(manager) {
+    if (!manager) return "balanced";
+    const traits = manager.traits || [];
+    if (traits.includes("Youth Developer")) return "youthDevelopment";
+    if (traits.includes("Set-Piece Specialist")) return "setPieces";
+    if (manager.tactic === "High Press") return "highIntensity";
+    if (manager.tactic === "Possession") return "possessionDrill";
+    if (traits.includes("Analytics") || traits.includes("Tinkerer")) return "matchSharpness";
+    return "balanced";
+  }
+
   MG.tactics = {
     FORMATIONS, FORMATION_KEYS, FAMILIARITY, familiarity,
     initMorale, effectiveOverall, teamMorale, shiftMorale, settleMorale,
     autoPick, effectiveXI, setXI, setFormation, xiRatings, xiReport,
     MATCHUP, MATCHUP_XG, formationEdge, matchupLabel, backupsFor, depthScore,
+    TRAINING_FOCUS, TRAINING_FOCUS_KEYS, formationFit, trainingFit, managerFit,
+    synergyScore, developmentMultiplier, setTrainingFocus, autoTrainingFocus,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

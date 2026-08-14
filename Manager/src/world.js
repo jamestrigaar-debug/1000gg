@@ -111,10 +111,15 @@
       realSquads.push(club);
     }
 
+    // A named sub-stream of its own (see rng.js), so relabelling a generated
+    // squad with real names can never shift a single draw anything else in
+    // the simulation makes — this is cosmetic and must stay that way.
+    const introRng = MG.createRng(world.seed, "intl-names");
     for (const club of world.clubs) {
       club.level = MG.clubs.playerLevelFor(club);
       if (club.squad.length) continue;
       club.squad = generateSquad(world.rng, club);
+      applyRealNamesIntl(introRng, club);
     }
     void realSquads;
 
@@ -241,6 +246,44 @@
     return squad;
   }
 
+  /* Real names, ages and positions for 63 clubs outside the Premier League —
+   * see src/data_intl.js. Unlike the PL database this carries no attribute
+   * ratings, so it never replaces a squad, only relabels the best-fitting
+   * generated player in each position: the club still plays at its calibrated
+   * level, it just does it with the actual players who play for it. Best
+   * generated player in a position gets the best-known real name in that
+   * position, so a club's real stars land on its real starting shirts rather
+   * than being handed out at random. */
+  function applyRealNamesIntl(rng, club) {
+    const roster = MG.dataIntl && MG.dataIntl.REAL_SQUADS_INTL[club.name];
+    if (!roster) return;
+    const byPos = {};
+    for (const p of club.squad) (byPos[p.pos] = byPos[p.pos] || []).push(p);
+    const rosterByPos = {};
+    for (const r of roster) (rosterByPos[r.pos] = rosterByPos[r.pos] || []).push(r);
+    for (const [pos, reals] of Object.entries(rosterByPos)) {
+      const need = (MG.players.POSITIONS[pos] || {}).need || 0;
+      // generateSquad builds each position's slots quality-first, so index-
+      // aligning the two lists puts a club's biggest real name on its best
+      // generated shirt in that position, without knowing anything about who
+      // any of these procedural players actually are.
+      const slots = (byPos[pos] || []).slice(0, need);
+      const count = Math.min(slots.length, reals.length);
+      for (let i = 0; i < count; i++) {
+        const real = reals[i], slot = slots[i];
+        slot.name = real.name;
+        slot.nationality = MG.names.knownNationality(real.name) || slot.nationality;
+        if (real.age != null && real.age !== slot.age) {
+          slot.age = real.age;
+          // The generated potential was rolled against the generated age;
+          // re-roll it now the age is a real one, or a real 18-year-old can
+          // end up with a veteran's flat ceiling.
+          slot.potential = MG.players.rollPotential(rng, slot.overall, slot.age);
+        }
+      }
+    }
+  }
+
   function createStartingManager(world, club) {
     const rng = world.rng;
     const real = REAL_MANAGERS[club.name];
@@ -272,6 +315,10 @@
     MG.clubs.onManagerAppointed(club, manager);
     // The manager imposes his own football on the club.
     club.tacticalStyle = manager.tactic;
+    // And a training focus that suits how he actually wants to play — the
+    // player can override it like any other tactics-screen lever, and the AI
+    // never revisits it once it is set. See tactics.js's synergy system.
+    club.trainingFocus = MG.tactics && MG.tactics.autoTrainingFocus ? MG.tactics.autoTrainingFocus(manager) : "balanced";
     world.invalidateProfile(club.id);
     if (!o.quiet) {
       world.report(`${club.name} appoint ${manager.name} (${manager.archetypeName}, ${manager.tactic}).`, "hire", club.id);

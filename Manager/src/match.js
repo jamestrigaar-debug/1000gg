@@ -158,6 +158,10 @@
       // How well the squad is covered behind the eleven, 0-100. Depth pays off
       // across a season of injuries and fatigue rather than in any one match.
       depth: MG.tactics ? MG.tactics.depthScore(club) : 50,
+      // Playstyle, shape, training and the manager himself, read together —
+      // see tactics.js. 1.0 is neutral; the match engine applies it straight
+      // to this side's xG.
+      synergy: MG.tactics && MG.tactics.synergyScore ? MG.tactics.synergyScore(club, manager).xgMult : 1,
       homeAdvantage: (club.homeAdvantage || 5) * mods.home,
       managerQuality: mods.quality * 100,
       variance: mods.variance,
@@ -221,6 +225,14 @@
       homeXG += MG.tactics.formationEdge(home.formation, away.formation);
       awayXG += MG.tactics.formationEdge(away.formation, home.formation);
     }
+
+    /* Tactical synergy — playstyle, shape, training and the manager read
+     * together (tactics.js). A small multiplier, +/-7% at the extremes,
+     * because this is a whole season's set-up tilting a match, not deciding
+     * one. Every club in the world gets this read, not just the player's —
+     * the same symmetry as the formation matchup above. */
+    if (home.synergy) homeXG *= home.synergy;
+    if (away.synergy) awayXG *= away.synergy;
 
     homeXG = Math.max(0.08, homeXG);
     awayXG = Math.max(0.08, awayXG);

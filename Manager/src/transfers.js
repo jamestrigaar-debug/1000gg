@@ -32,7 +32,14 @@
     const rng = world.rng;
     for (const club of world.clubs) {
       const manager = world.managerById(club.managerId);
-      const coaching = MG.managers.coachingQuality(manager, club);
+      // Training Focus's long-term half (tactics.js): up to 12% faster growth
+      // pointed at Youth Development, up to 12% slower at pure Match
+      // Sharpness. Every club gets a focus that suits its manager the moment
+      // he is appointed (autoTrainingFocus), so this varies across the world
+      // exactly as much as manager tactics and traits already do — a club
+      // that never touches the lever again just keeps its manager's default.
+      const coaching = MG.managers.coachingQuality(manager, club)
+        * (MG.tactics && MG.tactics.developmentMultiplier ? MG.tactics.developmentMultiplier(club) : 1);
       const mentored = new Set(club.mentoring || []);
       const boost = mentored.size ? MG.managers.mentorBoost(manager) : 0;
       for (const p of club.squad) {

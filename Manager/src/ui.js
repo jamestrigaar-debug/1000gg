@@ -73,9 +73,10 @@
   ];
   function attrGrid(p) {
     const defAtr = MG.ratings && MG.ratings.defenceAttribute ? MG.ratings.defenceAttribute(p) : null;
+    const finAtr = MG.ratings && MG.ratings.finishingAttribute && p.pos !== "GK" ? MG.ratings.finishingAttribute(p) : null;
     return `<div class="pattrs">${ATTR_ROWS.map((r) =>
       `<div class="pattr"><span>${r.label}</span><b>${p.attrs[r.k]}${r.suffix || ""}</b></div>`).join("")
-      }<div class="pattr"><span>MEN</span><b>${esc(p.mentality)}</b></div>${defAtr != null ? `<div class="pattr"><span>${p.pos === "GK" ? "GK-ATR" : "DEF-ATR"}</span><b>${defAtr}</b></div>` : ""}</div>`;
+      }<div class="pattr"><span>MEN</span><b>${esc(p.mentality)}</b></div>${defAtr != null ? `<div class="pattr"><span>${p.pos === "GK" ? "GK-ATR" : "DEF-ATR"}</span><b>${defAtr}</b></div>` : ""}${finAtr != null ? `<div class="pattr"><span>FIN-ATR</span><b>${finAtr}</b></div>` : ""}</div>`;
   }
   const SORTS = {
     rating: (a, b) => b.overall - a.overall,
@@ -825,9 +826,9 @@
         ${["rating", "pos", "name", "years"].map((k) => `<button class="btn tiny ${state.squadSort === k ? "on-mentor" : ""}" data-squadsort="${k}">${k === "pos" ? "POSITION" : k === "years" ? "CONTRACT" : k.toUpperCase()}</button>`).join("")}
       </div>
       <div class="muted" style="font-size:12px;margin-bottom:8px">
-        <span class="bad">LIST</span> for sale · <span class="accent">MENTOR</span> to develop · <span class="accent">EXTEND</span> /
-        <span class="bad">RELEASE</span> his contract — the board still does every deal, you just point it.
-        Mentoring ${mentoring.length}/${mentorCap}.
+        Tap a player to <span class="bad">list</span> him for sale, <span class="accent">mentor</span> him, or ask the board
+        to <span class="accent">extend</span> or <span class="bad">release</span> his contract — the board still does every
+        deal, you just point it. Mentoring ${mentoring.length}/${mentorCap}.
       </div>
       ${squad.map((p) => pcard(p, {
         inXI: xi.has(p.id), listed: listed.includes(p.id), mentored: mentoring.includes(p.id),
@@ -873,22 +874,36 @@
     const yrs = p.contract.years;
     const yrsCls = yrs <= 0 ? "bad" : yrs === 1 ? "gold" : "muted";
     const yrsLabel = yrs <= 0 ? "OUT" : `${yrs}y left`;
+    // A rival's player, seen through your scouting department rather than the
+    // true number — see scouting.js. The badge shows the department's own
+    // best guess (the middle of its range); "pot" becomes the range itself,
+    // because a rival's ceiling is exactly the kind of thing scouts get wrong.
+    const scouted = o.scoutRange;
+    const ratingNum = scouted ? Math.round((scouted.floor + scouted.ceiling) / 2) : Math.round(p.overall);
+    const scoutCls = scouted ? (scouted.confident ? "accent" : "gold") : "";
+    /* LIST/MENTOR/EXTEND/RELEASE used to live here as a 2x2 button grid — a
+     * fixed 118px column that, next to the rating badge, left almost nothing
+     * for the name on a phone-width screen and made long names unreadable.
+     * Those four actions all live on the player's profile now (tap the card
+     * to open it); the list card's own job is just to be a legible list, so
+     * the coloured border (see .pcard.mentored/.listed above) is the only
+     * status a row still carries at a glance. Loan status is the exception —
+     * it is not a lever you pull here, so it earns a small tag of its own. */
+    const tag = p.loan
+      ? `<div class="pactions"><span class="trait-chip" style="color:var(--rare);border-color:var(--rare);padding:0 6px">ON LOAN</span></div>`
+      : o.mentored == null
+        ? `<div class="pactions"><span class="muted" style="font-size:11px">${esc(p.pos)}</span></div>`
+        : "";
     return `<div class="pcard ${o.mentored ? "mentored" : o.listed ? "listed" : o.inXI ? "in-xi" : ""}">
-      <div class="prating ${pc}" data-player="${p.id}" style="cursor:pointer">${Math.round(p.overall)}${growthTag(p)}</div>
+      <div class="prating ${pc}" data-player="${p.id}" style="cursor:pointer">${ratingNum}${!scouted ? growthTag(p) : ""}</div>
       <div class="pbody" data-player="${p.id}" style="cursor:pointer">
         <div class="pname">${flags}<span title="${esc(p.nationality)}">${natFlag}</span> ${esc(p.name)}${p.homegrown ? ' <span class="hg">HG</span>' : ""}${markTag(p)}</div>
-        <div class="pmeta"><span class="ppos ${pc}">${esc(p.pos)}</span>${p.age}y · pot ${Math.round(p.potential)} · ${money(p.value)} · £${p.contract.wage}k
+        <div class="pmeta"><span class="ppos ${pc}">${esc(p.pos)}</span>${p.age}y · ${scouted ? `<span class="${scoutCls}">scouted ${scouted.floor}–${scouted.ceiling}</span>` : `pot ${Math.round(p.potential)}`} · ${money(p.value)} · £${p.contract.wage}k
           · <span class="${yrsCls}">${yrsLabel}</span>
           ${p.lastSeason && p.lastSeason.apps ? ` · <span class="muted">last yr ${p.lastSeason.apps}a ${p.lastSeason.goals}g</span>` : ""}
           ${p.season.injured > 0 ? ` · <span class="inj">out ${Math.round(p.season.injured * 100)}%</span>` : durabilityTag(p)}</div>
       </div>
-      ${p.loan ? `<div class="pactions"><span class="trait-chip" style="color:var(--rare);border-color:var(--rare);padding:0 6px">ON LOAN</span></div>`
-        : o.mentored != null ? `<div class="pactions quad">
-        <button class="pbtn ${o.listed ? "on-list" : ""}" data-list="${p.id}">${o.listed ? "◤ LISTED" : "LIST"}</button>
-        <button class="pbtn ${o.mentored ? "on-mentor" : ""}" data-mentor="${p.id}" ${!o.canMentor && !o.mentored ? "disabled style=opacity:.4" : ""}>${o.mentored ? "◤ MENTOR" : "MENTOR"}</button>
-        <button class="pbtn ${o.contractReq === "extend" ? "on-mentor" : ""}" data-contract="extend:${p.id}">${o.contractReq === "extend" ? "◤ EXTEND" : "EXTEND"}</button>
-        <button class="pbtn ${o.contractReq === "release" ? "on-list" : ""}" data-contract="release:${p.id}">${o.contractReq === "release" ? "◤ RELEASE" : "RELEASE"}</button>
-      </div>` : `<div class="pactions"><span class="muted" style="font-size:11px">${esc(p.pos)}</span></div>`}
+      ${tag}
     </div>`;
   }
 
@@ -965,6 +980,9 @@
           <button class="${k === c.focus ? "on" : ""}" data-focus="${k}">${esc(MG.clubs.FOCUS[k].label)}</button>`).join("")}</div>
         <div class="muted" style="font-size:12px;margin-top:6px">${c.focus ? esc(MG.clubs.FOCUS[c.focus].blurb) : "Pick what this season is actually for."}</div>
       </div>
+      ${trainingFocusHtml(c)}
+      ${synergyHtml(c)}
+      ${scoutingHtml(c)}
       <div class="panel">
         <h3 class="muted">STARTING XI · ${report.averageFamiliarity}% in position${report.problems ? ` · <span class="bad">${report.problems} misplaced</span>` : ""}</h3>
         <div class="pitch"><div class="pitch-rows">
@@ -978,6 +996,76 @@
       ${matchupHtml(c)}
       ${depthHtml(c)}
       <div class="panel muted" style="font-size:12px">Signings and sales are handled in the pre-season <b>window</b> (top of the Decisions panel), and listing, mentoring and contracts are on each player's card in the <b>SQUAD</b> tab — the board does the dealing, you just point it.</div>`;
+  }
+
+  /* Training Focus — the report's Performance <-> Improvement bar. What the
+   * week is actually spent on, independent of the system you play: it feeds
+   * both the synergy read below (does it suit the manager's system?) and
+   * development speed all season (tactics.js's developmentMultiplier). */
+  function trainingFocusHtml(c) {
+    if (!MG.tactics.TRAINING_FOCUS) return "";
+    const key = c.trainingFocus && MG.tactics.TRAINING_FOCUS[c.trainingFocus] ? c.trainingFocus : "balanced";
+    const focus = MG.tactics.TRAINING_FOCUS[key];
+    const pct = Math.round(focus.axis * 100);
+    return `<div class="panel">
+      <h3 class="muted">TRAINING FOCUS</h3>
+      <div class="seg">${MG.tactics.TRAINING_FOCUS_KEYS.map((k) => `
+        <button class="${k === key ? "on" : ""}" data-trainfocus="${k}">${esc(MG.tactics.TRAINING_FOCUS[k].label)}</button>`).join("")}</div>
+      <div class="muted" style="font-size:12px;margin-top:6px">${esc(focus.blurb)}</div>
+      <div class="metric-bar" style="margin-top:8px"><span class="metric-mid"></span><i class="${pct >= 50 ? "warn" : "good"}" style="left:${Math.min(pct, 50)}%;width:${Math.max(2, Math.abs(pct - 50))}%"></i></div>
+      <div class="muted" style="font-size:11px;margin-top:2px;display:flex;justify-content:space-between"><span>Improvement (development)</span><span>Performance (this season)</span></div>
+    </div>`;
+  }
+
+  /* Tactical synergy — whether playstyle, shape, training and the manager
+   * himself are all pointing the same way. See tactics.js's synergyScore. */
+  function synergyHtml(c) {
+    if (!MG.tactics.synergyScore) return "";
+    const manager = state.manager;
+    const s = MG.tactics.synergyScore(c, manager);
+    const pctText = `${s.xgMult >= 1 ? "+" : ""}${Math.round((s.xgMult - 1) * 1000) / 10}%`;
+    const cls = s.xgMult > 1.015 ? "accent" : s.xgMult < 0.985 ? "bad" : "gold";
+    const verdict = s.aligned ? "Everything about how you set up points the same way."
+      : s.clash ? "The system, the shape, the training and the manager are pulling in different directions."
+        : s.score >= 55 ? "Mostly aligned, nothing actively fighting itself."
+          : "A few things are pulling against each other.";
+    const fitCls = (v) => v >= 0.75 ? "accent" : v >= 0.45 ? "gold" : "bad";
+    return `<div class="panel">
+      <h3 class="muted">TACTICAL SYNERGY · <b class="${cls}">${pctText} xG</b></h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">Four things have to agree for a side to click: the manager's system
+      (<b>${esc(manager ? manager.tactic : "—")}</b>), the shape you play it in (<b>${esc(c.formation)}</b>), how you train for it, and the
+      manager's own natural game. ${esc(verdict)}</div>
+      <div class="depth-grid">
+        <div class="dcell"><div class="dname" style="white-space:normal">Shape fit</div><div class="${fitCls(s.factors.formation)}" style="font-size:13px;font-weight:700">${Math.round(s.factors.formation * 100)}%</div></div>
+        <div class="dcell"><div class="dname" style="white-space:normal">Training fit</div><div class="${fitCls(s.factors.training)}" style="font-size:13px;font-weight:700">${Math.round(s.factors.training * 100)}%</div></div>
+        <div class="dcell"><div class="dname" style="white-space:normal">Manager fit</div><div class="${fitCls(s.factors.manager)}" style="font-size:13px;font-weight:700">${Math.round(s.factors.manager * 100)}%</div></div>
+      </div>
+    </div>`;
+  }
+
+  /* The scouting department's own report on itself — what it is built from,
+   * and what that buys you when you go and look at a rival (see openClub and
+   * scouting.js). Board and team wealth is deliberately never shown as a
+   * number, the same way ownerLabel never shows the hidden wealth figure. */
+  function scoutingHtml(c) {
+    if (!MG.scouting) return "";
+    const s = MG.scouting.strength(state.world, c);
+    const label = MG.scouting.strengthLabel(s.score);
+    const reach = MG.network ? MG.network.reachLabel(c) : null;
+    const cls = s.score >= 60 ? "accent" : s.score >= 42 ? "gold" : "bad";
+    return `<div class="panel">
+      <h3 class="muted">SCOUTING DEPARTMENT · <b class="${cls}">${s.score}</b>/100</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px"><b>${esc(label.label)}</b> — ${esc(label.blurb)}
+      This is why a rival's numbers show up as a range everywhere in the game — the report is only ever as good as
+      the department that produced it.</div>
+      <div class="depth-grid">
+        <div class="dcell"><div class="dname">Facilities</div><div style="font-size:13px;font-weight:700">${s.training}</div></div>
+        <div class="dcell"><div class="dname">Backing</div><div style="font-size:13px;font-weight:700">${s.wealth >= 74 ? "Strong" : s.wealth >= 45 ? "Fair" : "Thin"}</div></div>
+        <div class="dcell"><div class="dname">Mood</div><div style="font-size:13px;font-weight:700">${s.morale >= 60 ? "Settled" : s.morale >= 40 ? "Uneasy" : "Fractious"}</div></div>
+        <div class="dcell"><div class="dname">Reach</div><div style="font-size:12px;font-weight:700">${esc(s.tier)}</div></div>
+      </div>
+      ${reach ? `<div class="muted" style="font-size:11px;margin-top:6px">Network: ${esc(reach)}.</div>` : ""}
+    </div>`;
   }
 
   /* How your shape fares against the shapes you will actually meet this season.
@@ -1184,17 +1272,28 @@
     if (!c) return;
     const m = world.managerById(c.managerId);
     const squad = c.squad.slice().sort(SORTS.rating);
+    const mine = club();
+    // Your own club is always read exactly — everyone else goes through the
+    // scouting department (scouting.js). What you SEE here is what your
+    // scouts can actually tell you, not the true numbers the engine plays with.
+    const rival = c.id !== mine.id && MG.scouting;
+    const rep = rival ? MG.scouting.clubReport(world, mine, c) : null;
+    const statBox = (key, label) => rep
+      ? `<div class="stat-box"><div class="sb-num" style="font-size:16px">${rep[key].floor}–${rep[key].ceiling}</div><div class="sb-lab">${label}</div></div>`
+      : `<div class="stat-box"><div class="sb-num">${Math.round(c.ratings[key])}</div><div class="sb-lab">${label}</div></div>`;
     modal(`
       <h3 class="muted">${esc(c.name)} · ${esc(MG.clubs.LEAGUES[c.leagueId].name)}</h3>
+      ${rep ? `<div class="muted" style="font-size:12px;margin-bottom:8px">
+        Scouting report — <b>${esc(rep.label.label)}</b>. ${esc(rep.label.blurb)} The ratings below are your department's
+        read, not the true numbers; a better-resourced, happier, further-reaching department reads a rival more accurately.
+      </div>` : ""}
       <div class="stat-grid" style="margin-bottom:10px">
-        <div class="stat-box"><div class="sb-num">${Math.round(c.ratings.attack)}</div><div class="sb-lab">Attack</div></div>
-        <div class="stat-box"><div class="sb-num">${Math.round(c.ratings.midfield)}</div><div class="sb-lab">Midfield</div></div>
-        <div class="stat-box"><div class="sb-num">${Math.round(c.ratings.defence)}</div><div class="sb-lab">Defence</div></div>
+        ${statBox("attack", "Attack")}${statBox("midfield", "Midfield")}${statBox("defence", "Defence")}
         <div class="stat-box"><div class="sb-num">${c.reputation}</div><div class="sb-lab">Reputation</div></div>
       </div>
       <div class="muted" style="font-size:13px;margin-bottom:4px">Manager: <b>${esc(m ? m.name : "—")}</b>${m ? ` · ${esc(m.archetypeName)} · ${esc(m.tactic)} · ${esc(c.formation)}` : ""}</div>
       <div class="muted" style="font-size:13px;margin-bottom:8px">Boardroom: <b>${esc(c.board.style)}</b> · ${esc(ownerLabel(c))}</div>
-      <div class="chooser-list">${squad.slice(0, 24).map((p) => pcard(p, {})).join("")}</div>`);
+      <div class="chooser-list">${squad.slice(0, 24).map((p) => pcard(p, rep ? { scoutRange: MG.scouting.playerBand(world, mine, c, p) } : {})).join("")}</div>`);
     for (const el of document.querySelectorAll("[data-player]")) {
       el.addEventListener("click", (e) => { e.stopPropagation(); openPlayer(Number(el.dataset.player)); });
     }
@@ -1208,17 +1307,14 @@
     for (const b of document.querySelectorAll("[data-focus]")) {
       b.addEventListener("click", () => { c.focus = b.dataset.focus; render(); });
     }
+    for (const b of document.querySelectorAll("[data-trainfocus]")) {
+      b.addEventListener("click", () => { MG.tactics.setTrainingFocus(c, b.dataset.trainfocus); render(); });
+    }
     for (const b of document.querySelectorAll("[data-slot]")) {
       b.addEventListener("click", () => openSlotChooser(Number(b.dataset.slot)));
     }
     for (const b of document.querySelectorAll("[data-squadsort]")) {
       b.addEventListener("click", () => { state.squadSort = b.dataset.squadsort; renderTab(); });
-    }
-    for (const b of document.querySelectorAll("[data-list]")) {
-      b.addEventListener("click", (e) => { e.stopPropagation(); toggleList(c, Number(b.dataset.list)); renderTab(); });
-    }
-    for (const b of document.querySelectorAll("[data-mentor]")) {
-      b.addEventListener("click", (e) => { e.stopPropagation(); toggleMentor(c, Number(b.dataset.mentor)); renderTab(); });
     }
     for (const b of document.querySelectorAll("[data-yfocus]")) {
       b.addEventListener("click", () => { MG.youth.ensure(c).focus = b.dataset.yfocus; renderTab(); });
@@ -1234,14 +1330,6 @@
       b.addEventListener("click", () => {
         const p = MG.youth.release(c, Number(b.dataset.release));
         if (p) state.world.report(`ACADEMY — ${p.name} is released by the club.`, "youth", c.id);
-        renderTab();
-      });
-    }
-    for (const b of document.querySelectorAll("[data-contract]")) {
-      b.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const [action, id] = b.dataset.contract.split(":");
-        toggleContractReq(c, Number(id), action);
         renderTab();
       });
     }

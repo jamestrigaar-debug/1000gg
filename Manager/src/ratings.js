@@ -184,15 +184,18 @@
   }
   function radarAxes(player) {
     const a = player.attrs || {};
-    const foot = Math.max(a.rightFoot || 0, a.leftFoot || 0);
     const men = player.mentalityRating || 55;
     const height = a.height || 180;
     return [
       { label: "Aerial", value: stretch((a.heading || 50) * 0.68 + (a.strength || 50) * 0.14 + clamp((height - 165) * 1.1, 0, 60) * 0.18) },
       { label: "Mental", value: stretch(men) },
-      { label: "Finishing", value: stretch(foot * 0.72 + men * 0.28) },
+      { label: "Finishing", value: stretch(finishingAttribute(player)) },
       { label: "Pace", value: stretch((a.speed || 50) * 0.82 + (a.fitness || 50) * 0.18) },
-      { label: "Physical", value: stretch((a.strength || 50) * 0.74 + clamp((height - 165) * 1.1, 0, 60) * 0.26) },
+      // Strength and fitness — the database's own physical attributes — not
+      // height, which already has its own job on the Aerial axis. Folding
+      // height in here too made every tall player read as "physical" whatever
+      // his actual strength or conditioning said.
+      { label: "Physical", value: stretch((a.strength || 50) * 0.5 + (a.fitness || 50) * 0.5) },
       { label: player.pos === "GK" ? "Goalkeeping" : "Defense", value: stretch(defenceAttribute(player)) },
     ];
   }
@@ -232,9 +235,35 @@
     return clamp(Math.round(player.overall * weight * 0.6 + physical * 0.4), 1, 99);
   }
 
+  /* -------------------------------- FINISHING -------------------------------
+   * The mirror image of DEF-ATR, and the fix for a real problem: the database's
+   * rightFoot/leftFoot ratings are a broad "how good is he with that foot"
+   * number — passing, dribbling, tricks and shooting all folded into one — not
+   * a shooting rating specifically. Reading that number straight for every
+   * position produced technically excellent CENTRE-BACKS showing up with
+   * finishing to rival a striker, because a ball-playing defender's foot
+   * rating is genuinely high even though he is never actually asked to shoot.
+   *
+   * FINISHING_WEIGHT debuffs the foot component by how much of a position's
+   * job is actually about getting shots away — heaviest for the back line,
+   * lighter through midfield, none at all for a forward, the same shape as
+   * DEF_ATR_WEIGHT but pointed the other way. Mentality (composure in front of
+   * goal) is left unweighted — a defender who is calm under pressure is calm
+   * under pressure whatever his position — only the technical foot rating is
+   * discounted. */
+  const FINISHING_WEIGHT = { GK: 0.15, CB: 0.30, FB: 0.45, DM: 0.50, CM: 0.65, AM: 0.85, WG: 0.85, FW: 1.0 };
+  function finishingAttribute(player) {
+    const a = player.attrs || {};
+    const weight = FINISHING_WEIGHT[player.pos] != null ? FINISHING_WEIGHT[player.pos] : 0.8;
+    const foot = Math.max(a.rightFoot || 50, a.leftFoot || 50);
+    const men = player.mentalityRating || 55;
+    return clamp(Math.round(foot * weight * 0.72 + men * 0.28), 1, 99);
+  }
+
   MG.ratings = {
     ROLE_WEIGHTS, ROLE_INFLUENCE, attrValue, roleRating,
     hidden, resetHidden, rollSeasonForm, fatigueFactor,
     radarAxes, DEF_ATR_WEIGHT, heightScore, defenceAttribute,
+    FINISHING_WEIGHT, finishingAttribute,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);
