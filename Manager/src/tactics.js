@@ -247,17 +247,21 @@
       }
     });
 
-    const bench = club.squad.filter((p) => !xi.includes(p));
-    const benchAvg = bench.length
-      ? bench.slice().sort((a, b) => b.overall - a.overall).slice(0, 7)
-        .reduce((t, p) => t + effectiveOverall(p, p.pos), 0) / Math.min(bench.length, 7)
+    /* Depth, counted per shirt rather than as a flat bench average. Seven spare
+     * wingers used to look exactly as deep as a squad properly covered in every
+     * position; now the tail is the average of the men who would ACTUALLY come
+     * in for each starter, so cover in the positions you are thin at is what
+     * moves the number. */
+    const covers = backupsFor(club).filter((r) => r.backup && r.slot !== "GK");
+    const benchAvg = covers.length
+      ? covers.reduce((t, r) => t + r.rating, 0) / covers.length
       : 0;
 
     const out = {};
     for (const unit of ["attack", "midfield", "defence"]) {
       const core = weights[unit] ? units[unit] / weights[unit] : 40;
       // 88% the eleven on the pitch, 12% the squad behind them.
-      out[unit] = bench.length ? core * 0.88 + benchAvg * 0.12 : core;
+      out[unit] = covers.length ? core * 0.88 + benchAvg * 0.12 : core;
       out[unit] += formation.bias[unit] || 0;
     }
     out.keeper = keeper;
@@ -286,9 +290,104 @@
     return { formation: formationKey, rows, problems, averageFamiliarity: round1(rows.reduce((t, r) => t + r.fam, 0) / rows.length * 100) };
   }
 
+  /* ------------------------- THE MATCHUP MATRIX ----------------------------
+   * Shape against shape, before a single player is considered.
+   *
+   * Until now a formation only changed your own rating bias; who you were
+   * playing against made no difference, so a 4-4-2 was exactly as effective
+   * against a midfield three as against another 4-4-2. That is the opposite of
+   * how football works, and it made the formation choice nearly cosmetic.
+   *
+   * Read as ROW versus COLUMN: the value is what your shape is worth against
+   * theirs. The table is antisymmetric — if 4-3-3 is +1 against 4-4-2 then
+   * 4-4-2 is -1 against 4-3-3 — so both sides of a fixture can be looked up
+   * independently and the two agree.
+   *
+   *   +2 strong advantage   +1 slight   0 balanced   -1 slight   -2 strong
+   *
+   * The logic behind the numbers, in one line each:
+   *   4-4-2    two central midfielders get overrun by any midfield three
+   *   4-3-3    central overload against flat fours; pins wing-backs high
+   *   4-2-3-1  the No.10 sits in the hole a flat midfield two cannot cover
+   *   3-5-2    spare centre-back handles two strikers; exposed behind the
+   *            wing-backs against high wide forwards
+   *   5-3-2    compact five denies the crossing lanes a 4-4-2 depends on
+   *   4-5-1    smothers the middle against 4-4-2, outflanked by wing-backs
+   */
+  const MATCHUP = {
+    "4-4-2":   { "4-4-2": 0, "4-3-3": -1, "4-2-3-1": -1, "3-5-2": 0, "5-3-2": -1, "4-5-1": -1 },
+    "4-3-3":   { "4-4-2": 1, "4-3-3": 0, "4-2-3-1": 0, "3-5-2": 1, "5-3-2": 0, "4-5-1": 0 },
+    "4-2-3-1": { "4-4-2": 1, "4-3-3": 0, "4-2-3-1": 0, "3-5-2": 1, "5-3-2": 0, "4-5-1": 0 },
+    "3-5-2":   { "4-4-2": 0, "4-3-3": -1, "4-2-3-1": -1, "3-5-2": 0, "5-3-2": 0, "4-5-1": 1 },
+    "5-3-2":   { "4-4-2": 1, "4-3-3": 0, "4-2-3-1": 0, "3-5-2": 0, "5-3-2": 0, "4-5-1": 0 },
+    "4-5-1":   { "4-4-2": 1, "4-3-3": 0, "4-2-3-1": 0, "3-5-2": -1, "5-3-2": 0, "4-5-1": 0 },
+  };
+  /* What each step is worth in expected goals. A slight edge is a fifth of a
+   * goal a game, which across a season is a few points — enough to matter,
+   * never enough to beat a better squad on its own. */
+  const MATCHUP_XG = { 2: 0.15, 1: 0.05, 0: 0, "-1": -0.05, "-2": -0.15 };
+
+  /** What `mine` is worth in xG against `theirs`. */
+  function formationEdge(mine, theirs) {
+    const row = MATCHUP[mine];
+    if (!row) return 0;
+    const v = row[theirs];
+    return v == null ? 0 : (MATCHUP_XG[v] || 0);
+  }
+  /** The same thing as a readable verdict, for the tactics screen. */
+  function matchupLabel(mine, theirs) {
+    const row = MATCHUP[mine];
+    const v = row && row[theirs] != null ? row[theirs] : 0;
+    return { value: v, text: v >= 2 ? "strong advantage" : v === 1 ? "slight advantage"
+      : v === 0 ? "balanced" : v === -1 ? "slight disadvantage" : "strong disadvantage" };
+  }
+
+  /* ---------------------------- SQUAD DEPTH --------------------------------
+   * Every shirt now has a named understudy. Depth used to be a single average
+   * of the seven best players not in the side, rated in their own positions —
+   * which meant a squad with three spare wingers and no reserve goalkeeper
+   * looked exactly as deep as one properly covered in every position. Cover is
+   * per-shirt or it is not cover. */
+  function backupsFor(club) {
+    const formationKey = club.formation || "4-4-2";
+    const formation = FORMATIONS[formationKey] || FORMATIONS["4-4-2"];
+    const xi = effectiveXI(club);
+    const xiIds = new Set(xi.map((p) => p && p.id));
+    const rest = club.squad.filter((p) => !xiIds.has(p.id));
+    const used = new Set();
+    return formation.slots.map((slot, i) => {
+      let best = null, bestVal = -1;
+      for (const p of rest) {
+        if (used.has(p.id)) continue;
+        const val = effectiveOverall(p, slot);
+        if (val > bestVal) { best = p; bestVal = val; }
+      }
+      if (best) used.add(best.id);
+      const starter = xi[i];
+      return {
+        slot, index: i, starter, backup: best,
+        rating: best ? Math.round(bestVal) : 0,
+        // How far the side drops if the starter is unavailable.
+        dropOff: starter && best ? Math.round(effectiveOverall(starter, slot) - bestVal) : null,
+      };
+    });
+  }
+
+  /** One number for how well covered a squad is, 0-100. */
+  function depthScore(club) {
+    const rows = backupsFor(club);
+    const covered = rows.filter((r) => r.backup);
+    if (!covered.length) return 0;
+    const avgDrop = covered.reduce((t, r) => t + (r.dropOff == null ? 12 : r.dropOff), 0) / covered.length;
+    const missing = rows.length - covered.length;
+    // No drop-off at all is a perfect 100; a twenty-point cliff is nothing.
+    return clamp(Math.round(100 - avgDrop * 5 - missing * 8), 0, 100);
+  }
+
   MG.tactics = {
     FORMATIONS, FORMATION_KEYS, FAMILIARITY, familiarity,
     initMorale, effectiveOverall, teamMorale, shiftMorale, settleMorale,
     autoPick, effectiveXI, setXI, setFormation, xiRatings, xiReport,
+    MATCHUP, MATCHUP_XG, formationEdge, matchupLabel, backupsFor, depthScore,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

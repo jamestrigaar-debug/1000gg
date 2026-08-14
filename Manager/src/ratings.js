@@ -150,8 +150,52 @@
     return clamp(1 - drain * 0.22, 0.86, 1);
   }
 
+  /* ------------------------------ THE RADAR --------------------------------
+   * Six axes chosen so that three players who all rate 78 look like three
+   * different footballers.
+   *
+   * The old set — pace, physical, aerial, stamina, technique, mentality — read
+   * the raw attributes almost directly, and the two that separate a technical
+   * forward from a centre-half (technique and aerial) were single numbers with
+   * everything else shared. A poacher, a playmaker and a stopper all came out
+   * as roughly the same hexagon.
+   *
+   * These axes are COMPOSITES, each built from the attributes that actually
+   * make up that quality, and each stretched around the population's midpoint
+   * so real differences are visible rather than crowded into the top third:
+   *
+   *   FINISHING   the better foot, sharpened by mentality — the quality that
+   *               separates a goalscorer from a good footballer
+   *   CREATIVITY  two-footedness and composure: the playmaker's axis, which a
+   *               one-footed poacher scores badly on however good he is
+   *   AERIAL      heading with height and strength behind it
+   *   PACE        speed, with stamina deciding how often he can use it
+   *   PHYSICAL    strength and build
+   *   ENDURANCE   fitness, the axis that says who is still running in April
+   */
+  function stretch(v) {
+    // Pull the 40-95 band a population actually occupies out across the dial.
+    return clamp(Math.round((v - 38) * 1.55), 3, 99);
+  }
+  function radarAxes(player) {
+    const a = player.attrs || {};
+    const foot = Math.max(a.rightFoot || 0, a.leftFoot || 0);
+    const weakFoot = Math.min(a.rightFoot || 0, a.leftFoot || 0);
+    const men = player.mentalityRating || 55;
+    const height = a.height || 180;
+    return [
+      { label: "Finishing", value: stretch(foot * 0.72 + men * 0.28) },
+      { label: "Creativity", value: stretch(weakFoot * 0.45 + foot * 0.25 + men * 0.30) },
+      { label: "Aerial", value: stretch((a.heading || 50) * 0.68 + (a.strength || 50) * 0.14 + clamp((height - 165) * 1.1, 0, 60) * 0.18) },
+      { label: "Pace", value: stretch((a.speed || 50) * 0.82 + (a.fitness || 50) * 0.18) },
+      { label: "Physical", value: stretch((a.strength || 50) * 0.74 + clamp((height - 165) * 1.1, 0, 60) * 0.26) },
+      { label: "Endurance", value: stretch((a.fitness || 50) * 0.85 + (a.strength || 50) * 0.15) },
+    ];
+  }
+
   MG.ratings = {
     ROLE_WEIGHTS, ROLE_INFLUENCE, attrValue, roleRating,
     hidden, resetHidden, rollSeasonForm, fatigueFactor,
+    radarAxes,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

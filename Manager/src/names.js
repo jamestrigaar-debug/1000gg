@@ -172,5 +172,37 @@
     return randomNation(rng);
   }
 
-  MG.names = { NATIONS, NATION_KEYS, personName, managerName, randomNation, nationForLeague };
+  /* ---------------------- REAL PLAYER NATIONALITIES ------------------------
+   * The shipped database (../src/data.js) carries no nationality field — every
+   * record is name / position / attributes / overall. So a real player's
+   * nationality was ROLLED from the league he happened to be playing in, which
+   * is how Erling Haaland came out Serbian and every Barcelona player came out
+   * Spanish. The roll is fine for the thousands of generated players, whose
+   * names are built from their nationality in the first place; it is nonsense
+   * for the ~500 real ones.
+   *
+   * This is the override. Anything in here wins; anything not in here still
+   * falls back to the league-weighted roll. Populate it as
+   *     MG.names.PLAYER_NATIONALITY["Erling Haaland"] = "Norway";
+   * or by assigning a whole object to MG.names.setNationalities(map).
+   * A nation not listed in NATIONS still works — it is used verbatim — so the
+   * table can carry countries the generator has no name pool for. */
+  const PLAYER_NATIONALITY = {};
+  function setNationalities(map) {
+    if (!map) return 0;
+    let n = 0;
+    for (const [name, nation] of Object.entries(map)) {
+      if (typeof name === "string" && typeof nation === "string" && nation) {
+        PLAYER_NATIONALITY[name] = nation; n++;
+      }
+    }
+    return n;
+  }
+  /** A real player's nationality if we know it, otherwise null. */
+  function knownNationality(name) {
+    return PLAYER_NATIONALITY[name] || null;
+  }
+
+  MG.names = { NATIONS, NATION_KEYS, personName, managerName, randomNation, nationForLeague,
+    PLAYER_NATIONALITY, setNationalities, knownNationality };
 })(typeof globalThis !== "undefined" ? globalThis : this);

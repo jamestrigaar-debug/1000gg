@@ -296,7 +296,9 @@
     const age = inferAge(rng, raw, currentYear, firstSeason);
     const p = makePlayer({
       name: raw.name,
-      nationality: MG.names.nationForLeague(rng, league),
+      /* A real player's actual nationality when we have it; the league-weighted
+       * roll only as a fallback. See MG.names.PLAYER_NATIONALITY. */
+      nationality: MG.names.knownNationality(raw.name) || MG.names.nationForLeague(rng, league),
       pos: POSITIONS[raw.pos] ? raw.pos : "CM",
       age,
       overall: raw.overall,

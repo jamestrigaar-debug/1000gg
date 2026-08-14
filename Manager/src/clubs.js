@@ -202,6 +202,7 @@
       targets: [],          // specific players bid for (advanced/legacy path)
       contractRequests: {}, // { [playerId]: "extend" | "release" } — the board actions these
       boardListed: [],      // player ids the BOARD itself decided to list (fed back to you)
+      academy: { focus: "balanced", players: [], lastIntake: 0 },  // the youth set-up
       fans: clamp(Math.round(52 + rng.gauss() * 7), 30, 78),  // supporters' mood, 0-100
       fanNotes: [],         // why it moved, quoted back on the end-of-season screen
       /* Levers the decision layer pulls. Everything here is applied by the
@@ -539,6 +540,13 @@
     if (result.champion) { delta += 12; notes.push("champions"); }
     else if (result.promoted) { delta += 9; notes.push("promotion"); }
     if (result.relegated) { delta -= 14; notes.push("relegation"); }
+    if (result.europe) {
+      const eu = result.europe.round;
+      if (eu === "W") { delta += 14; notes.push(`a European trophy`); }
+      else if (eu === "F" || eu === "SF") { delta += 6; notes.push("a run deep into Europe"); }
+      else if (eu === "R1" || eu === "R2") { delta -= 2; notes.push("a limp European exit"); }
+      else { delta += 2; notes.push("European nights"); }
+    }
     if (result.cupRound === "W") { delta += 8; notes.push("a cup in the cabinet"); }
     else if (result.cupRound === "F") { delta += 3; notes.push("a cup final"); }
     else if (result.cupRound === "R1" || result.cupRound === "R2") { delta -= 2; notes.push("an early cup exit"); }

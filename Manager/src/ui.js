@@ -47,10 +47,18 @@
 
   /* The 1000goals position-colour language, reused so a striker reads red and a
    * centre-half reads blue in both games. */
+  /* Four families, eight shades. Full-backs read as a lighter blue than
+   * centre-halves and wingers as a warmer red than forwards, so a squad list
+   * separates the specialists inside a line at a glance rather than only
+   * telling you "defender" or "attacker". */
   function posClass(pos) {
     if (pos === "GK") return "keeper";
-    if (pos === "FW" || pos === "WG" || pos === "AM") return "attack";
-    if (pos === "CB" || pos === "FB") return "defence";
+    if (pos === "FW") return "attack";
+    if (pos === "WG") return "attack wide";
+    if (pos === "AM") return "attack advanced";
+    if (pos === "CB") return "defence";
+    if (pos === "FB") return "defence wide";
+    if (pos === "DM") return "midfield deep";
     return "midfield";
   }
   const ATTR_ROWS = [
@@ -729,7 +737,7 @@
   function renderTab() {
     for (const b of document.querySelectorAll(".tab")) b.classList.toggle("on", b.dataset.tab === state.tab);
     const el = $("tab-body");
-    const views = { squad: squadHtml, tactics: tacticsHtml, contracts: contractsHtml, table: tableHtml, career: careerHtml, world: worldHtml };
+    const views = { squad: squadHtml, tactics: tacticsHtml, youth: youthHtml, contracts: contractsHtml, table: tableHtml, career: careerHtml, world: worldHtml };
     el.innerHTML = (views[state.tab] || squadHtml)();
     wireTab();
   }
@@ -856,10 +864,60 @@
         </div></div>
         <div class="row" style="margin-top:10px">
           <button class="btn tiny" id="auto-pick">AUTO-PICK BEST XI</button>
-          <span class="muted" style="font-size:12px">Click a shirt to change who plays there.</span>
+          <span class="muted" style="font-size:12px">Tap a shirt to change who plays there.</span>
         </div>
       </div>
+      ${matchupHtml(c)}
+      ${depthHtml(c)}
       <div class="panel muted" style="font-size:12px">Signings and sales are handled in the pre-season <b>window</b> (top of the Decisions panel), and contract renewals in the <b>CONTRACTS</b> tab — the board does the dealing, you just point it.</div>`;
+  }
+
+  /* How your shape fares against the shapes you will actually meet this season.
+   * The engine reads this same table, so what is shown here is what is applied. */
+  function matchupHtml(c) {
+    if (!MG.tactics.matchupLabel) return "";
+    const rivals = state.world.clubsInLeague(c.leagueId).filter((x) => x.id !== c.id);
+    const counts = {};
+    for (const r of rivals) counts[r.formation] = (counts[r.formation] || 0) + 1;
+    const rows = MG.tactics.FORMATION_KEYS.map((f) => {
+      const m = MG.tactics.matchupLabel(c.formation, f);
+      const cls = m.value > 0 ? "accent" : m.value < 0 ? "bad" : "muted";
+      const sign = m.value > 0 ? "+".repeat(m.value) : m.value < 0 ? "−".repeat(-m.value) : "=";
+      return `<div class="mrow"><span class="mf">${esc(f)}</span>
+        <span class="muted" style="font-size:11px">${counts[f] || 0} in your league</span>
+        <b class="${cls}">${sign}</b><span class="${cls}" style="font-size:11px">${esc(m.text)}</span></div>`;
+    }).join("");
+    return `<div class="panel">
+      <h3 class="muted">${esc(c.formation)} AGAINST THE LEAGUE</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">Shape against shape, before players are counted. A midfield three
+      beats a flat two; a back five smothers two strikers. Worth up to a fifth of a goal a game — enough to tilt a match, never
+      enough to beat a better squad on its own.</div>
+      ${rows}
+    </div>`;
+  }
+
+  /* Every shirt's understudy. Depth is what carries a squad through injuries
+   * and a fixture pile-up, and it now feeds the team rating per position rather
+   * than as one flat bench average. */
+  function depthHtml(c) {
+    if (!MG.tactics.backupsFor) return "";
+    const rows = MG.tactics.backupsFor(c);
+    const score = MG.tactics.depthScore(c);
+    const cls = score >= 70 ? "accent" : score >= 45 ? "gold" : "bad";
+    return `<div class="panel">
+      <h3 class="muted">COVER · squad depth <b class="${cls}">${score}</b>/100</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">Who comes in if the starter cannot play, and how far the side
+      drops when he does. Thin cover in one position is what a long season finds out.</div>
+      <div class="depth-grid">${rows.map((r) => {
+        const d = r.dropOff;
+        const dc = d == null ? "bad" : d <= 3 ? "accent" : d <= 8 ? "gold" : "bad";
+        return `<div class="dcell">
+          <div class="dslot"><span class="ppos ${posClass(r.slot)}">${esc(r.slot)}</span></div>
+          <div class="dname">${r.backup ? esc(r.backup.name.split(" ").slice(-1)[0]) : "<span class='bad'>none</span>"}</div>
+          <div class="${dc}" style="font-size:11px;font-weight:700">${r.backup ? `${r.rating} (${d >= 0 ? "−" : "+"}${Math.abs(d)})` : "no cover"}</div>
+        </div>`;
+      }).join("")}</div>
+    </div>`;
   }
 
   /* -------------------------- CONTRACTS (tab) -----------------------------
@@ -894,6 +952,68 @@
           </div>
         </div>`;
       }).join("")}
+    </div>`;
+  }
+
+  /* ------------------------------ YOUTH TAB -------------------------------
+   * The academy in one screen: what the board wants from it, what it is funded
+   * to do, who is in it, and the two decisions the manager actually gets —
+   * how they are trained, and which of them is ready. */
+  function youthHtml() {
+    const c = club();
+    if (!MG.youth) return `<div class="panel muted">The academy is not loaded.</div>`;
+    const a = MG.youth.ensure(c);
+    const t = c.board.targets;
+    const players = a.players.slice().sort((x, y) => (y.potential - y.overall) - (x.potential - x.overall) || y.overall - x.overall);
+    const level = c.level != null ? c.level : 60;
+    const focus = MG.youth.FOCUS[a.focus];
+
+    return `<div class="panel">
+      <h3 class="muted">THE ACADEMY · ${esc(c.name)}</h3>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="sb-num">${Math.round(c.facilities.youth)}</div><div class="sb-lab">Youth setup</div></div>
+        <div class="stat-box"><div class="sb-num">${Math.round(c.facilities.training)}</div><div class="sb-lab">Training</div></div>
+        <div class="stat-box"><div class="sb-num gold">${t ? t.youthMinutes + "%" : "—"}</div><div class="sb-lab">Board wants</div></div>
+        <div class="stat-box"><div class="sb-num">${players.length}</div><div class="sb-lab">In the academy</div></div>
+        <div class="stat-box"><div class="sb-num">${money(c.finances.balance)}</div><div class="sb-lab">Club balance</div></div>
+        <div class="stat-box"><div class="sb-num" style="font-size:14px">${esc(c.board.style)}</div><div class="sb-lab">Board</div></div>
+      </div>
+      <div class="muted" style="font-size:12px">
+        The board's brief asks for <b>${t ? t.youthMinutes : 0}%</b> of minutes to go to under-21s, and it scores you on it every
+        season. Better facilities mean better prospects and a narrower scouting range — you see what your coaches can actually tell.
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3 class="muted">HOW THEY ARE COACHED</h3>
+      <div class="seg">${MG.youth.FOCUS_KEYS.map((k) => `
+        <button class="${k === a.focus ? "on" : ""}" data-yfocus="${k}">${esc(MG.youth.FOCUS[k].label)}</button>`).join("")}</div>
+      <div class="muted" style="font-size:12px;margin-top:6px">${esc(focus.blurb)}</div>
+    </div>
+
+    <div class="panel">
+      <h3 class="muted">THE YOUTH SQUAD</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">
+        Your coaches' verdict, not a spreadsheet — the range is what they are prepared to commit to.
+        <b>PROMOTE</b> puts a boy in the senior squad; leave him and he keeps training, but past ${MG.youth.PROMOTE_AGE} he is released.
+      </div>
+      ${players.length ? players.map((p) => {
+        const g = MG.youth.grade(p);
+        const ready = p.overall >= level - 8;
+        const s = p.scouted || {};
+        return `<div class="crow ${ready ? "extend" : ""}">
+          <div class="prating ${posClass(p.pos)}" style="width:38px;height:38px;font-size:15px;cursor:pointer" data-player="${p.id}">${Math.round(p.overall)}</div>
+          <div class="crow-body">
+            <div class="nm">${esc(p.name)} <span class="ppos ${posClass(p.pos)}">${p.pos}</span>
+              <span class="pmark ${g.cls === "gold" ? "mark-great" : g.cls === "accent" ? "mark-good" : "mark-ok"}">${esc(g.label)}</span></div>
+            <div class="muted" style="font-size:12px">${p.age}y · coaches see him reaching <b>${s.floor || "?"}–${s.ceiling || "?"}</b>${ready ? ` · <span class="accent">ready for the first team</span>` : ` · needs time`}</div>
+          </div>
+          <div class="crow-actions">
+            <button class="btn tiny ${ready ? "primary" : ""}" data-promote="${p.id}">PROMOTE</button>
+            <button class="btn tiny danger" data-release="${p.id}">RELEASE</button>
+          </div>
+        </div>`;
+      }).join("") : `<div class="muted">The academy is empty — a new intake arrives at the end of the season.</div>`}
     </div>`;
   }
 
@@ -1025,6 +1145,23 @@
     }
     for (const b of document.querySelectorAll("[data-mentor]")) {
       b.addEventListener("click", (e) => { e.stopPropagation(); toggleMentor(c, Number(b.dataset.mentor)); renderTab(); });
+    }
+    for (const b of document.querySelectorAll("[data-yfocus]")) {
+      b.addEventListener("click", () => { MG.youth.ensure(c).focus = b.dataset.yfocus; renderTab(); });
+    }
+    for (const b of document.querySelectorAll("[data-promote]")) {
+      b.addEventListener("click", () => {
+        const p = MG.youth.promote(c, Number(b.dataset.promote));
+        if (p) state.world.report(`ACADEMY — ${p.name} (${p.pos}, ${p.age}) is promoted to the first team.`, "youth", c.id);
+        render();
+      });
+    }
+    for (const b of document.querySelectorAll("[data-release]")) {
+      b.addEventListener("click", () => {
+        const p = MG.youth.release(c, Number(b.dataset.release));
+        if (p) state.world.report(`ACADEMY — ${p.name} is released by the club.`, "youth", c.id);
+        renderTab();
+      });
     }
     for (const b of document.querySelectorAll("[data-contract]")) {
       b.addEventListener("click", () => {
@@ -1163,16 +1300,19 @@
     }
     if (!player) return;
 
-    const a = player.attrs;
-    const technique = Math.round((a.rightFoot + a.leftFoot) / 2);
-    const stats = [
-      { label: "Pace", value: a.speed },
-      { label: "Physical", value: a.strength },
-      { label: "Aerial", value: a.heading },
-      { label: "Stamina", value: a.fitness },
-      { label: "Technique", value: technique },
-      { label: "Mentality", value: player.mentalityRating },
-    ];
+    const stats = MG.ratings && MG.ratings.radarAxes
+      ? MG.ratings.radarAxes(player)
+      : (() => {
+        const a = player.attrs;
+        return [
+          { label: "Pace", value: a.speed },
+          { label: "Physical", value: a.strength },
+          { label: "Aerial", value: a.heading },
+          { label: "Stamina", value: a.fitness },
+          { label: "Technique", value: Math.round((a.rightFoot + a.leftFoot) / 2) },
+          { label: "Mentality", value: player.mentalityRating },
+        ];
+      })();
     const listed = (c.transferList || []).includes(player.id);
     const mentored = (c.mentoring || []).includes(player.id);
     const mine = player.clubId === c.id;

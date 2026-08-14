@@ -633,6 +633,7 @@
   /* --------------------- FREE AGENTS AND SQUAD TOP-UPS -------------------- */
   function signFreeAgents(world, freeAgents) {
     const rng = world.rng;
+    const news = [];
     const pool = freeAgents.filter((p) => !p.retired).sort((a, b) => b.overall - a.overall);
     // Best clubs pick first, but only from players good enough for them.
     const clubs = world.clubs.slice().sort((a, b) => b.reputation - a.reputation);
@@ -650,15 +651,25 @@
         p.contract = { years: rng.int(1, 3), wage: MG.players.expectedWage(p, club.leagueId) };
         p.career.clubs.push(club.name);
         club.squad.push(p);
+        /* Every arrival at the managed club is reported. This pass, the squad
+         * top-up and the youth intake all used to add players silently, which
+         * is why names appeared in the squad list that had never been mentioned
+         * anywhere — the transfer window was reporting itself properly and
+         * three other doors into the squad were not. */
+        if (club.id === world.playerClubId) {
+          news.push({ type: "transfer", text: `FREE — ${p.name} (${p.pos}, ${p.age}, ${Math.round(p.overall)}) signs on a free transfer.`, clubId: club.id });
+        }
       }
     }
     // Anyone left without a club drops out of the game.
     for (const p of pool) p.retired = true;
+    return news;
   }
 
   /** Nobody fields nine players: fill genuine holes with generated journeymen. */
   function topUpSquads(world) {
     const rng = world.rng;
+    const news = [];
     for (const club of world.clubs) {
       const league = MG.clubs.LEAGUES[club.leagueId];
       let guard = 0;
@@ -676,6 +687,9 @@
         p.clubId = club.id;
         p.career.clubs.push(club.name);
         club.squad.push(p);
+        if (club.id === world.playerClubId) {
+          news.push({ type: "transfer", text: `SQUAD FILLER — ${p.name} (${p.pos}, ${p.age}, ${Math.round(p.overall)}) is brought in to make up the numbers.`, clubId: club.id });
+        }
       }
       // Squads that ballooned past the target shed their worst players.
       if (club.squad.length > MG.players.SQUAD_TARGET + 4) {
@@ -684,6 +698,7 @@
       }
       void league;
     }
+    return news;
   }
 
   /* ----------------------------- YOUTH INTAKE ------------------------------
@@ -724,7 +739,9 @@
         p.clubId = club.id;
         p.career.clubs.push(club.name);
         club.squad.push(p);
-        if (p.potential >= 86) {
+        if (club.id === world.playerClubId) {
+          news.push({ type: "youth", text: `ACADEMY — ${p.name} (${p.pos}, ${p.age}) steps up from the youth team${p.potential >= 86 ? " — the coaches think he can play at the very top" : ` (potential ${Math.round(p.potential)})`}.`, clubId: club.id });
+        } else if (p.potential >= 86) {
           news.push({ type: "youth", text: `${club.name}'s academy produces ${p.name} (${p.pos}, ${p.age}) — the coaches think he can play at the very top.`, clubId: club.id });
         }
       }

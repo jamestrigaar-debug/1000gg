@@ -153,6 +153,11 @@
       defence: defence + mods.defence,
       keeper: r.keeper,
       style: manager ? manager.tactic : club.tacticalStyle,
+      // The shape, so the engine can read one formation against the other.
+      formation: club.formation || "4-4-2",
+      // How well the squad is covered behind the eleven, 0-100. Depth pays off
+      // across a season of injuries and fatigue rather than in any one match.
+      depth: MG.tactics ? MG.tactics.depthScore(club) : 50,
       homeAdvantage: (club.homeAdvantage || 5) * mods.home,
       managerQuality: mods.quality * 100,
       variance: mods.variance,
@@ -205,6 +210,16 @@
       upset = true;
       if (strengthDiff >= 0) { awayXG *= 1.65; homeXG *= 0.78; }
       else { homeXG *= 1.65; awayXG *= 0.78; }
+    }
+
+    /* Shape against shape. The matchup matrix is the base modifier the
+     * reference table recommends: a midfield three against a flat two is worth
+     * something before either side's players are considered. It is deliberately
+     * small — a fifth of a goal at most — because formation should tilt a
+     * match, never decide one over a better squad. */
+    if (MG.tactics && MG.tactics.formationEdge) {
+      homeXG += MG.tactics.formationEdge(home.formation, away.formation);
+      awayXG += MG.tactics.formationEdge(away.formation, home.formation);
     }
 
     homeXG = Math.max(0.08, homeXG);

@@ -147,6 +147,9 @@
       world.freeManagers.push(m);
     }
 
+    // Every club starts with a stocked academy, so season one has prospects.
+    if (MG.youth) for (const club of world.clubs) MG.youth.intake(world, club);
+
     world.prepareSeason();
     return world;
   }
@@ -498,6 +501,12 @@
     /* ---- 3. Europe ---- */
     const euro = {};
     const euroPrize = {};
+    /* Europe was running perfectly and was completely invisible: a club could
+     * qualify, play a full continental campaign and go out in the quarter-finals
+     * without a single word appearing anywhere, which is exactly why it read as
+     * broken. Each club's run is stashed here and attached to its season outcome
+     * below, so the log, the season review and the boardroom can all see it. */
+    const euroRuns = {};
     const qualifiers = MG.competitions.europeanQualifiers(world._lastEuroQualification || results, cupWinners);
     for (const [comp, ids] of Object.entries(qualifiers)) {
       const field = ids.map((cid) => world.clubById(cid)).filter(Boolean);
@@ -511,6 +520,15 @@
       run.winner.history.europeanTitles++;
       MG.clubs.adjustReputation(run.winner, comp === "UCL" ? 3 : 1);
       world.report(`${run.winner.name} win the ${comp === "UCL" ? "Champions League" : comp === "UEL" ? "Europa League" : "Conference League"}.`, "trophy", run.winner.id);
+      /* Europe was running perfectly and was completely invisible: a club could
+       * qualify, play a full continental campaign and go out in the
+       * quarter-finals without a single word appearing anywhere, which is why it
+       * read as broken. The managed club's own run is now recorded on its
+       * outcome so the log, the season review and the boardroom can all see it. */
+      for (const [cid, label] of Object.entries(run.exits)) {
+        euroRuns[cid] = { comp, round: label };
+      }
+      euroRuns[run.winner.id] = { comp, round: "W" };
     }
     world._lastEuroQualification = results;
 
@@ -546,6 +564,8 @@
            * "champions of the Premier League" — the division they were about to
            * join rather than the one they had just won. */
           leagueId,
+          // The European campaign, if there was one.
+          europe: euroRuns[club.id] || null,
           // The raw season, carried through for the supporters: they judge how
           // watchable it was, not just where it finished.
           played: row.played, won: row.won, drawn: row.drawn, lost: row.lost,
@@ -645,9 +665,11 @@
       }
     }
     const window = MG.transfers.runWindow(world);
-    MG.transfers.signFreeAgents(world, freeAgents);
-    MG.transfers.topUpSquads(world);
+    const freeNews = MG.transfers.signFreeAgents(world, freeAgents) || [];
+    const fillerNews = MG.transfers.topUpSquads(world) || [];
     const youthNews = MG.transfers.youthIntake(world);
+    // The academy year: train, promote or release, then take a new intake.
+    const academyNews = MG.youth ? MG.youth.runSeason(world) : [];
     // Last job of the summer: the blocked prospects go out to find games.
     const loansOut = MG.transfers.runLoans(world);
     for (const club of world.clubs) {
@@ -656,7 +678,7 @@
     }
 
     for (const n of retireNews.concat(window.news.slice(0, 60)).concat(youthNews)
-      .concat(loanReturns).concat(loansOut.news)) {
+      .concat(loanReturns).concat(loansOut.news).concat(freeNews).concat(fillerNews).concat(academyNews)) {
       world.report(n.text, n.type, n.clubId);
       seasonNews.push(n);
     }
@@ -759,6 +781,13 @@
       world.report(`Top scorer: ${top.name} with ${top.season.goals} in ${top.season.apps} appearances${rest ? ` · then ${rest}` : ""}.`, "season", club.id);
     }
     world.report(`Cup: the club ${CUP_WORDS[o.cupRound] || "did not enter"}.`, "season", club.id);
+    if (o.europe) {
+      const compName = o.europe.comp === "UCL" ? "the Champions League"
+        : o.europe.comp === "UEL" ? "the Europa League" : "the Conference League";
+      world.report(o.europe.round === "W"
+        ? `EUROPE: CHAMPIONS OF ${compName.toUpperCase()}.`
+        : `Europe: in ${compName}, the club ${CUP_WORDS[o.europe.round] || "went out early"}.`, "season", club.id);
+    }
 
     /* The matches that decided it, each with the reason it went that way —
      * read off the expected goals the engine already computed rather than
