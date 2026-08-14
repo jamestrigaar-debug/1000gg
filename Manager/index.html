@@ -303,8 +303,17 @@
   .prating.midfield { background: #10c986; }
   .prating.keeper { background: #f5c542; color: #221600; }
   .pbody { min-width: 0; }
-  .pname { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pname { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pmeta { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  /* A narrow phone has little enough room for the name that the rating badge
+     and the gaps around it are worth shrinking too, not just relying on the
+     freed-up actions column (see pcard() in ui.js — the four action buttons
+     moved to the player's own profile so the list card is name-first). */
+  @media (max-width: 420px) {
+    .pcard { grid-template-columns: 42px 1fr auto; gap: 10px; padding: 10px 12px; }
+    .prating { width: 42px; height: 42px; font-size: 15px; border-radius: 9px; }
+    .pname { font-size: 13.5px; }
+  }
   .ppos { display: inline-block; font-size: 10px; font-weight: 900; letter-spacing: .5px; border-radius: 5px;
     padding: 2px 7px; margin-right: 6px; border: 1px solid; }
   .ppos.attack { color: #ff8790; background: rgba(255,70,85,.14); border-color: rgba(255,70,85,.55); }
@@ -550,12 +559,14 @@
 <script src="../src/data.js"></script>
 <script src="src/rng.js"></script>
 <script src="src/names.js"></script>
+<script src="src/data_intl.js"></script>
 <script src="src/players.js"></script>
 <script src="src/ratings.js"></script>
 <script src="src/international.js"></script>
 <script src="src/tactics.js"></script>
 <script src="src/clubs.js"></script>
 <script src="src/network.js"></script>
+<script src="src/scouting.js"></script>
 <script src="src/managers.js"></script>
 <script src="src/match.js"></script>
 <script src="src/narrative.js"></script>

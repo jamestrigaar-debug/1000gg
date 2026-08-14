@@ -128,19 +128,25 @@ The supporters: behind you (70/100, +17) — the football was worth the ticket.
 
 ## Contracts
 
-There is no contracts tab: every player card in the **SQUAD** tab carries all
-four levers, because they are the same shape — you state a preference, the
-board executes it and reports back. **LIST** offers him for sale, **MENTOR**
-develops him, **EXTEND** asks the board to tie him down, **RELEASE** lets his
-deal run down. Years remaining sit on the card, and the squad can be sorted by
-contract length to find the ones that need a call. The board still decides — it
-backs a renewal unless the club is in genuine financial crisis — and reports
-what it actually did in the log each summer.
+There is no contracts tab: all four levers — **LIST** offers him for sale,
+**MENTOR** develops him, **EXTEND** asks the board to tie him down, **RELEASE**
+lets his deal run down — live on the player's own profile, because they are
+the same shape as everything else here: you state a preference, the board
+executes it and reports back. Years remaining sit on the squad card, and the
+squad can be sorted by contract length to find the ones that need a call. The
+board still decides — it backs a renewal unless the club is in genuine
+financial crisis — and reports what it actually did in the log each summer.
+
+The four buttons used to sit directly on the squad-list card, in a 2×2 grid
+next to the name. On a phone that fixed-width button block left almost no
+room for the name itself, which is exactly the information a list is for —
+so the list card is name-first now (tap it to open the actions), and the
+buttons live where the rest of a player's detail already lives.
 
 ## Tactics and the Starting XI
 
 Setting up the team is **mandatory on joining a club** and persists until you
-change it. Three things to set:
+change it. Four things to set:
 
 - **Formation** — six shapes (4-4-2, 4-3-3, 4-2-3-1, 3-5-2, 5-3-2, 4-5-1), each
   with a rating bias that stacks with your manager's system rather than
@@ -152,6 +158,9 @@ change it. Three things to set:
 - **Season focus** — League, Cup or Europe. The chosen competition gets a real
   rating bonus, the others pay for it, and the board's own metric weights shift
   to match what you told them you were chasing.
+- **Training focus** — six options from Match Sharpness to Youth Development.
+  See **Tactical synergy** below — it decides how well the week's work suits
+  your system, and separately how fast the squad develops.
 
 **Club ratings now come from the eleven on the pitch**, not the whole squad,
 with a small tail for bench depth. Every club in the world uses the same
@@ -263,10 +272,29 @@ The two are mutually exclusive: you do not develop a player you are selling.
 
 ## Player profiles
 
-Click any player, anywhere — your squad, the transfer pool — for a mini-profile:
-a six-axis radar (pace, physical, aerial, stamina, technique, mentality), the
-attribute bars behind it, mentality trait, morale, value, wage, contract and
-career record, plus a one-click transfer-list toggle.
+Click any player, anywhere — your squad, a rival's — for a mini-profile: a
+six-axis radar, top and then clockwise **Aerial, Mental, Finishing, Pace,
+Physical, Defense** (Goalkeeping for a keeper), the attribute bars behind it,
+mentality trait, morale, value, wage, contract and career record, plus a
+one-click transfer-list toggle. Each axis is a composite built from the
+attributes that actually make up that quality and stretched around the
+population's midpoint, so three players who all rate 78 overall still look
+like three different footballers rather than three identical hexagons.
+
+**Finishing is position-weighted, the mirror of DEF-ATR.** The database's
+foot ratings are a broad "how good is he with that foot" number — passing,
+dribbling, tricks and shooting folded into one — not a shooting rating on
+their own. Reading it straight for every position produced technically
+excellent centre-backs showing up with finishing to rival a striker, because
+a ball-playing defender's foot rating is genuinely high even though he is
+never asked to shoot. `FINISHING_WEIGHT` discounts the foot component by how
+much of a position's job is actually about getting shots away — heaviest for
+the back line, lighter through midfield, none at all for a forward — while
+composure in front of goal (mentality) stays unweighted. Physical reads
+strength and fitness, the database's own conditioning attributes, rather than
+height, which already has its own job on the Aerial axis — folding it into
+Physical too made every tall player read as "physical" whatever his actual
+strength or stamina said.
 
 ## How a career ends
 
@@ -293,7 +321,7 @@ Every season is bookended by decisions. Two cards before it, two after.
 [ PRE-SEASON x2 ] -> PLAY SEASON -> [ RESULT + BOARD REPORT ] -> [ END-OF-SEASON x2 ] -> repeat
 ```
 
-**53 cards** across ten categories — **tactics, transfers, medical, boardroom,
+**56 cards** across ten categories — **tactics, transfers, medical, boardroom,
 dressing room, media, youth, finance, supporters** — drawn by weight against
 hard requirement gates (a card about selling your star only appears if you have
 one worth selling) with no repeats inside a set or across recent seasons.
@@ -309,8 +337,8 @@ one worth selling) with no repeats inside a set or across recent seasons.
   open with a sentence you can recite.
 - **A longer memory.** Fourteen cards, not six, before one can come back.
 
-Measured over six independent careers (`tests/decisions.js`): a median of 28
-distinct cards per career, and **two different saves share only 32% of their
+Measured over six independent careers (`tests/decisions.js`): a median of 37
+distinct cards per career, and **two different saves share only 37% of their
 cards**.
 
 **Every effect is real.** Nothing is flavour text with a number bolted on:
@@ -390,6 +418,31 @@ The end-of-season screen leads with **two numbers, not eight**: what the
 boardroom thinks and what the stands think. The four metrics that produced the
 board's figure are one click away for anyone who wants them.
 
+## Real names beyond the Premier League
+
+The Premier League gets full real squads — real attributes and all — from
+`../src/data.js`. Every other league was entirely procedural until now: a
+Bayern Munich or a Real Madrid built from the same random-name generator as a
+League Two side. `src/data_intl.js` adds real names, ages (where known) and
+positions for **63 clubs across the Bundesliga, La Liga, Serie A, the Saudi
+Pro League and MLS**, sourced from public squad listings.
+
+There are no attribute ratings behind these names, unlike the Premier League
+database — so a squad is still built procedurally to the club's level
+(`generateSquad`) and the real names are grafted onto it position by
+position, best generated player in a slot getting the best-known real name in
+that position (`applyRealNamesIntl` in `world.js`). The club still plays at
+its calibrated strength; it just does it with the players who actually play
+for it. The grafting runs on its own named RNG sub-stream (see `rng.js`), so
+relabelling a squad can never shift a single draw anything else in the
+simulation makes — it stays exactly what it is, cosmetic.
+
+A club not in that list (roughly a third of each league, plus every reserve
+and academy player at the clubs that are) is still entirely procedural, as is
+every nationality the source data did not carry — this ships names, ages and
+positions only, not the 530-entry real-nationality dataset the Premier League
+enjoys, so a foreign star can still show a guessed nationality.
+
 ## The story of the season
 
 The world was never short of detail; it was short of **testimony**. The match
@@ -454,6 +507,75 @@ squads, the ordering comes out as intended: 5-3-2 is the best answer to 4-4-2,
 3-5-2 beats 4-5-1, and 4-4-2 is the weakest shape overall. The **TACTICS** tab
 shows your shape against every formation *and how many clubs in your league
 actually play it*.
+
+## Tactical synergy
+
+A club's football is not one decision, it is four, and until now the game only
+ever asked about two of them (the manager's system, the formation) as if they
+were independent. Every club now reads all four together (`src/tactics.js`):
+
+| Element | Where it lives |
+|---|---|
+| **Playstyle** | the manager's system — Possession, High Press, Route One... |
+| **Tactic** | the formation you play it in |
+| **Training Focus** | what the week is actually spent on — new, see below |
+| **Manager Style** | whether the manager is playing his own natural game |
+
+Each pair has a hand-authored fit score, 0–1: a high press wants a 4-2-3-1 far
+more than a back five, high-intensity conditioning suits it far better than
+rondos, and a manager forced away from the system he was drafted to play
+(`MG.managers.ARCHETYPES[...].tactic`) is worse at it unless he is unusually
+adaptable. The average of the three becomes a single **synergy score**, and
+the score becomes a small multiplier on that side's expected goals in the
+match engine — **±7% at the extremes**, deliberately capped near the size of
+the formation-matchup edge above it, so a season's set-up tilts a match the
+way a shape does and never decides one over a better squad. The **TACTICS**
+tab shows the score and the three factors that produced it, in plain language.
+
+**Training Focus** is the new lever: six options from Match Sharpness (pure
+performance, this Saturday) through Balanced to Youth Development (pure
+improvement, next year), the report's own Performance/Improvement bar. It
+feeds synergy — does the week's work suit the system? — and, independently,
+**development speed** all season: up to 12% faster growth pointed at Youth
+Development, up to 12% slower at pure Match Sharpness
+(`MG.tactics.developmentMultiplier`). Every manager gets a focus that suits
+his own system the moment he takes the job (`autoTrainingFocus`), so the AI's
+choices vary with its managers exactly as much as tactics already do, and a
+club that never touches the lever again just keeps that default.
+
+An end-of-season card (`end_synergy_review`) reacts to what the tactics screen
+already shows — rebuild the training week around the system, trust the staff,
+or trust your own read over the alignment chart.
+
+## Scouting
+
+Until now every club and every player was shown at full resolution: a
+National League side's scouting department could read a Real Madrid dressing
+room as accurately as its own. Now your own club is always read exactly, and
+everyone else goes through the department (`src/scouting.js`) — a 0–100
+**strength** score built from four inputs the game already keeps somewhere:
+
+| Input | Where it comes from |
+|---|---|
+| Training ground quality | `club.facilities.scouting` — a new facility, distinct from the pitches that train the first team, calibrated at creation and grown by reinvested surplus like the others |
+| Board & team wealth | `club.board.wealth` — hidden from the player, exactly like the boardroom's own finances |
+| Morale & happiness | the average of board confidence and fan mood — a club at war with itself reads the game worse than a settled one |
+| Scout strength | the club's network reach (`src/network.js`) blended with the manager's transfer acumen |
+
+The gameplay effect is a scouted **floor–ceiling band** around a rival's unit
+ratings and around any of their players' ratings — exactly the pattern the
+academy already uses for its own prospects, extended to the wider world. A
+well-resourced, happy, far-reaching department reads a rival to within a few
+points; a threadbare one run by an unsettled board is guessing across twenty.
+Bands are deterministic per club pairing (not the world's RNG), so the same
+rival reads the same way from one visit to the next rather than rerolling on
+every click. Open any rival club to see the report; the **TACTICS** tab shows
+your own department's strength and what it is built from. An end-of-season
+card (`end_scouting_investment`) lets you fund it properly, top it up, or
+leave it — the same shape as the academy's own investment cards.
+
+This is entirely a display layer — it fuzzes what is shown, never what the
+match engine actually plays with — so it cannot touch the realism benchmark.
 
 ## Cover
 
@@ -601,7 +723,7 @@ in `safe()` so one bad card cannot take a career down. That is right in
 production and a menace in testing — a card whose effect throws is silently
 downgraded to its label and the game carries on looking fine. The harness
 captures those swallowed errors and turns them back into failures, firing all
-609 choices across five scripted situations (champion, mid-table, relegated and
+643 choices across five scripted situations (champion, mid-table, relegated and
 broke, promoted, and a second-tier side that just missed out).
 
 The test harness builds the world, simulates N seasons with no player and no
@@ -615,9 +737,11 @@ every club has a manager, division sizes, no orphaned players) every season.
 index.html            the shell: draft, offers, season loop, board report
 src/rng.js            seeded xorshift + named sub-streams
 src/names.js          nationalities and name pools for generated people
+src/data_intl.js      real names/ages/positions for 63 non-PL clubs, grafted onto generated squads
 src/players.js        player model, development curve, value, wages, unit ratings
 src/clubs.js          leagues, finances, and the boardroom
 src/network.js        the agent network: how far a club's reach extends
+src/scouting.js       scouting department strength, and the scouted ranges it produces
 src/international.js   nations, tournaments, caps and goals, development feed
 src/managers.js       archetypes, traits, personalities, tactics, hiring logic
 src/match.js          the match engine and goal attribution
@@ -694,7 +818,12 @@ script tags at the bottom of `index.html`.
 - **Saves.** Nothing persists between page loads.
 - In-season substitutions or match-by-match management — this is deliberately a
   season-at-a-time game, and the XI is picked for a campaign, not a fixture.
-- Scouting: the transfer pool shows true ratings rather than a scout's estimate.
+- **A browsable transfer pool.** `MG.transfers.market()` builds a shop window
+  of every player within a club's reach and level, but nothing in the UI calls
+  it — the manager tells the board what to sign and it does the deal, rather
+  than picking from a list. Scouting (above) now covers what you see of a
+  *rival club's own players*; a browsable, scouted market is the natural next
+  step if the wizard ever grows into one.
 - A **fuller manager draft** — drafting individual traits from several
   archetypes at once, with hidden influence from the templates you passed over,
   the way 1000goals blends attributes from donor squads.
