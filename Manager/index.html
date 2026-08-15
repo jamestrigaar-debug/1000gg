@@ -287,6 +287,15 @@
   .trait-chip.gold { color: var(--gold); border-color: var(--gold); }
   .mini-bar { display: grid; grid-template-columns: 92px 1fr 28px; gap: 6px; align-items: center; font-size: 11px; margin-bottom: 4px; }
   .mini-bar .bar { height: 6px; }
+  /* The player profile's main view: attribute bars carry the page, the
+     identity block sits beside them rather than above — the bars used to
+     be an afterthought under a big empty radar chart. */
+  .profile-top { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+  .profile-bars { flex: 1 1 280px; min-width: 240px; }
+  .profile-side { flex: 1 1 190px; min-width: 170px; }
+  .attr-bar { display: grid; grid-template-columns: 78px 1fr 30px; gap: 8px; align-items: center; font-size: 13px; margin-bottom: 8px; }
+  .attr-bar .bar { height: 11px; border-radius: 6px; }
+  .attr-bar b { font-size: 14px; }
 
   /* ---------- Transfers ---------- */
   .market-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center;
