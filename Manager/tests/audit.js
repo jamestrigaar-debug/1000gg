@@ -20,7 +20,7 @@ const SEED = process.argv[3] || "audit";
 globalThis.window = globalThis;
 require(path.join(__dirname, "..", "..", "src", "data.js"));
 for (const f of ["rng", "names", "data_intl", "players", "ratings", "international", "tactics", "clubs",
-  "network", "scouting", "managers", "match", "narrative", "youth", "competitions", "transfers", "ai",
+  "network", "scouting", "managers", "match", "narrative", "youth", "competitions", "agents", "transfers", "ai",
   "world", "draft", "decisions", "endings"]) {
   require(path.join(__dirname, "..", "src", `${f}.js`));
 }
