@@ -261,11 +261,22 @@
     while (state.recent.length > 14) state.recent.shift();
   }
 
-  /* Pre-season now opens with the board's transfer brief — how many to sign,
-   * where, and who is up for sale — before the narrative cards. This is the
-   * "everything runs through decisions" principle: the market is a decision,
-   * not a separate tab you have to remember to visit. */
+  /* Every pre-season now opens on the briefing — not just the first one at a
+   * new club. A returning season used to skip straight to the transfer
+   * wizard, which meant the one screen that actually gathered "who you have,
+   * who's coming through, who you're up against, who's out of contract" in
+   * one place only ever showed up once per job, on year one. Everything
+   * after this is unchanged: briefing -> tactics -> the window -> the cards. */
   function beginPreSeason() {
+    state.stage = "briefing";
+    render();
+  }
+
+  /* The board's transfer brief — how many to sign, where, and who is up for
+   * sale — before the narrative cards. This is the "everything runs through
+   * decisions" principle: the market is a decision, not a separate tab you
+   * have to remember to visit. */
+  function beginTransferWindow() {
     const c = club();
     state.signCount = 0;
     state.signPositions = [];
@@ -709,7 +720,8 @@
 
   /* --------------------------- TIER 2: DECISIONS -------------------------- */
   function stageHtml() {
-    if (state.stage === "intro") return clubIntroHtml();
+    if (state.stage === "intro") return seasonBriefingHtml({ newJob: true });
+    if (state.stage === "briefing") return seasonBriefingHtml({ newJob: false });
     if (state.stage === "tactics") return tacticsSetupHtml();
     if (state.stage === "transfers") return transfersWizardHtml();
     if (state.stage === "preseason" || state.stage === "endseason") return cardHtml();
@@ -731,19 +743,35 @@
    * mechanics started before the introduction did. This is the introduction:
    * who they are, who he answers to, who is actually any good, and who he is
    * about to be judged against, before team set-up asks him to decide anything. */
-  function clubIntroHtml() {
+  /* THE SEASON BRIEFING — the single screen the USP actually rests on.
+   * Everything a manager needs to make every decision this window lives
+   * here: who you have, who's coming through, who you're up against, who's
+   * out of contract, the brief you're judged against. The deeper screens
+   * (SQUAD, YOUTH, WORLD, the player profile itself) are one tap away for
+   * anyone who wants to go further — this is the surface, not a replacement
+   * for it. Runs on EVERY pre-season, not just the first one at a job: a
+   * returning season used to skip straight to the transfer wizard, which
+   * meant this whole picture only ever appeared once per job. */
+  function seasonBriefingHtml(opts) {
+    const o = opts || {};
     const c = club(), m = state.manager;
     const board = MG.clubs.BOARD_STYLES[c.board.style];
     const key = c.squad.slice().sort((a, b) => b.overall - a.overall).slice(0, 5);
     const rivals = state.world.clubsInLeague(c.leagueId)
       .filter((x) => x.id !== c.id)
       .sort((a, b) => MG.clubs.clubStrength(b) - MG.clubs.clubStrength(a))
-      .slice(0, 3);
+      .slice(0, 5);
     const r = c.ratings;
+
+    const head = o.newJob
+      ? `<div class="decision-tag">WELCOME TO ${esc(c.name.toUpperCase())}</div>
+         <div class="decision-text">${esc(m.name)} takes charge of ${esc(c.name)}, ${esc(MG.clubs.LEAGUES[c.leagueId].name)}${c.reputation >= 70 ? " — one of the biggest jobs in the game" : c.reputation <= 25 ? ", a long way down the pyramid" : ""}.</div>`
+      : `<div class="decision-tag">SEASON ${state.world.season} · ${esc(c.name.toUpperCase())}</div>
+         <div class="decision-text">${esc(state.lastRow ? (state.lastRow.champion ? "Fresh off a title." : state.lastRow.promoted ? "Fresh off promotion." : state.lastRow.relegated ? "Straight back up, after relegation." : `${ordinal(state.lastRow.position)} last time out.`) : "A new season begins.")} Here is everything before the window opens.</div>`;
+
     return `
       <div class="decision boardroom">
-        <div class="decision-tag">WELCOME TO ${esc(c.name.toUpperCase())}</div>
-        <div class="decision-text">${esc(m.name)} takes charge of ${esc(c.name)}, ${esc(MG.clubs.LEAGUES[c.leagueId].name)}${c.reputation >= 70 ? " — one of the biggest jobs in the game" : c.reputation <= 25 ? ", a long way down the pyramid" : ""}.</div>
+        ${head}
         <div class="stat-grid">
           <div class="stat-box"><div class="sb-num">${Math.round(r.attack)}</div><div class="sb-lab">Attack</div></div>
           <div class="stat-box"><div class="sb-num">${Math.round(r.midfield)}</div><div class="sb-lab">Midfield</div></div>
@@ -760,20 +788,48 @@
 
       <div class="panel">
         <h3 class="muted">PLAYERS TO BUILD AROUND</h3>
-        <div class="muted" style="font-size:12px;margin-bottom:8px">The five best players already at the club, before you change anything about it.</div>
+        <div class="muted" style="font-size:12px;margin-bottom:8px">The five best players at the club right now.</div>
         ${key.map((p) => pcard(p, { level: c.level })).join("")}
       </div>
 
+      ${youthGlanceHtml(c)}
+
       ${rivals.length ? `<div class="panel">
         <h3 class="muted">WHO YOU ARE UP AGAINST</h3>
-        <div class="muted" style="font-size:12px;margin-bottom:8px">The strongest clubs in ${esc(MG.clubs.LEAGUES[c.leagueId].name)} this season.</div>
+        <div class="muted" style="font-size:12px;margin-bottom:8px">The strongest clubs in ${esc(MG.clubs.LEAGUES[c.leagueId].name)} this season — tap one to scout it properly.</div>
         ${rivals.map((x) => `<div class="crow" data-club="${x.id}" style="cursor:pointer">
           <div class="prating ${x.reputation >= c.reputation ? "attack" : "midfield"}" style="width:38px;height:38px;font-size:14px">${Math.round(MG.clubs.clubStrength(x))}</div>
           <div class="crow-body"><div class="nm">${esc(x.name)}</div><div class="muted" style="font-size:12px">reputation ${x.reputation}</div></div>
         </div>`).join("")}
       </div>` : ""}
 
-      <button class="btn primary big" id="to-team-setup" style="margin-top:12px">MEET THE SQUAD, THEN SET UP THE TEAM ▶</button>`;
+      ${contractsUpHtml(c)}
+
+      <button class="btn primary big" id="to-team-setup" style="margin-top:12px">${o.newJob ? "MEET THE SQUAD, THEN SET UP THE TEAM ▶" : "CONFIRM THE TEAM ▶"}</button>`;
+  }
+
+  /* A quick look at the academy — not the full YOUTH tab, just the one or
+   * two prospects actually worth knowing about before the window opens. */
+  function youthGlanceHtml(c) {
+    if (!MG.youth) return "";
+    const a = MG.youth.ensure(c);
+    if (!a.players.length) return "";
+    const level = c.level != null ? c.level : 60;
+    const top = a.players.slice().sort((x, y) => (y.potential - y.overall) - (x.potential - x.overall)).slice(0, 2);
+    return `<div class="panel">
+      <h3 class="muted">COMING THROUGH THE ACADEMY</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">The pick of the youth squad — the full academy, and the PROMOTE button, are on the YOUTH tab.</div>
+      ${top.map((p) => {
+        const g = MG.youth.grade(p);
+        const ready = p.overall >= level - 8;
+        return `<div class="crow" data-player="${p.id}" style="cursor:pointer">
+          <div class="prating ${posClass(p.pos)}" style="width:36px;height:36px;font-size:14px">${Math.round(p.overall)}</div>
+          <div class="crow-body"><div class="nm">${esc(p.name)} <span class="ppos ${posClass(p.pos)}">${p.pos}</span>
+            <span class="pmark ${g.cls === "gold" ? "mark-great" : g.cls === "accent" ? "mark-good" : "mark-ok"}">${esc(g.label)}</span></div>
+            <div class="muted" style="font-size:12px">${p.age}y${ready ? ` · <span class="accent">ready for the first team</span>` : ""}</div></div>
+        </div>`;
+      }).join("")}
+    </div>`;
   }
 
   function tacticsSetupHtml() {
@@ -1094,7 +1150,7 @@
     bind("confirm-tactics", () => {
       const c = club();
       if (!c.focus) c.focus = "league";
-      beginPreSeason();
+      beginTransferWindow();
     });
     // Transfer wizard.
     for (const b of document.querySelectorAll("[data-signcount]")) b.addEventListener("click", () => {
