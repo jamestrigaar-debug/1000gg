@@ -17,7 +17,7 @@
 const path = require("path");
 globalThis.window = globalThis;
 require(path.join(__dirname, "..", "..", "src", "data.js"));
-for (const f of ["rng", "names", "data_intl", "players", "ratings", "international", "tactics", "clubs", "network", "scouting",
+for (const f of ["rng", "names", "data_intl", "data_foreign", "players", "ratings", "international", "tactics", "clubs", "network", "scouting",
   "managers", "match", "narrative", "youth", "competitions", "agents", "transfers", "ai", "world", "draft", "decisions", "endings"]) {
   require(path.join(__dirname, "..", "src", `${f}.js`));
 }
@@ -73,6 +73,13 @@ function primeClub(w, club, mode, mgr) {
   // An injury list, for the medical cards.
   club.squad.slice(0, 5).forEach((p) => { p.season.injured = 0.4; });
 
+  // A genuine top scorer. Without individual goals on the squad, every card
+  // gated on "somebody is banging them in" — the early-season striker cards
+  // especially — is unreachable, and the harness reports a clean run while
+  // never touching them.
+  const forward = club.squad.find((p) => p.pos === "FW") || club.squad[0];
+  if (forward) forward.season.goals = 11;
+
   // A veteran on his last legs, and a genuine prospect with headroom.
   const vet = club.squad.slice().sort((a, b) => b.age - a.age)[0];
   if (vet) vet.age = 35;
@@ -117,7 +124,7 @@ function primeClub(w, club, mode, mgr) {
 const MODES = [
   { name: "champion-rich", position: 1, cupRound: "W", promoted: false, relegated: false, confidence: 80, fans: 85, budget: 90, balance: 120, gf: 88, expiring: true },
   { name: "midtable", position: 10, cupRound: "R4", promoted: false, relegated: false, confidence: 55, fans: 56, budget: 14, balance: 8, gf: 48, expiring: true },
-  { name: "crisis-broke", position: 19, cupRound: "R1", promoted: false, relegated: true, confidence: 20, fans: 22, budget: 0.6, balance: -40, gf: 28, expiring: true },
+  { name: "crisis-broke", position: 19, cupRound: "R1", promoted: false, relegated: true, confidence: 20, fans: 22, budget: 0.2, balance: -40, gf: 28, expiring: true },
   { name: "promoted-poor", position: 2, cupRound: "R3", promoted: true, relegated: false, confidence: 66, fans: 74, budget: 6, balance: 2, gf: 61, expiring: false },
   // A second-tier club that just missed out, for the cards gated on the climb.
   { name: "nearly-promoted", league: "Championship", position: 5, cupRound: "R3", promoted: false, relegated: false, confidence: 58, fans: 62, budget: 9, balance: 4, gf: 58, expiring: true },
@@ -138,10 +145,16 @@ const RIGS = MODES.map((mode) => {
   return { w, mgr, club, mode };
 });
 
+/* The academy belongs in here. Without it a card that promotes a prospect
+ * emptied the youth pool PERMANENTLY for every later card in the same rig —
+ * so the harness was quietly testing a different club from the one it thought
+ * it had restored, and any card reading academyReady after that point saw a
+ * list the snapshot had promised to put back. */
 const snap = (club) => JSON.stringify({
   squad: club.squad, finances: club.finances, board: club.board, fans: club.fans,
   modifiers: club.modifiers, facilities: club.facilities, flags: club.flags,
   tacticalStyle: club.tacticalStyle, xi: club.xi, ratings: club.ratings,
+  academy: club.academy,
 });
 function restore(club, saved) {
   const s = JSON.parse(saved);
@@ -149,14 +162,49 @@ function restore(club, saved) {
   MG.clubs.refreshRatings(club);
 }
 
-for (const pool of [{ label: "PRESEASON", cards: MG.decisions.PRESEASON }, { label: "ENDSEASON", cards: MG.decisions.ENDSEASON }]) {
+/* The early-season pool is gated on a live half-played season (world.beginSeason),
+ * which no rig here has — so it gets a synthetic snapshot per mode, shaped the
+ * same way the real one is. Without this every early card would be permanently
+ * ineligible and the exerciser would report full coverage while never running
+ * a single line of the newest window in the game. */
+function earlyFor(mode, club) {
+  const size = 20;
+  const played = 12;
+  const position = clampInt(mode.position, 1, size);
+  const injured = club.squad.filter((p) => (p.season.injured || 0) >= 0.25);
+  const scorer = club.squad.slice().sort((a, b) => (b.season.goals || 0) - (a.season.goals || 0))[0];
+  const target = club.board.targets ? club.board.targets.position : 10;
+  return {
+    leagueId: club.leagueId, leagueName: "Test Division", fieldSize: size,
+    played, position, pts: Math.max(0, (size - position) * 2),
+    won: 4, drawn: 2, lost: 6,
+    gf: Math.round(played * (mode.position <= 3 ? 2.0 : 0.7)),
+    ga: Math.round(played * (mode.position >= 15 ? 2.1 : 1.0)),
+    ppg: 1.2, target,
+    vsTarget: target - position,
+    relegationZone: position > size - 3,
+    promotionRace: position <= 2,
+    injured: injured.length,
+    injuredNames: injured.slice(0, 3).map((p) => p.name),
+    topScorer: scorer && scorer.season.goals ? { name: scorer.name, goals: scorer.season.goals, id: scorer.id } : null,
+    matches: [], standing: [{ clubId: club.id, name: club.name, position, played, pts: 18 }],
+  };
+}
+function clampInt(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+for (const pool of [
+  { label: "PRESEASON", cards: MG.decisions.PRESEASON },
+  { label: "ENDSEASON", cards: MG.decisions.ENDSEASON },
+  { label: "EARLYSEASON", cards: MG.decisions.EARLYSEASON, early: true },
+]) {
   for (const card of pool.cards) {
     let everEligible = false;
     for (const rig of RIGS) {
       const { w, mgr, club, mode } = rig;
       const lastSeason = { position: mode.position, promoted: mode.promoted, relegated: mode.relegated,
         champion: mode.position === 1, cupRound: mode.cupRound };
-      const ctx = MG.decisions.buildContext(w, club, mgr, lastSeason);
+      const early = pool.early ? earlyFor(mode, club) : null;
+      const ctx = MG.decisions.buildContext(w, club, mgr, lastSeason, early);
       if (card.req && !safeReq(card, ctx)) continue;
       everEligible = true;
       seenCards.add(card.id);
@@ -176,7 +224,7 @@ for (const pool of [{ label: "PRESEASON", cards: MG.decisions.PRESEASON }, { lab
 
       for (let i = 0; i < view.choices.length; i++) {
         const saved = snap(club);
-        const ctx2 = MG.decisions.buildContext(w, club, mgr, lastSeason);
+        const ctx2 = MG.decisions.buildContext(w, club, mgr, lastSeason, early);
         const view2 = MG.decisions.present(card, ctx2, w.rng);
         const choice = view2.choices[i];
         if (!choice) { restore(club, saved); continue; }
@@ -216,9 +264,11 @@ function sampleCareer(seed) {
   const recent = [];
   for (let s = 0; s < 20; s++) {
     MG.clubs.setSeasonTargets(club, w.clubsInLeague(club.leagueId), w.rng);
-    for (const pool of [MG.decisions.PRESEASON, MG.decisions.ENDSEASON]) {
-      const ctx = MG.decisions.buildContext(w, club, mgr, club._outcome || null);
-      const picked = MG.decisions.pick(pool, ctx, w.rng, 2, recent);
+    // Walk the real five-window sequence, not the two old heaps — this is what
+    // a career actually sees now, so it is what the variety figure has to measure.
+    for (const phase of MG.decisions.PHASE_KEYS) {
+      const ctx = MG.decisions.buildContext(w, club, mgr, club._outcome || null, null);
+      const picked = MG.decisions.pick(MG.decisions.poolFor(phase), ctx, w.rng, MG.decisions.PHASES[phase].cards, recent);
       for (const p of picked) {
         seen.push(p.id);
         recent.push(p.id);
@@ -226,7 +276,7 @@ function sampleCareer(seed) {
         const choice = view.choices[w.rng.int(0, view.choices.length - 1)];
         if (choice) MG.decisions.apply(w, club, mgr, ctx, choice);
       }
-      while (recent.length > 14) recent.shift();
+      while (recent.length > 20) recent.shift();
     }
     w.advanceSeason();
     if (mgr.clubId == null) break;
@@ -251,11 +301,32 @@ for (let i = 0; i < RUNS.length; i++) {
 const avgOverlap = pairs ? jaccardSum / pairs : 0;
 const everSeen = new Set(RUNS.flatMap((r) => [...r]));
 
+/* PHASE COVERAGE — every card has to live in exactly one window. A card added
+ * to a pool but never listed in PHASE_OF would fall through to the fallback
+ * window, which is survivable; a card that ended up in NO window would be
+ * silently deleted from the game while still passing every other check here,
+ * which is not. */
+const phaseCounts = {};
+const placed = new Map();
+for (const phase of MG.decisions.PHASE_KEYS) {
+  const cards = MG.decisions.poolFor(phase);
+  phaseCounts[phase] = cards.length;
+  check(cards.length >= 2, `phase ${phase} has only ${cards.length} card(s) — a window that cannot fill itself`);
+  for (const card of cards) {
+    if (placed.has(card.id)) failures.push(`${card.id} appears in both ${placed.get(card.id)} and ${phase}`);
+    placed.set(card.id, phase);
+  }
+}
+for (const card of [...MG.decisions.PRESEASON, ...MG.decisions.ENDSEASON, ...MG.decisions.EARLYSEASON]) {
+  if (!placed.has(card.id)) failures.push(`${card.id} belongs to no decision window — it can never be drawn`);
+}
+
 console.warn = realWarn;
 
-const total = MG.decisions.PRESEASON.length + MG.decisions.ENDSEASON.length;
+const total = MG.decisions.PRESEASON.length + MG.decisions.ENDSEASON.length + MG.decisions.EARLYSEASON.length;
 console.log(`=== DECISION EXERCISER ===\n`);
-console.log(`  pool                ${total} cards (${MG.decisions.PRESEASON.length} pre-season, ${MG.decisions.ENDSEASON.length} end-of-season)`);
+console.log(`  pool                ${total} cards (${MG.decisions.PRESEASON.length} pre-season, ${MG.decisions.EARLYSEASON.length} early-season, ${MG.decisions.ENDSEASON.length} end-of-season)`);
+console.log(`  windows             ${MG.decisions.PHASE_KEYS.map((p) => `${p}:${phaseCounts[p]}`).join("  ")}`);
 console.log(`  cards exercised     ${seenCards.size}/${total}`);
 console.log(`  choices applied     ${choicesRun}`);
 console.log(`  swallowed errors    ${swallowed.length}`);

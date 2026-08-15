@@ -19,7 +19,7 @@ const SEED = process.argv[3] || "audit";
 
 globalThis.window = globalThis;
 require(path.join(__dirname, "..", "..", "src", "data.js"));
-for (const f of ["rng", "names", "data_intl", "players", "ratings", "international", "tactics", "clubs",
+for (const f of ["rng", "names", "data_intl", "data_foreign", "players", "ratings", "international", "tactics", "clubs",
   "network", "scouting", "managers", "match", "narrative", "youth", "competitions", "agents", "transfers", "ai",
   "world", "draft", "decisions", "endings"]) {
   require(path.join(__dirname, "..", "src", `${f}.js`));
@@ -187,10 +187,37 @@ MG.world.appointManager(world, startClub, mgr, { quiet: true });
 world.playerClubId = startClub.id;
 auditWorld(world, "player appointed");
 
+/* Alternate the two ways a season can be played. The human game splits the
+ * managed club's division in two — a third of it played, the early-season
+ * decision window, then the rest (world.beginSeason -> advanceSeason) — while
+ * everything else in the world runs in one pass. A split season that dropped,
+ * duplicated or short-changed fixtures would produce a wrong league table
+ * without breaking a single other invariant, so both paths are audited here
+ * and the fixture count is checked explicitly below. */
 let t0 = Date.now();
 for (let s = 1; s <= SEASONS; s++) {
-  world.advanceSeason();
-  auditWorld(world, `season ${s}`);
+  const split = s % 2 === 1;
+  if (split) {
+    const snap = world.beginSeason();
+    check(snap != null, `season ${s}: beginSeason returned nothing despite a managed club`);
+    if (snap) {
+      check(snap.played > 0, `season ${s}: early snapshot has no games played`);
+      check(snap.position >= 1 && snap.position <= snap.fieldSize, `season ${s}: nonsense early position ${snap.position}`);
+    }
+  }
+  const summary = world.advanceSeason();
+
+  /* Whichever path it took, every club in every division must have played
+   * exactly the same number of games as its neighbours — the single check
+   * that a resumed league neither replayed nor skipped its second half. */
+  for (const [leagueId, res] of Object.entries(summary.leagues || {})) {
+    const counts = new Set(res.table.map((r) => r.played));
+    check(counts.size === 1,
+      `season ${s} (${split ? "split" : "single"}): ${leagueId} has clubs on different game counts`,
+      [...counts].join("/"));
+  }
+
+  auditWorld(world, `season ${s}${split ? " (split)" : ""}`);
   // Stop spamming once something is clearly systemic.
   if (failures.length > 40) { console.log("  (stopping early — too many failures)\n"); break; }
 }
