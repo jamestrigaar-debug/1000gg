@@ -666,7 +666,7 @@
        * squads are aged and the numbers are gone. Doing it for all clubs rather
        * than just the managed one means a rival's squad reads the same way when
        * you scout it. */
-      if (MG.narrative) MG.narrative.rateSquad(club, club._outcome);
+      if (MG.narrative) MG.narrative.rateSquad(club, club._outcome, world.year);
       boardReports[club.id] = MG.clubs.evaluateSeason(club, club._outcome, rng);
       // Morale settles on what the season delivered and who got to play in it.
       MG.tactics.settleMorale(club, club._outcome);
@@ -695,6 +695,17 @@
     /* ---- 6. managers age out, then the carousel ---- */
     carousel.push(...retireManagers(world));
     carousel.push(...runCarousel(world));
+
+    /* Agents reassess their books once a season, after the carousel has
+     * settled who actually has a job — a manager's reputation for this
+     * purpose is the one he heads into the summer with. */
+    if (MG.agents) MG.agents.reassessRosters(world);
+
+    // Does anyone genuinely bigger want to talk to the manager THIS season is
+    // ending on? Checked after the carousel and the sackings above, so a
+    // manager who just lost his job this summer is not also offered a new
+    // one in the same breath.
+    const playerApproach = checkPlayerManagerApproach(world);
 
     /* ---- 7. awards ---- */
     const awards = computeAwards(world, results, boardReports);
@@ -803,6 +814,7 @@
       loansOut: loansOut.sent,
       bigTransfers: window.news.length,
       managerWindow,
+      playerApproach: playerApproach ? { clubId: playerApproach.club.id } : null,
       news: world.news.filter((n) => n.season === world.season),
     };
     world.history.push(summary);
@@ -939,11 +951,15 @@
     // Biggest clubs pick first, and their picks open the vacancies below them.
     vacancies.sort((a, b) => b.reputation - a.reputation);
     const queue = vacancies.slice();
+    // A manager gets ONE approach a summer, whatever happens with it — dangled
+    // in front of every vacancy in the pyramid in the same window read as
+    // every big club somehow knowing to try the same available man at once.
+    const approached = new Set();
     let guard = 0;
     while (queue.length && guard++ < 400) {
       const club = queue.shift();
       if (club.managerId) continue;
-      const hired = hireFor(world, club, { queue });
+      const hired = hireFor(world, club, { queue, approached });
       const ev = events.find((e) => e.club === club.name && !e.in);
       if (ev) ev.in = hired ? hired.name : null;
       else events.push({ club: club.name, out: null, in: hired ? hired.name : null, reason: "vacancy", season: world.season });
@@ -966,9 +982,11 @@
     if (!o.midSeason) {
       for (const m of world.managers) {
         if (!m.clubId || m.isPlayer) continue;
+        if (o.approached && o.approached.has(m.id)) continue;    // already had his one approach this window
         const from = world.clubById(m.clubId);
         if (!from || from.id === club.id) continue;
         if (!MG.managers.wouldMove(m, from, club)) continue;
+        if (o.approached) o.approached.add(m.id);
         candidates.push({ manager: m, from, score: MG.managers.candidateScore(m, club, rng) * 1.05 });
       }
     }
@@ -1000,7 +1018,35 @@
     return appointManager(world, club, chosen.manager);
   }
 
-  /* -------------------------------- AWARDS -------------------------------- */
+  /* The player's own manager is deliberately never a candidate inside
+   * hireFor above — an AI vacancy silently swallowing him mid-loop would
+   * end a career with no chance to say yes or no. This is the interactive
+   * equivalent, checked once a season, post-carousel, alongside every AI
+   * manager's own one approach: does a genuinely bigger job want to talk to
+   * him? "Genuinely bigger" and a modest base chance both matter here — a
+   * manager doing well gets an offer occasionally, not every single summer,
+   * which is the whole point of this being rarer than an ordinary transfer. */
+  function checkPlayerManagerApproach(world) {
+    if (!world.playerClubId) return null;
+    const rng = world.rng;
+    const current = world.clubById(world.playerClubId);
+    if (!current || current.managerId == null) return null;
+    const manager = world.managerById(current.managerId);
+    if (!manager || !manager.isPlayer) return null;
+    if (!rng.chance(0.22)) return null;    // most summers, nobody comes calling
+
+    const candidates = [];
+    for (const club of world.clubs) {
+      if (club.id === current.id) continue;
+      if (!MG.managers.wouldMove(manager, current, club)) continue;
+      const score = MG.managers.candidateScore(manager, club, rng);
+      if (score < club.reputation * 0.6) continue;   // not a serious approach
+      candidates.push({ club, score });
+    }
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => b.score - a.score);
+    return { club: candidates[0].club, manager };
+  }
   function computeAwards(world, results, boardReports) {
     let topScorer = null;
     for (const club of world.clubs) {

@@ -97,12 +97,14 @@
 
   /* How many suitors get to actually bid on this player in a single round,
    * once more than one club has nominated him. A narrow agent isn't running
-   * an auction — he is making one call. */
+   * an auction — he is making one call. Three is the ceiling whatever the
+   * agent — even a Super-Agency works a room of three genuine bidders, not
+   * an open-ended auction; the difference a bigger network makes is that a
+   * weaker agent rarely gets that far in the first place. */
+  const MAX_PLAYER_APPROACHES = 3;
   function suitorCap(agent) {
-    if (agent.network >= 85) return 8;   // super-agency: essentially uncapped
-    if (agent.network >= 60) return 5;
-    if (agent.network >= 40) return 3;
-    if (agent.network >= 25) return 2;
+    if (agent.network >= 60) return MAX_PLAYER_APPROACHES;
+    if (agent.network >= 30) return 2;
     return 1;                            // local: one club, one conversation
   }
 
@@ -127,5 +129,180 @@
     return { list: kept, agent };
   }
 
-  MG.agents = { AGENTS, AGENT_INDEX, agentFor, suitorCap, contestPremium, filterSuitors };
+  /* Same idea, for a manager's reputation instead of a player's overall — a
+   * different hash seed so the two populations decorrelate (a manager and a
+   * player who happen to share a numeric id are not otherwise linked). Used
+   * as the stateless fallback for anyone not tracked on a roster below. */
+  function agentForManager(manager) {
+    const prestige = clamp(Math.pow(clamp((manager.reputation - 55) / 35, 0, 1), 2), 0, 1);
+    const weights = AGENTS.map((a) => a.baseShare * Math.max(1 + prestige * (a.network / 45 - 1) * 6, 0.08));
+    const total = weights.reduce((t, w) => t + w, 0);
+    const roll = hashRand(manager.id * 5.77 + 13) * total;
+    let acc = 0;
+    for (let i = 0; i < AGENTS.length; i++) {
+      acc += weights[i];
+      if (roll < acc) return AGENTS[i];
+    }
+    return AGENTS[AGENTS.length - 1];
+  }
+
+  /* ============================================================================
+   * STATEFUL ROSTERS — the part that makes an agent a relationship rather
+   * than a hash lookup, for the clients worth tracking one by one.
+   *
+   * Every player and manager in the world nominally "has" an agent (the
+   * functions above), but genuinely maintaining a roster for all five
+   * thousand-odd players every season would cost real time for no payoff —
+   * nobody is going to notice or care which small agency their nineteenth
+   * squad player is nominally on the books of. What a manager DOES notice is
+   * a star's camp, and the actual football-agent behaviour — a limited
+   * book, a client dropped when someone better comes along, a bigger cut for
+   * a bigger name — only reads as real for the players and managers actually
+   * worth tracking. So: a roster is kept ONLY for NOTABLE clients (a good
+   * top-flight regular, or a manager with a real reputation); everyone else
+   * is read through the cheap stateless lookup above exactly as before.
+   * ========================================================================== */
+  const ROSTER_CAPACITY = { "Super-agency": 8, "Major": 16, "Regional": 30, "Local": Infinity };
+  const NOTABLE_PLAYER_OVERALL = 74;
+  const NOTABLE_MANAGER_REPUTATION = 60;
+
+  function notablePlayer(p) { return !p.retired && p.overall >= NOTABLE_PLAYER_OVERALL; }
+  function notableManager(m) { return !m.retired && m.reputation >= NOTABLE_MANAGER_REPUTATION; }
+
+  function ensureRosters(world) {
+    if (!world.agentRosters) {
+      world.agentRosters = {};
+      for (const a of AGENTS) world.agentRosters[a.id] = [];
+    }
+    return world.agentRosters;
+  }
+
+  /* The percentage of a deal an agent actually takes — the "higher talent,
+   * higher cut" half of the brief. A player nobody outside his own club has
+   * heard of is not worth a big negotiation, so his agent settles for a thin
+   * slice; a genuine star is worth fighting the club over every clause, and
+   * the agent prices that effort in. Purely informational today (shown on
+   * the roster entry) — the fee and wage mechanics it would feed are already
+   * carried by contestPremium above. */
+  function cutPercent(prestige) {
+    return Math.round(clamp(5 + (prestige - 55) * 0.42, 4, 24));
+  }
+
+  const TIER_ORDER = ["Super-agency", "Major", "Regional", "Local"];
+  function agentsInTier(tier) { return AGENTS.filter((a) => a.tier === tier); }
+  function makeEntry(c) { return { id: c.id, kind: c.kind, prestige: c.prestige, cutPct: cutPercent(c.prestige) }; }
+
+  /* Places one client on the best roster that will have him, tier by tier
+   * from his natural pick downward. A full tier does not automatically mean
+   * "try the next one down" — if the newcomer outranks the WEAKEST client
+   * anywhere in that tier, he bumps him instead, and the bumped client is
+   * the one who cascades further down. Without this, processing order alone
+   * decided who got the big agency: the genuinely best player in the world
+   * could lose out on a Super-Agency slot to a lesser one simply because the
+   * lesser one happened to be evaluated first and the tier filled up before
+   * the best one's turn came round. Local's capacity is infinite, so this
+   * always terminates. Within a tier, which of its agents gets the client is
+   * a deterministic hash of his id — spreads a tier's business across all
+   * the agents who share it instead of the first one always taking the lot. */
+  /* Where a client STARTS the placement search — by prestige directly, not
+   * by the stateless hash pick above. That hash is deliberately probabilistic
+   * (a wonderkid can land with a nobody agent, which is the story of a club
+   * unearthing him early) and that is exactly wrong for the roster: it means
+   * placement could never self-correct, and the actual best player in the
+   * world could sit with a corner-shop agent for his whole career on one
+   * unlucky roll with nothing in the system ever able to notice. The tier a
+   * genuine talent COMPETES for should track how good he actually is; the
+   * bump fight inside that tier is what still means most of them lose out to
+   * someone even better and land lower — which is the real texture. */
+  function tierForPrestige(prestige) {
+    if (prestige >= 88) return 0;   // Super-agency
+    if (prestige >= 78) return 1;   // Major
+    if (prestige >= 66) return 2;   // Regional
+    return 3;                       // Local
+  }
+
+  function place(rosters, entity, kind, prestige) {
+    let current = { id: entity.id, kind, prestige };
+    const startTier = tierForPrestige(prestige);
+    for (let t = startTier; t < TIER_ORDER.length; t++) {
+      const tierName = TIER_ORDER[t];
+      const cap = ROSTER_CAPACITY[tierName];
+      const agentsHere = agentsInTier(tierName)
+        .slice()
+        .sort((a, b) => hashRand(current.id * 3.11 + a.network * 0.7) - hashRand(current.id * 3.11 + b.network * 0.7));
+      for (const agent of agentsHere) {
+        if (rosters[agent.id].length < cap) {
+          rosters[agent.id].push(makeEntry(current));
+          return agent.id;
+        }
+      }
+      // The whole tier is full. Does this client outrank its weakest member?
+      let weakestAgentId = null, weakestIdx = -1, weakestVal = Infinity;
+      for (const agent of agentsHere) {
+        const list = rosters[agent.id];
+        for (let j = 0; j < list.length; j++) {
+          if (list[j].prestige < weakestVal) { weakestVal = list[j].prestige; weakestAgentId = agent.id; weakestIdx = j; }
+        }
+      }
+      if (weakestAgentId != null && weakestVal < current.prestige) {
+        const list = rosters[weakestAgentId];
+        const bumped = list[weakestIdx];
+        list[weakestIdx] = makeEntry(current);
+        current = bumped;      // the client who just lost his seat cascades on
+        continue;
+      }
+      // Not good enough to bump anyone in this tier — try the next one down.
+    }
+    // Should not happen (Local is uncapped) — last resort, force onto Local.
+    const local = agentsInTier("Local")[0];
+    rosters[local.id].push(makeEntry(current));
+    return local.id;
+  }
+
+  /** The once-a-season tick. Every notable player and manager is placed
+   *  fresh, best prestige first — a full rebuild rather than patching the
+   *  old rosters in place. Patching only ever PROMOTED someone the season he
+   *  first became notable; a player who broke in at 80 and grew to a
+   *  95-overall talent over the next three years was never looked at again
+   *  once he had an agent, so the actual best player in the world could sit
+   *  with whoever he signed with as a promising kid for his whole career.
+   *  Rebuilding fresh means the placement question — "does he outrank the
+   *  tier's weakest client now?" — gets asked properly every single season,
+   *  which is what "agents reassess who they have" actually has to mean.
+   *  Called from world.js's advanceSeason, alongside the manager carousel. */
+  function reassessRosters(world) {
+    const rosters = ensureRosters(world);
+    for (const agentId of Object.keys(rosters)) rosters[agentId] = [];
+
+    const players = [];
+    for (const c of world.clubs) for (const p of c.squad) if (notablePlayer(p)) players.push(p);
+    players.sort((a, b) => b.overall - a.overall);
+    for (const p of players) place(rosters, p, "player", p.overall);
+
+    const managerIndex = world.managerIndex || {};
+    const managers = Object.keys(managerIndex).map((mid) => managerIndex[mid]).filter((m) => m && notableManager(m));
+    managers.sort((a, b) => b.reputation - a.reputation);
+    for (const m of managers) place(rosters, m, "manager", m.reputation);
+  }
+
+  /** The agent actually representing this player or manager right now — his
+   *  roster placement if he is notable enough to have one, the same
+   *  deterministic read as everyone else in the world otherwise. */
+  function agentOf(world, entity, kind) {
+    const rosters = world.agentRosters;
+    if (rosters) {
+      for (const agentId of Object.keys(rosters)) {
+        const hit = rosters[agentId].find((e) => e.kind === kind && e.id === entity.id);
+        if (hit) return { agent: AGENT_INDEX[agentId], cutPct: hit.cutPct, rostered: true };
+      }
+    }
+    const agent = kind === "player" ? agentFor(entity) : agentForManager(entity);
+    return { agent, cutPct: cutPercent(kind === "player" ? entity.overall : entity.reputation), rostered: false };
+  }
+
+  MG.agents = {
+    AGENTS, AGENT_INDEX, agentFor, agentForManager, suitorCap, contestPremium, filterSuitors,
+    MAX_PLAYER_APPROACHES, ROSTER_CAPACITY, NOTABLE_PLAYER_OVERALL, NOTABLE_MANAGER_REPUTATION,
+    notablePlayer, notableManager, ensureRosters, reassessRosters, agentOf, cutPercent,
+  };
 })(typeof globalThis !== "undefined" ? globalThis : this);

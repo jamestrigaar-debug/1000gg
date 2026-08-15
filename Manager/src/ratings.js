@@ -53,9 +53,16 @@
 
   /* Height and weight are on a different scale to the 0-99 attributes, so they
    * are mapped onto it before being weighted. A 195cm centre-half reads as a
-   * high number; a 170cm one reads as a low one. */
+   * high number; a 170cm one reads as a low one. Height used to be rescaled
+   * TWICE, two different ways, in two different files: this steep 165-200cm
+   * curve here for roleRating, and heightScore()'s much gentler 160-215cm
+   * curve for defenceAttribute and the Aerial axis. The same 195cm forward
+   * read as an 85 to one formula and a 63 to the other — exactly the kind of
+   * "the numbers don't agree with each other" bug a player would (rightly)
+   * read as broken maths. heightScore is the one everything else already
+   * shares, so roleRating now reads off it too. */
   function attrValue(player, key) {
-    if (key === "height") return clamp((player.attrs.height - 165) * (99 / 35), 5, 99);
+    if (key === "height") return heightScore(player.attrs.height);
     if (key === "weight") return clamp((player.attrs.weight - 60) * (99 / 40), 5, 99);
     if (key === "mentalityRating") return player.mentalityRating || 55;
     return player.attrs[key] != null ? player.attrs[key] : 55;

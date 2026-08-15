@@ -65,12 +65,13 @@
    *  left only there was gone by the time anyone could look at it. `lastSeason`
    *  is the player's permanent record of the year just finished, and carrying
    *  his overall in it is what lets the squad list show how far he came. */
-  function rateSquad(club, outcome) {
+  function rateSquad(club, outcome, year) {
     for (const p of club.squad) {
       const rating = seasonRating(p, club, outcome);
       p.season.rating = rating;
-      p.lastSeason = {
+      const entry = {
         season: outcome ? outcome.season : null,
+        year: year != null ? year : null,
         rating,
         apps: p.season.apps || 0,
         goals: p.season.goals || 0,
@@ -80,6 +81,19 @@
         overall: p.overall,
         club: club.name,
       };
+      p.lastSeason = entry;
+      /* The full season-by-season record a career screen actually needs.
+       * `lastSeason` above only ever holds the year just finished — it gets
+       * overwritten wholesale the next time this runs, so a profile could
+       * only ever say what happened LAST year, never show a trajectory
+       * across a career. This is the same entry, kept, so it survives. Capped
+       * at 20 — nobody plays a 21-season career and needs the first one on
+       * screen, and an uncapped array on every one of ~5,000 players in the
+       * world across a long save is the one way this would ever show up in
+       * a profile. */
+      if (!p.career.seasonLog) p.career.seasonLog = [];
+      p.career.seasonLog.push(entry);
+      if (p.career.seasonLog.length > 20) p.career.seasonLog.shift();
     }
   }
 

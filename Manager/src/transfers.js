@@ -257,7 +257,16 @@
     const repGap = club.reputation - buyer.reputation;
     if (repGap > 0) multiple += repGap / 55;          // selling down the ladder costs more
     if (club.finances.balance < 0) multiple -= 0.25;  // needs must
-    return round1(player.value * clamp(multiple, 0.6, 2.4));
+    /* Contract length is leverage, and it used to count for nothing — a man
+     * six weeks from a free and one who signed a five-year deal last month
+     * commanded the exact same fee, which is why the market read as players
+     * moving every single season regardless of what they had just put pen to.
+     * A fresh long contract is the seller's whole bargaining position; a
+     * contract running down is the buyer's. Two years is left as the
+     * neutral point the rest of the game's fee curve was already tuned to. */
+    const yearsLeft = (player.contract && player.contract.years != null) ? player.contract.years : 2;
+    multiple += clamp((yearsLeft - 2) * 0.12, -0.3, 0.5);
+    return round1(player.value * clamp(multiple, 0.5, 2.7));
   }
 
   /** How much this club's manager wants this player. */
@@ -347,7 +356,96 @@
     // A young player with a career in front of him wants to play, not to sit in
     // a bigger dressing room.
     if (player.age <= 22 && player.potential - player.overall >= 8 && step > 0.2 && !fringe) accept -= 0.18;
+    // The other half of the contract-leverage change: a man watching his deal
+    // run out already has one foot out the door, and a man who just signed a
+    // long one is settled and does not want to be uprooted again straight
+    // away — this is what actually keeps a squad together season to season,
+    // not just the fee alone.
+    const yearsLeft = (player.contract && player.contract.years != null) ? player.contract.years : 2;
+    if (yearsLeft <= 1) accept += 0.16;
+    else if (yearsLeft >= 4) accept -= 0.14;
     return rng.chance(clamp(accept, 0.04, 0.97));
+  }
+
+  /* --------------------------- MOVEMENT APPROVAL ---------------------------
+   * Every transfer touching the managed club — the auction, a free signing,
+   * the board's own emergency cover — used to just happen, reported after the
+   * fact in the log with nothing to do about it. That is the automatic board
+   * the "decisions box" is supposed to replace: SIGN or VETO turns each of
+   * these into an actual choice, made the moment the summer window hands
+   * control back, before a ball is kicked with the new man in the squad.
+   *
+   * Reversal only has to be clean, not general — every movement recorded
+   * here happens in the close season, before the player who just arrived (or
+   * just left) has played a single minute for his new club, so undoing one is
+   * a straight reverse of a transaction that has not yet had any other effect
+   * on the world worth chasing down. */
+  function recordMovement(world, kind, player, otherClub, fee, wage, prevContract) {
+    if (!world.playerMovements) world.playerMovements = [];
+    world.playerMovements.push({
+      id: `${world.season}-${player.id}-${world.playerMovements.length}`,
+      kind, playerId: player.id, otherClubId: otherClub ? otherClub.id : null,
+      otherClubName: otherClub ? otherClub.name : "a free transfer",
+      fee: round1(fee || 0), wage: round1(wage || 0), prevContract, resolved: false,
+    });
+  }
+
+  /** VETO's other half. Puts the money and the man back exactly where the
+   *  board found them. Called from the UI the moment a movement card is
+   *  declined — see world.playerMovements. */
+  function reverseMovement(world, m) {
+    const playerClub = world.clubById(world.playerClubId);
+    const player = playerClub ? playerClub.squad.find((p) => p.id === m.playerId) || null : null;
+    if (m.kind === "in") {
+      // He arrived at the managed club from otherClub; send him back.
+      if (!playerClub || !player) return false;
+      const seller = m.otherClubId != null ? world.clubById(m.otherClubId) : null;
+      playerClub.squad = playerClub.squad.filter((p) => p.id !== player.id);
+      playerClub.finances.balance = round1(playerClub.finances.balance + m.fee);
+      playerClub.finances.spent = round1(Math.max(0, playerClub.finances.spent - m.fee));
+      if (seller) {
+        seller.squad.push(player);
+        seller.finances.balance = round1(seller.finances.balance - m.fee);
+        seller.finances.received = round1(Math.max(0, seller.finances.received - m.fee));
+        player.clubId = seller.id;
+      } else {
+        player.retired = true;   // his old club no longer exists to go back to
+      }
+      player.contract = { years: m.prevContract.years, wage: m.prevContract.wage };
+      player.value = MG.players.marketValue(player);
+      MG.clubs.refreshRatings(playerClub);
+      if (seller) MG.clubs.refreshRatings(seller);
+      return true;
+    }
+    if (m.kind === "out") {
+      // He left the managed club for otherClub; bring him home.
+      const buyer = m.otherClubId != null ? world.clubById(m.otherClubId) : null;
+      if (!playerClub || !buyer) return false;
+      const p = buyer.squad.find((x) => x.id === m.playerId);
+      if (!p) return false;
+      buyer.squad = buyer.squad.filter((x) => x.id !== p.id);
+      buyer.finances.balance = round1(buyer.finances.balance + m.fee);
+      buyer.finances.spent = round1(Math.max(0, buyer.finances.spent - m.fee));
+      playerClub.finances.balance = round1(playerClub.finances.balance - m.fee);
+      playerClub.finances.received = round1(Math.max(0, playerClub.finances.received - m.fee));
+      p.clubId = playerClub.id;
+      p.contract = { years: m.prevContract.years, wage: m.prevContract.wage };
+      p.value = MG.players.marketValue(p);
+      playerClub.squad.push(p);
+      MG.clubs.refreshRatings(playerClub);
+      MG.clubs.refreshRatings(buyer);
+      return true;
+    }
+    if (m.kind === "free") {
+      // A free signing nobody asked for — send him back onto the market by
+      // retiring him, exactly as he would have gone had nobody signed him.
+      if (!playerClub || !player) return false;
+      playerClub.squad = playerClub.squad.filter((p2) => p2.id !== player.id);
+      player.retired = true;
+      MG.clubs.refreshRatings(playerClub);
+      return true;
+    }
+    return false;
   }
 
   /* ------------------------------ THE WINDOW -------------------------------
@@ -372,6 +470,9 @@
     const rng = world.rng;
     const news = [];
     let deals = 0, contested = 0, rejections = 0;
+    // A fresh list for this window — see recordMovement/reverseMovement above.
+    // Last summer's decided cards must not still be sitting here to reopen.
+    world.playerMovements = [];
     const listings = buildListings(world);
     const listedSet = new Set(listings.map((l) => l.player.id));
     const index = indexPlayers(world);
@@ -490,6 +591,7 @@
       const buyer = st.club;
       const { player, club: seller } = entry;
       const wage = round1(wageRaw);
+      const prevContract = { years: player.contract.years, wage: player.contract.wage };
 
       seller.squad = seller.squad.filter((p) => p.id !== player.id);
       seller.finances.received = round1(seller.finances.received + fee);
@@ -510,6 +612,9 @@
       // actually got against what it set out to get.
       if (MG.ai) MG.ai.noteSigning(buyer, player);
       const bestFee = fee;
+      if (world.playerClubId && (buyer.id === world.playerClubId || seller.id === world.playerClubId)) {
+        recordMovement(world, buyer.id === world.playerClubId ? "in" : "out", player, buyer.id === world.playerClubId ? seller : buyer, fee, wage, prevContract);
+      }
 
         if (bestFee >= 12 || player.overall >= 80) {
           news.push({
@@ -758,6 +863,18 @@
       for (const need of needs) {
         if (club.squad.length >= MG.players.SQUAD_TARGET) break;
         if (need.short < FREE_AGENT_SHORT_THRESHOLD) continue;
+        /* The board's first call, every time: is there anyone in the academy
+         * who can do this job before it goes and spends money on a stranger?
+         * Free transfers used to be the club's first instinct for a shortage
+         * — a teenager who was genuinely ready sat in the academy while the
+         * board went to the market anyway. */
+        const promoted = MG.youth ? MG.youth.promoteReadyForPos(world, club, need.pos) : null;
+        if (promoted) {
+          if (club.id === world.playerClubId) {
+            news.push({ type: "youth", text: `PROMOTED — ${promoted.name} (${promoted.pos}, ${promoted.age}, ${Math.round(promoted.overall)}) is pulled up from the academy rather than going to the market.`, clubId: club.id });
+          }
+          continue;
+        }
         const idx = pool.findIndex((p) => p.pos === need.pos && p.overall >= bar - 12 && p.overall <= need.currentQuality + 8);
         if (idx === -1) continue;
         const p = pool.splice(idx, 1)[0];
@@ -772,6 +889,7 @@
          * three other doors into the squad were not. */
         if (club.id === world.playerClubId) {
           news.push({ type: "transfer", text: `FREE — ${p.name} (${p.pos}, ${p.age}, ${Math.round(p.overall)}) signs on a free transfer.`, clubId: club.id });
+          recordMovement(world, "free", p, null, 0, p.contract.wage, { years: 0, wage: p.contract.wage });
         }
       }
     }
@@ -821,6 +939,15 @@
         let n = have[pos] || 0;
         let g = 0;
         while (n < want && g++ < 4) {
+          // Academy first, same as every other door into the squad now.
+          const promoted = MG.youth ? MG.youth.promoteReadyForPos(world, club, pos) : null;
+          if (promoted) {
+            n++;
+            if (club.id === world.playerClubId) {
+              news.push({ type: "youth", text: `PROMOTED — ${promoted.name} (${promoted.pos}, ${promoted.age}, ${Math.round(promoted.overall)}) covers the gap from the academy.`, clubId: club.id });
+            }
+            continue;
+          }
           const p = MG.players.generate(rng, {
             league: club.leagueId, pos, target: shapeLevel - rng.between(4, 12),
             spread: 3, age: rng.int(18, 26),
@@ -851,6 +978,15 @@
         // every summer, which dragged its own strength down and made it do the
         // same thing harder next year — the whole lower pyramid decayed.
         const level = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
+        // Academy first — the board looks at its own kids before it looks at
+        // the market, same as everywhere else this function fills a gap.
+        const promoted = MG.youth ? MG.youth.promoteReadyForPos(world, club, pos) : null;
+        if (promoted) {
+          if (club.id === world.playerClubId) {
+            news.push({ type: "youth", text: `PROMOTED — ${promoted.name} (${promoted.pos}, ${promoted.age}, ${Math.round(promoted.overall)}) is brought up from the academy to make up the numbers.`, clubId: club.id });
+          }
+          continue;
+        }
         const target = level - rng.between(4, 12);
         // Younger than the old 20-31 band: these are most of the world's new
         // professionals now, so drawing them all from a squad-filler age range
@@ -1300,6 +1436,6 @@
   MG.transfers = {
     MIN_SQUAD, findAndSign, sellOne, sellListed, boardListings, market, runLoans, returnLoans, willJoin, executeManagerRequests, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
     askingPrice, targetScore, clubNeeds, runWindow, signFreeAgents, topUpSquads, youthIntake,
-    FREE_AGENT_SHORT_THRESHOLD, minimumShape,
+    FREE_AGENT_SHORT_THRESHOLD, minimumShape, recordMovement, reverseMovement,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

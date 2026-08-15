@@ -315,6 +315,8 @@
       tenure: 0,
       joblessSeasons: 0,
       isPlayer: true,
+      clubPreference: MG.managers.rollClubPreference(rng),
+      careerPreference: MG.managers.rollCareerPreference(rng, reputation),
       honours: { titles: 0, cups: 0, promotions: 0, relegations: 0, european: 0 },
       record: { seasons: 0, played: 0, won: 0, drawn: 0, lost: 0 },
       history: [],

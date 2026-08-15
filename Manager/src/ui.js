@@ -48,6 +48,8 @@
     tab: "squad", pendingSlot: null, marketPos: "",
     squadSort: "rating", chooserSort: "rating",
     signCount: 0, signPositions: [], signAmbition: "solid", transfersSeason: null, boardRecs: null,
+    playerSearch: "",
+    moveCards: [], moveIndex: 0, moveOutcomes: [], lastMoveSummary: null, lastApproach: null,
     lastSeenNewsId: 0, notifOpen: false,
   };
   root.MG_STATE = state;
@@ -341,6 +343,7 @@
       const stillHere = state.manager.clubId === c.id;
 
       state.lastWindow = summary.managerWindow;
+      state.lastApproach = summary.playerApproach;
       state.lastCup = report ? report.metrics.cup.actual : null;
       state.lastRow = row ? {
         position: row.position, pts: row.pts, won: row.won, drawn: row.drawn, lost: row.lost,
@@ -377,10 +380,164 @@
   }
 
   function toEndSeason() {
+    // Every transfer the board made off its own back this summer — the
+    // auction, a free signing, emergency cover — goes through SIGN/VETO
+    // before anything else. This is the close season that just happened
+    // inside advanceSeason(); nobody has played a minute for the club yet,
+    // so a VETO is a clean, complete reversal, not an undo of a played game.
+    const pending = (state.world.playerMovements || []).filter((m) => !m.resolved);
+    state.lastMoveSummary = null;
+    if (pending.length) { beginMoveApproval(pending); return; }
+    proceedPastMovements();
+  }
+
+  /* The player's own manager movements — a rival's approach, if one came in
+   * this close season — sit between the board's transfer dealing and the
+   * narrative end-of-season cards. Rarer than either, and entirely the
+   * manager's own call: nobody vetoes this one but him. */
+  function proceedPastMovements() {
+    if (state.lastApproach) { state.stage = "manager-approach"; render(); return; }
+    proceedToEndSeasonCards();
+  }
+
+  function chooseApproach(accept) {
+    const approach = state.lastApproach;
+    state.lastApproach = null;
+    if (accept && approach) { acceptApproach(approach.clubId); return; }
+    proceedToEndSeasonCards();
+  }
+
+  /** Leave the current club for a new one mid-career — takeJob's sibling,
+   *  for when the move was the OTHER club's idea. The post left behind gets
+   *  filled the same way any other vacancy does. */
+  function acceptApproach(clubId) {
+    const world = state.world;
+    const oldClub = club();
+    const newClub = world.clubById(clubId);
+    if (!newClub) { proceedToEndSeasonCards(); return; }
+    MG.world.removeManager(world, oldClub, "left for another club");
+    world.report(`${state.manager.name} leaves ${oldClub.name} to take charge of ${newClub.name}.`, "hire", newClub.id);
+    MG.world.removeManager(world, newClub, "replaced");
+    MG.world.appointManager(world, newClub, state.manager, { quiet: true });
+    if (MG.world.hireFor) MG.world.hireFor(world, oldClub, {});
+    state.clubId = clubId;
+    world.playerClubId = clubId;
+    newClub.transferList = []; newClub.targets = [];
+    MG.clubs.setSeasonTargets(newClub, world.clubsInLeague(newClub.leagueId), world.rng);
+    state.lastReport = null; state.lastRow = null;
+    state.transfersSeason = null; state.signCount = 0; state.signPositions = [];
+    state.lastSeenNewsId = world.news.length ? world.news[world.news.length - 1].id : 0;
+    state.stage = "intro";
+    state.tab = "squad";
+    render();
+  }
+
+  function approachHtml() {
+    const world = state.world;
+    const approach = state.lastApproach;
+    const newClub = approach ? world.clubById(approach.clubId) : null;
+    if (!newClub) { proceedToEndSeasonCards(); return ""; }
+    return `<div class="stage-step">MANAGER MOVEMENTS</div>
+      <div class="decision boardroom">
+        <div class="decision-tag">A JOB OFFER</div>
+        <div class="decision-text">${esc(newClub.name)} have made contact. They want you to take charge this summer — nobody at ${esc(club().name)} has any say in whether you go.</div>
+        <div class="stat-grid">
+          <div class="stat-box"><div class="sb-num" style="font-size:14px">${esc(MG.clubs.LEAGUES[newClub.leagueId].name)}</div><div class="sb-lab">League</div></div>
+          <div class="stat-box"><div class="sb-num board-${newClub.board.style.toLowerCase()}" style="font-size:14px">${esc(newClub.board.style)}</div><div class="sb-lab">Boardroom</div></div>
+          <div class="stat-box"><div class="sb-num">${newClub.reputation}</div><div class="sb-lab">Club rep</div></div>
+          <div class="stat-box"><div class="sb-num gold">${money(newClub.finances.transferBudget)}</div><div class="sb-lab">Budget</div></div>
+        </div>
+        <div class="decision-choices">
+          <button class="btn choice" id="approach-accept"><b>TAKE THE JOB</b><span>Leave ${esc(club().name)} for ${esc(newClub.name)}.</span></button>
+          <button class="btn choice" id="approach-decline"><b>STAY</b><span>See out your project at ${esc(club().name)}.</span></button>
+        </div>
+      </div>`;
+  }
+
+  function proceedToEndSeasonCards() {
     state.stage = "endseason";
     drawCards(MG.decisions.ENDSEASON);
     if (!state.cards.length) { toNextSeason(); return; }
     render();
+  }
+
+  function beginMoveApproval(pending) {
+    state.moveCards = pending;
+    state.moveIndex = 0;
+    state.moveOutcomes = [];
+    state.stage = "move-approval";
+    render();
+  }
+
+  function chooseMove(action) {
+    const world = state.world;
+    const m = state.moveCards[state.moveIndex];
+    if (!m) return;
+    const c = club();
+    const chaotic = c.board.style === "Chaotic";
+    if (action === "veto" && !chaotic) {
+      MG.transfers.reverseMovement(world, m);
+      m.resolved = true;
+      const label = m.kind === "out" ? "recalled, the fee returned" : "sent back, the deal undone";
+      state.moveOutcomes.push({ label: "VETOED", outcome: `The board's move on ${m.playerName} is ${label}.` });
+      MG.clubs.fansReact(c, -1, "the board's own dealing was overruled");
+    } else {
+      m.resolved = true;
+      state.moveOutcomes.push({ label: chaotic && action === "veto" ? "NOTED" : "SIGNED OFF", outcome: `${m.playerName} stays as the board dealt it.` });
+    }
+    state.moveIndex++;
+    if (state.moveIndex >= state.moveCards.length) {
+      // A durable copy, separate from state.outcomes — that array gets wiped
+      // the instant the narrative end-of-season cards start drawing, and this
+      // record needs to survive to the summary screen after them.
+      state.lastMoveSummary = state.moveOutcomes.slice();
+      proceedPastMovements();
+      return;
+    }
+    render();
+  }
+
+  /** A durable "what the board did, and what you did about it" recap —
+   *  shown on the end-of-season summary screen, past where the narrative
+   *  cards would otherwise have erased it. */
+  function moveSummaryHtml() {
+    const log = state.lastMoveSummary;
+    if (!log || !log.length) return "";
+    return `<div class="panel"><h3 class="muted">TRANSFER MOVEMENTS THIS WINDOW</h3>
+      ${log.map((o) => `<div class="log-entry ${o.label === "VETOED" ? "sack" : "transfer"}"><b>${esc(o.label)}</b> — ${esc(o.outcome)}</div>`).join("")}
+    </div>`;
+  }
+
+  function moveApprovalHtml() {
+    const world = state.world, c = club();
+    const m = state.moveCards[state.moveIndex];
+    const done = state.moveOutcomes.map((o) => `<div class="outcome"><b>${esc(o.label)}</b> — ${esc(o.outcome)}</div>`).join("");
+    if (!m) return done;
+    const player = world.clubs.reduce((found, cl) => found || cl.squad.find((p) => p.id === m.playerId), null);
+    if (!player) { chooseMove("sign"); return done; }   // he is gone from the world entirely — nothing to approve
+    m.playerName = player.name;
+    const pc = posClass(player.pos);
+    const chaotic = c.board.style === "Chaotic";
+    const kindLabel = m.kind === "in" ? "SIGNING" : m.kind === "out" ? "SALE" : "FREE TRANSFER";
+    const desc = m.kind === "in" ? `arrives from ${esc(m.otherClubName)} for ${money(m.fee)}`
+      : m.kind === "out" ? `is sold to ${esc(m.otherClubName)} for ${money(m.fee)}`
+        : `signs on a free transfer`;
+    return `${done}
+      <div class="stage-step">TRANSFER MOVEMENTS · ${state.moveIndex + 1} of ${state.moveCards.length}</div>
+      <div class="decision boardroom">
+        <div class="decision-tag">THE BOARD'S OWN DEALING · ${kindLabel}</div>
+        <div class="decision-text">Without waiting on you, the board went and did this. ${chaotic ? "This board moves the goalposts on its own terms — you are told, not asked." : "Sign off on it, or veto it and send it back."}</div>
+        <div class="crow" data-player="${player.id}" style="cursor:pointer;margin:10px 0">
+          <div class="prating ${pc}" style="width:44px;height:44px;font-size:17px">${Math.round(player.overall)}</div>
+          <div class="crow-body"><div class="nm">${esc(player.name)} <span class="ppos ${pc}">${player.pos}</span></div>
+            <div class="muted" style="font-size:12px">${esc(player.pos)} · ${player.age}y · ${esc(desc)} · £${m.wage}k/wk</div></div>
+        </div>
+        <div class="muted" style="font-size:11px;margin-bottom:8px">Tap his rating to see the full profile before you decide.</div>
+        <div class="decision-choices">
+          <button class="btn choice" id="move-sign"><b>SIGN OFF</b><span>Let the deal stand.</span></button>
+          ${chaotic ? "" : `<button class="btn choice" id="move-veto"><b>VETO</b><span>Reverse it — he goes back, the money returns.</span></button>`}
+        </div>
+      </div>`;
   }
 
   /** After the end-of-season cards: an ending may fire, otherwise pre-season. */
@@ -557,10 +714,12 @@
     if (state.stage === "transfers") return transfersWizardHtml();
     if (state.stage === "preseason" || state.stage === "endseason") return cardHtml();
     if (state.stage === "endseason-done") {
-      return outcomesHtml() + windowReportHtml() + contractsUpHtml(club())
+      return outcomesHtml() + moveSummaryHtml() + windowReportHtml() + contractsUpHtml(club())
         + `<button class="btn primary big" id="to-preseason" style="margin-top:12px">PRE-SEASON ▶</button>`;
     }
     if (state.stage === "ready") return readyHtml();
+    if (state.stage === "move-approval") return moveApprovalHtml();
+    if (state.stage === "manager-approach") return approachHtml();
     if (state.stage === "ending") return endingHtml();
     return resultHtml();
   }
@@ -928,6 +1087,10 @@
     bind("play-season", playSeason);
     bind("to-endseason", toEndSeason);
     bind("to-preseason", toNextSeason);
+    bind("move-sign", () => chooseMove("sign"));
+    bind("move-veto", () => chooseMove("veto"));
+    bind("approach-accept", () => chooseApproach(true));
+    bind("approach-decline", () => chooseApproach(false));
     bind("confirm-tactics", () => {
       const c = club();
       if (!c.focus) c.focus = "league";
@@ -1445,7 +1608,43 @@
       <div class="muted" style="font-size:12px;margin-bottom:8px">The full football pyramid the engine simulates. Click a division to see its table, then a club to see its squad and manager.</div>
       <div class="seg">${MG.clubs.LEAGUE_KEYS.map((k) => `<button data-league="${k}">${esc(MG.clubs.LEAGUES[k].name)}</button>`).join("")}</div>
     </div>`;
-    return browser + feed;
+    const search = `<div class="panel">
+      <h3 class="muted">SEARCH PLAYERS</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">Anyone in the world, at any club — find a name and tap through to his full career.</div>
+      <input id="player-search" type="text" placeholder="Search by name…" value="${esc(state.playerSearch)}" autocomplete="off"
+        style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--txt);font:inherit" />
+      <div id="search-results" style="margin-top:8px">${searchResultsHtml()}</div>
+    </div>`;
+    return search + browser + feed;
+  }
+
+  /** Every player in the world whose name matches the current query, best
+   *  first. Kept short (25) — this is a way IN to a career, not a database
+   *  dump. */
+  function searchResultsHtml() {
+    const q = (state.playerSearch || "").trim().toLowerCase();
+    if (q.length < 2) return `<div class="muted" style="font-size:12px">Type at least two letters.</div>`;
+    const world = state.world;
+    const hits = [];
+    for (const c of world.clubs) {
+      for (const p of c.squad) {
+        if (p.name.toLowerCase().includes(q)) hits.push(p);
+        if (hits.length >= 200) break;   // enough to sort from without walking the whole world
+      }
+      if (hits.length >= 200) break;
+    }
+    hits.sort((a, b) => b.overall - a.overall);
+    const shown = hits.slice(0, 25);
+    if (!shown.length) return `<div class="muted" style="font-size:12px">No one matches "${esc(state.playerSearch)}".</div>`;
+    return shown.map((p) => {
+      const c = world.clubById(p.clubId);
+      const pc = posClass(p.pos);
+      return `<div class="crow" data-player="${p.id}" style="cursor:pointer">
+        <div class="prating ${pc}" style="width:36px;height:36px;font-size:14px">${Math.round(p.overall)}</div>
+        <div class="crow-body"><div class="nm">${esc(p.name)} <span class="ppos ${pc}">${p.pos}</span></div>
+          <div class="muted" style="font-size:12px">${p.age}y · ${esc(c ? c.name : "Free agent")}</div></div>
+      </div>`;
+    }).join("") + (hits.length > shown.length ? `<div class="muted" style="font-size:11px;margin-top:4px">+${hits.length - shown.length} more — narrow the search.</div>` : "");
   }
 
   /** A league table modal reachable from the World tab. */
@@ -1576,6 +1775,21 @@
     }
     const auto = $("auto-pick");
     if (auto) auto.addEventListener("click", () => { MG.tactics.setXI(c, null); render(); });
+    // The search box updates its own results div only — a full renderTab()
+    // on every keystroke would tear down and rebuild the input itself,
+    // dropping focus and the cursor position after every single letter.
+    const search = $("player-search");
+    if (search) {
+      search.addEventListener("input", () => {
+        state.playerSearch = search.value;
+        const results = $("search-results");
+        if (!results) return;
+        results.innerHTML = searchResultsHtml();
+        for (const el of results.querySelectorAll("[data-player]")) {
+          el.addEventListener("click", (e) => { e.stopPropagation(); openPlayer(Number(el.dataset.player)); });
+        }
+      });
+    }
   }
 
   /** Toggle a player on the transfer list (sell directive). */
@@ -1690,7 +1904,59 @@
     }
   }
 
-  /** Player mini-profile: radar, traits, mentality, contract. */
+  /** "2026/27" from a calendar start year — the label the club and career
+   *  screens already use for a completed season. */
+  function seasonLabel(year) {
+    if (year == null) return "—";
+    return `${year}/${String(year + 1).slice(2)}`;
+  }
+
+  /** Season-by-season Apps/Goals/Rating, and the trajectory line underneath
+   *  it — the record a career screen is actually FOR, not just "how did he
+   *  do last year". Built off career.seasonLog (narrative.js's rateSquad),
+   *  most recent season first in the table, oldest-to-newest left-to-right
+   *  in the chart below it. */
+  function careerStatsHtml(player) {
+    const log = (player.career && player.career.seasonLog) || [];
+    if (!log.length) return `<div class="panel muted" style="font-size:12px">No completed season on record yet.</div>`;
+    const rows = log.slice().reverse();
+    const table = `<table style="width:100%">
+      <thead><tr><th>Season</th><th>Club</th><th>Apps</th><th>Goals</th><th>Rating</th></tr></thead>
+      <tbody>${rows.map((s) => `<tr>
+        <td>${esc(seasonLabel(s.year))}</td>
+        <td class="muted">${esc(s.club || "—")}</td>
+        <td>${s.apps}</td>
+        <td>${s.goals}</td>
+        <td><b class="${s.rating >= 7 ? "accent" : s.rating >= 6 ? "gold" : s.rating ? "bad" : ""}">${s.rating != null ? s.rating.toFixed(1) : "—"}</b></td>
+      </tr>`).join("")}</tbody>
+    </table>`;
+    return `<div class="panel"><h3 class="muted">CAREER, SEASON BY SEASON</h3>${table}${trajectoryChart(log)}</div>`;
+  }
+
+  /** A plain inline SVG line chart — no canvas, no library, themes for free
+   *  because it is just coloured shapes on the page like everything else
+   *  here. Rating (out of 10) across every completed season on record,
+   *  oldest to newest, so a career's shape is visible at a glance rather
+   *  than read off one row of a table at a time. */
+  function trajectoryChart(log) {
+    const played = log.filter((s) => s.rating != null);
+    if (played.length < 2) return "";
+    const W = 300, H = 90, PAD = 10;
+    const lo = 4, hi = 10;                              // seasonRating's own range
+    const x = (i) => PAD + (i / (played.length - 1)) * (W - PAD * 2);
+    const y = (r) => H - PAD - ((clamp(r, lo, hi) - lo) / (hi - lo)) * (H - PAD * 2);
+    const pts = played.map((s, i) => `${x(i).toFixed(1)},${y(s.rating).toFixed(1)}`).join(" ");
+    const dots = played.map((s, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(s.rating).toFixed(1)}" r="2.6" fill="var(--accent)" />`).join("");
+    const first = played[0], last = played[played.length - 1];
+    return `<div class="muted" style="font-size:11px;margin-top:10px">Rating by season, ${esc(seasonLabel(first.year))} → ${esc(seasonLabel(last.year))}</div>
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;margin-top:4px" preserveAspectRatio="none">
+        <line x1="${PAD}" y1="${y(6.5).toFixed(1)}" x2="${W - PAD}" y2="${y(6.5).toFixed(1)}" stroke="var(--line)" stroke-dasharray="3,3" stroke-width="1" />
+        <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+        ${dots}
+      </svg>`;
+  }
+
+  /** Player mini-profile: attribute bars, traits, mentality, contract. */
   function openPlayer(id) {
     const c = club();
     let player = c.squad.find((p) => p.id === id);
@@ -1703,74 +1969,69 @@
     }
     if (!player) return;
 
-    const stats = MG.ratings && MG.ratings.radarAxes
-      ? MG.ratings.radarAxes(player)
-      : (() => {
-        const a = player.attrs;
-        return [
-          { label: "Pace", value: a.speed },
-          { label: "Physical", value: a.strength },
-          { label: "Aerial", value: a.heading },
-          { label: "Stamina", value: a.fitness },
-          { label: "Technique", value: Math.round((a.rightFoot + a.leftFoot) / 2) },
-          { label: "Mentality", value: player.mentalityRating },
-        ];
-      })();
+    // ratings.js is always in the script order ahead of ui.js — this only
+    // ever runs the real axes, never the six-year-stale fallback labels a
+    // previous version of this function carried for a module that could
+    // never actually be missing.
+    const stats = MG.ratings.radarAxes(player);
     const listed = (c.transferList || []).includes(player.id);
     const mentored = (c.mentoring || []).includes(player.id);
     const contractReq = (c.contractRequests || {})[player.id];
+    const agent = MG.agents ? MG.agents.agentFor(player) : null;
     const mine = player.clubId === c.id;
     const pc = posClass(player.pos);
     const intl = player.intl;
 
     modal(`
-      <div class="profile-head">
-        <div class="prating ${pc}" style="width:64px;height:64px;font-size:24px;flex:0 0 64px">${Math.round(player.overall)}</div>
-        <div class="profile-meta">
-          <div style="font-size:20px;font-weight:800">${MG.names.flagFor(player.nationality)} ${esc(player.name)}</div>
-          <div class="muted"><span class="ppos ${pc}">${esc(player.pos)}</span>${esc(MG.players.POSITIONS[player.pos].name)} · ${player.age} · ${esc(player.nationality)} · ${esc(from)}</div>
-          <div style="margin:8px 0">
+      <div class="profile-top">
+        <div class="profile-bars">
+          <div class="muted" style="font-size:11px;margin-bottom:6px">Read straight off his attributes — not a separate rating.</div>
+          ${stats.map((s) => `<div class="attr-bar"><span class="muted">${esc(s.label)}</span>
+            <div class="bar"><i style="width:${clamp(s.value, 0, 99)}%"></i></div><b>${Math.round(s.value)}</b></div>`).join("")}
+        </div>
+        <div class="profile-side">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+            <div class="prating ${pc}" style="width:52px;height:52px;font-size:20px;flex:0 0 52px">${Math.round(player.overall)}</div>
+            <div>
+              <div style="font-size:17px;font-weight:800;line-height:1.15">${MG.names.flagFor(player.nationality)} ${esc(player.name)}</div>
+              <div class="muted" style="font-size:12px"><span class="ppos ${pc}">${esc(player.pos)}</span>${player.age}y · ${esc(from)}</div>
+            </div>
+          </div>
+          <div style="margin-bottom:8px">
             <span class="trait-chip">pot ${Math.round(player.potential)}</span>
             <span class="trait-chip">${esc(player.mentality)}</span>
             ${player.homegrown ? '<span class="trait-chip">Homegrown</span>' : ""}
             ${intl && intl.caps ? `<span class="trait-chip gold">${esc(intl.nation)} · ${intl.caps} caps${intl.goals ? ` · ${intl.goals} gls` : ""}</span>` : ""}
-            ${MG.agents ? `<span class="trait-chip" title="${esc(MG.agents.agentFor(player).blurb)}">${esc(MG.agents.agentFor(player).name)} · ${esc(MG.agents.agentFor(player).tier)}</span>` : ""}
+            ${agent ? `<span class="trait-chip" title="${esc(agent.blurb)}">${esc(agent.name)} · ${esc(agent.tier)}</span>` : ""}
             ${mentored ? '<span class="trait-chip" style="color:var(--accent);border-color:var(--accent)">Mentored</span>' : ""}
             ${listed ? '<span class="trait-chip" style="color:var(--bad);border-color:var(--bad)">Transfer listed</span>' : ""}
             ${player.season.injured > 0 ? `<span class="trait-chip" style="color:var(--bad);border-color:var(--bad)">Out ${Math.round(player.season.injured * 100)}%</span>` : ""}
           </div>
+          <div class="stat-grid">
+            <div class="stat-box"><div class="sb-num">${moraleDot(player.morale)}</div><div class="sb-lab">Morale</div></div>
+            <div class="stat-box"><div class="sb-num gold">${money(player.value)}</div><div class="sb-lab">Value</div></div>
+            <div class="stat-box"><div class="sb-num">£${player.contract.wage}k</div><div class="sb-lab">Wage/wk</div></div>
+            <div class="stat-box"><div class="sb-num">${player.contract.years}y</div><div class="sb-lab">Contract</div></div>
+          </div>
+          ${mine ? `<div class="row" style="margin-top:10px;flex-wrap:wrap">
+            <button class="btn tiny ${listed ? "danger" : ""}" id="profile-list">${listed ? "REMOVE FROM LIST" : "TRANSFER LIST"}</button>
+            <button class="btn tiny ${mentored ? "primary" : ""}" id="profile-mentor">${mentored ? "STOP MENTORING" : "MENTOR"}</button>
+            <button class="btn tiny ${contractReq === "extend" ? "primary" : ""}" id="profile-extend">${contractReq === "extend" ? "◤ EXTEND ASKED" : "ASK BOARD TO EXTEND"}</button>
+            <button class="btn tiny ${contractReq === "release" ? "danger" : ""}" id="profile-release">${contractReq === "release" ? "◤ RELEASE ASKED" : "ASK BOARD TO RELEASE"}</button>
+          </div>` : ""}
         </div>
       </div>
-      <div class="muted" style="font-size:11px;margin:10px 0 4px">Read straight off his attributes — not a separate rating.</div>
-      ${stats.map((s) => `<div class="mini-bar"><span class="muted">${esc(s.label)}</span>
-        <div class="bar"><i style="width:${clamp(s.value, 0, 99)}%"></i></div><b>${Math.round(s.value)}</b></div>`).join("")}
+
+      <div class="muted" style="font-size:12px;margin:14px 0 2px">↓ scroll for raw attributes, durability and his full career</div>
       ${attrGrid(player)}
+      ${durabilityHtml(player)}
+      ${player.season.apps ? `<div class="muted" style="font-size:12px;margin-top:8px">This season: ${player.season.apps} apps, ${player.season.goals} goals, ${player.season.assists} assists.</div>` : ""}
       <div class="stat-grid" style="margin-top:12px">
-        <div class="stat-box"><div class="sb-num">${moraleDot(player.morale)}</div><div class="sb-lab">Morale</div></div>
-        <div class="stat-box"><div class="sb-num gold">${money(player.value)}</div><div class="sb-lab">Value</div></div>
-        <div class="stat-box"><div class="sb-num">£${player.contract.wage}k</div><div class="sb-lab">Wage/wk</div></div>
-        <div class="stat-box"><div class="sb-num">${player.contract.years}y</div><div class="sb-lab">Contract</div></div>
         <div class="stat-box"><div class="sb-num">${player.career.goals}</div><div class="sb-lab">Career goals</div></div>
         <div class="stat-box"><div class="sb-num">${player.career.apps}</div><div class="sb-lab">Career apps</div></div>
       </div>
-      ${durabilityHtml(player)}
-      ${player.season.apps ? `<div class="muted" style="font-size:12px;margin-top:8px">This season: ${player.season.apps} apps, ${player.season.goals} goals, ${player.season.assists} assists.</div>` : ""}
-      ${player.lastSeason && player.lastSeason.apps ? `<div class="panel" style="margin:10px 0 0;padding:10px">
-        <div class="stage-step" style="margin-bottom:6px">Last season at ${esc(player.lastSeason.club || from)}</div>
-        <div class="row" style="gap:14px;font-size:13px">
-          <span>Rating <b class="${player.lastSeason.rating >= 7 ? "accent" : player.lastSeason.rating >= 6 ? "gold" : "bad"}">${player.lastSeason.rating != null ? player.lastSeason.rating.toFixed(1) : "—"}</b></span>
-          <span class="muted">${player.lastSeason.apps} apps · ${player.lastSeason.goals} goals · ${player.lastSeason.assists} assists</span>
-          ${player.lastSeason.overall != null && Math.round(player.overall - player.lastSeason.overall) !== 0
-            ? `<span>Development <b class="${player.overall > player.lastSeason.overall ? "accent" : "bad"}">${player.overall > player.lastSeason.overall ? "+" : ""}${Math.round(player.overall - player.lastSeason.overall)}</b> since last year</span>` : ""}
-        </div>
-      </div>` : ""}
+      ${careerStatsHtml(player)}
       ${careerPathHtml(player)}
-      ${mine ? `<div class="row" style="margin-top:12px">
-        <button class="btn tiny ${listed ? "danger" : ""}" id="profile-list">${listed ? "REMOVE FROM LIST" : "TRANSFER LIST"}</button>
-        <button class="btn tiny ${mentored ? "primary" : ""}" id="profile-mentor">${mentored ? "STOP MENTORING" : "MENTOR"}</button>
-        <button class="btn tiny ${contractReq === "extend" ? "primary" : ""}" id="profile-extend">${contractReq === "extend" ? "◤ EXTEND ASKED" : "ASK BOARD TO EXTEND"}</button>
-        <button class="btn tiny ${contractReq === "release" ? "danger" : ""}" id="profile-release">${contractReq === "release" ? "◤ RELEASE ASKED" : "ASK BOARD TO RELEASE"}</button>
-      </div>` : ""}
     `);
 
     const lb = $("profile-list");

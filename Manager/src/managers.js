@@ -99,6 +99,41 @@
    * This is the placeholder DNA pool. The intended expansion is a full draft
    * where you take individual traits from several of these, the way 1000goals
    * takes attributes from several donor squads. */
+  /* ------------------------ CLUB & CAREER PREFERENCE -----------------------
+   * A manager is not a pure reputation-matching function, and pretending he
+   * is meant every job offer read the same to every manager alive — the
+   * candidate score only ever asked "is this a step up", never "is this the
+   * KIND of step he actually wants". Every manager gets a club preference;
+   * a genuinely elite one (reputation 75+) also gets a career preference —
+   * the sort of thing that only becomes visible once a manager has enough of
+   * a track record to have shown what he is actually chasing. Both are rolled
+   * once, at creation, and read by candidateScore/wouldMove below. */
+  const CLUB_PREFERENCES = {
+    homegrown: { label: "Homegrown", blurb: "Would rather manage in his own country than anywhere bigger abroad.", weight: 30 },
+    ambitious: { label: "Ambitious", blurb: "Judges a job purely on how big it is. Loyalty does not enter into it.", weight: 22 },
+    project: { label: "Project-minded", blurb: "Drawn to a rebuild with a patient board behind it, over a bigger name with no patience.", weight: 18 },
+    settled: { label: "Settled", blurb: "Values being wanted where he already is. Takes real persuading to leave.", weight: 16 },
+    money: { label: "Business-minded", blurb: "Follows the budget as much as the badge.", weight: 14 },
+  };
+  const CLUB_PREFERENCE_KEYS = Object.keys(CLUB_PREFERENCES);
+
+  const CAREER_PREFERENCES = {
+    trophyHunter: { label: "Trophy Hunter", blurb: "Only genuinely interested in a job that can win things now.", weight: 28 },
+    legacyBuilder: { label: "Legacy Builder", blurb: "Wants to build something that outlasts him at one club. Very hard to prise away.", weight: 24 },
+    serialWinner: { label: "Serial Winner", blurb: "Takes the biggest job on the table, every time, and never looks back.", weight: 26 },
+    continental: { label: "Continental", blurb: "Wants a career abroad — a foreign league appeals more than a bigger one at home.", weight: 22 },
+  };
+  const CAREER_PREFERENCE_KEYS = Object.keys(CAREER_PREFERENCES);
+  const ELITE_CAREER_PREFERENCE_REP = 75;
+
+  function rollClubPreference(rng) {
+    return rng.weighted(CLUB_PREFERENCE_KEYS.map((k) => ({ item: k, weight: CLUB_PREFERENCES[k].weight })));
+  }
+  function rollCareerPreference(rng, reputation) {
+    if (reputation < ELITE_CAREER_PREFERENCE_REP) return null;
+    return rng.weighted(CAREER_PREFERENCE_KEYS.map((k) => ({ item: k, weight: CAREER_PREFERENCES[k].weight })));
+  }
+
   const ARCHETYPES = {
     perfectionist: {
       key: "perfectionist", name: "The Perfectionist", basedOn: "P. Guardiola", club: "Manchester City",
@@ -216,6 +251,8 @@
       tenure: 0,
       joblessSeasons: 0,
       isPlayer: !!o.isPlayer,
+      clubPreference: o.clubPreference || rollClubPreference(rng),
+      careerPreference: o.careerPreference !== undefined ? o.careerPreference : rollCareerPreference(rng, reputation),
       honours: { titles: 0, cups: 0, promotions: 0, relegations: 0, european: 0 },
       record: { seasons: 0, played: 0, won: 0, drawn: 0, lost: 0 },
       history: [],   // { club, from, to, reason, finish }
@@ -451,16 +488,44 @@
     score *= (PERSONALITIES[manager.personality] || {}).appeal || 1;
     // Being out of work is not fatal, but it costs you something every year.
     score -= manager.joblessSeasons * 3;
+    score += preferenceScore(manager, club);
     return score + rng.between(-6, 6);
+  }
+
+  /** How much a manager's own club/career preference pulls him toward or
+   *  away from this specific job — on top of the reputation and boardroom
+   *  taste above, which only ever asked "is this a step up". */
+  function preferenceScore(manager, club) {
+    let bonus = 0;
+    const cp = CLUB_PREFERENCES[manager.clubPreference];
+    if (cp) {
+      if (manager.clubPreference === "homegrown") bonus += club.country === manager.nationality ? 8 : -6;
+      else if (manager.clubPreference === "ambitious") bonus += (club.reputation - 50) * 0.12;
+      else if (manager.clubPreference === "project") bonus += club.board.style === "Patient" ? 10 : club.board.style === "Chaotic" ? -6 : 0;
+      else if (manager.clubPreference === "settled") bonus -= 4;   // a flat drag on ANY move, employed or not
+      else if (manager.clubPreference === "money") bonus += clamp((club.finances.wageBudget - 30) * 0.3, -8, 12);
+    }
+    const kp = manager.careerPreference && CAREER_PREFERENCES[manager.careerPreference];
+    if (kp) {
+      if (manager.careerPreference === "trophyHunter") bonus += club.reputation >= 65 ? 10 : -10;
+      else if (manager.careerPreference === "legacyBuilder") bonus -= 10;   // hard to prise away for ANY job
+      else if (manager.careerPreference === "serialWinner") bonus += (club.reputation - 55) * 0.2;
+      else if (manager.careerPreference === "continental") bonus += club.country !== manager.nationality ? 9 : -3;
+    }
+    return bonus;
   }
 
   /** Would this employed manager leave his club for that one? */
   function wouldMove(manager, from, to) {
     if (!from) return true;
     const step = to.reputation - from.reputation;
-    if (step >= 8) return true;                                  // clear promotion
-    if (step >= 3 && from.board.confidence < 45) return true;    // sideways, but he is under pressure
-    if (from.board.confidence < 25 && step >= -5) return true;   // jumping before he is pushed
+    // A settled type or a legacy builder needs a bigger step to be tempted at
+    // all; everyone else reads the offer the way they always did.
+    const reluctant = manager.clubPreference === "settled" || manager.careerPreference === "legacyBuilder";
+    const threshold = reluctant ? 14 : 8;
+    if (step >= threshold) return true;                            // clear promotion
+    if (step >= 3 && from.board.confidence < 45 && !reluctant) return true;    // sideways, but he is under pressure
+    if (from.board.confidence < 25 && step >= -5) return true;      // jumping before he is pushed — even the reluctant ones
     return false;
   }
 
@@ -471,6 +536,8 @@
     tacticalFit, matchModifiers, coachingQuality, youthAppetite, recruitmentPolicy,
     mentorCapacity, recruitCapacity, mentorBoost,
     TACTIC_PARAMS, pressIntensity, deriveShift,
-    candidateScore, wouldMove,
+    candidateScore, wouldMove, preferenceScore,
+    CLUB_PREFERENCES, CLUB_PREFERENCE_KEYS, rollClubPreference,
+    CAREER_PREFERENCES, CAREER_PREFERENCE_KEYS, rollCareerPreference, ELITE_CAREER_PREFERENCE_REP,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

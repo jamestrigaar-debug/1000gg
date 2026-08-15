@@ -162,6 +162,22 @@
     return p;
   }
 
+  /** The board's own first instinct when a shirt needs filling: look in the
+   *  academy before it looks anywhere else. Picks the best prospect in the
+   *  right position who is actually ready — the same bar the profile screen
+   *  marks "ready for the first team" with — and promotes him. Returns null
+   *  if nobody in the academy is close, which is the common case; the caller
+   *  falls through to the market exactly as before. */
+  function promoteReadyForPos(world, club, pos) {
+    const a = ensure(club);
+    const level = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
+    const candidates = a.players
+      .filter((p) => p.pos === pos && p.overall >= level - 8)
+      .sort((x, y) => y.overall - x.overall);
+    if (!candidates.length) return null;
+    return promote(club, candidates[0].id, world ? world.season : null);
+  }
+
   /** Release one — the other half of the decision. */
   function release(club, playerId) {
     const a = ensure(club);
@@ -228,6 +244,6 @@
 
   MG.youth = {
     FOCUS, FOCUS_KEYS, POOL_TARGET, PROMOTE_AGE,
-    ensure, intake, develop, promote, release, autoManage, runSeason, grade, makeProspect,
+    ensure, intake, develop, promote, promoteReadyForPos, release, autoManage, runSeason, grade, makeProspect,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);
