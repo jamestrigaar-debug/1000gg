@@ -354,6 +354,98 @@
     return p;
   }
 
+  /* --------------------------- FOREIGN DATABASE ----------------------------
+   * src/data.js only carries real attribute detail for the Premier League.
+   * The other five real-data leagues (see src/data_foreign.js) come from a
+   * squad report on the EA-FC-26 scale: OVR plus four composites — PAC, PHY
+   * (physical/strength/stamina), ATT (finishing/dribbling/chance creation)
+   * and DEF (tackling/defensive awareness, or work rate for attackers). None
+   * of those four map 1:1 onto this game's eight attributes, so this is a
+   * genuine conversion, not a field copy — "hardcode the framework, not the
+   * outcome": one formula for every player in the source, not a hand-tuned
+   * number per name.
+   *
+   * `overall` is taken from the report AS GIVEN — it is the one number
+   * already calibrated against real players (Mbappé 91, Haaland 96, etc.)
+   * and roleRating (ratings.js) is zero-centred against it, so overall has to
+   * stay the anchor. Attributes only decide which roles a player is zero-
+   * centred BETTER or WORSE than his own average at.
+   *
+   * `speed` is set directly from PAC with no further transform — the same
+   * number the profile's speed bar reads — so there is no second scale for
+   * "actual speed" to disagree with, which is the exact bug already fixed
+   * once this session (see rollInjury/roleRating history) and the brief
+   * explicitly asks never to reopen. */
+  const FOREIGN_POS = {
+    GK: "GK", CB: "CB", LB: "FB", RB: "FB", CDM: "DM", CM: "CM", CAM: "AM",
+    LM: "WG", RM: "WG", LW: "WG", RW: "WG", ST: "FW", CF: "FW",
+  };
+  function foreignPos(pos) { return FOREIGN_POS[pos] || "CM"; }
+
+  function mapForeignAttrs(rng, raw, pos) {
+    const ovr = raw.ovr;
+    const tall = pos === "CB" || pos === "GK" || pos === "FW";
+    if (pos === "GK" || raw.pac == null) {
+      // Keepers carry no PAC/PHY/ATT/DEF in the source (goalkeepers aren't
+      // scored on them there either) — built from OVR alone, same shape
+      // generate() already uses for a procedural keeper.
+      return {
+        heading: clamp(Math.round(ovr - 20), 20, 70),
+        fitness: clamp(Math.round(ovr - 3), 30, 92),
+        strength: clamp(Math.round(ovr - 5), 30, 92),
+        leftFoot: clamp(Math.round(ovr - 25), 15, 70),
+        rightFoot: clamp(Math.round(ovr - 15), 20, 82),
+        speed: clamp(Math.round(ovr - 15), 25, 70),
+        height: rng.int(185, 199),
+        weight: rng.int(78, 92),
+      };
+    }
+    const { pac, phy, att, def } = raw;
+    return {
+      // Aerial ability: physical composite plus defensive awareness, with a
+      // position lean for the classically tall/aerial-heavy roles.
+      heading: clamp(Math.round(phy * 0.35 + def * 0.35 + (tall ? 12 : -8)), 20, 99),
+      // Fitness leans on PHY (which folds in stamina) with a touch of OVR so
+      // a genuinely elite player never reads as unfit relative to his level.
+      fitness: clamp(Math.round(phy * 0.78 + ovr * 0.15), 25, 99),
+      strength: clamp(Math.round(phy * 0.82 + def * 0.18), 25, 99),
+      // Footedness/technical ability: ATT is the closest real proxy the
+      // source has (finishing/dribbling/chance creation). Right foot reads
+      // ATT almost directly; the left is a plausible weaker-foot spread off
+      // the same number rather than a second independent roll.
+      rightFoot: clamp(Math.round(att * 0.85 + ovr * 0.15), 25, 99),
+      leftFoot: clamp(Math.round(att * 0.6 + def * 0.15 + ovr * 0.1 - 8 + rng.gauss() * 5), 15, 96),
+      // Speed = PAC, verbatim. See the note above — this is the whole point.
+      speed: clamp(Math.round(pac), 15, 99),
+      height: tall ? rng.int(182, 198) : rng.int(168, 188),
+      weight: rng.int(66, 92),
+    };
+  }
+
+  /** Convert a record from src/data_foreign.js (real LaLiga/Bundesliga/
+   *  SerieA/Saudi/MLS squads) into a live player, on the same schema
+   *  fromDatabase produces for the Premier League. */
+  function fromForeign(rng, raw, league) {
+    const pos = foreignPos(raw.pos);
+    const age = clamp(raw.age != null ? raw.age : guessAgeFromRating(rng, raw.ovr), 15, 42);
+    const mentalityRating = rollMentalityRating(rng, raw.ovr);
+    const p = makePlayer({
+      name: raw.name,
+      nationality: MG.names.knownNationality(raw.name) || raw.nationality || MG.names.nationForLeague(rng, league),
+      pos,
+      age,
+      overall: raw.ovr,
+      attrs: mapForeignAttrs(rng, raw, pos),
+      mentality: rollMentalityTrait(rng, mentalityRating),
+      mentalityRating,
+      contract: { years: rng.int(1, 5), wage: 0 },
+    });
+    p.potential = rollPotential(rng, p.overall, p.age);
+    p.contract.wage = expectedWage(p, league);
+    p.value = marketValue(p);
+    return p;
+  }
+
   /* ------------------------------- MENTALITY -------------------------------
    * The database's own mentalityRating (src/data.js) averages 66 across the
    * real 2025/26 squads, spanning 35-94 with real width either side. Every
@@ -502,7 +594,7 @@
     firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta,
     AGE_CURVE, ageCurve, MENTALITY_TRAITS, rollMentalityRating, rollMentalityTrait,
     marketValue, expectedWage, ageValueFactor, LEAGUE_WAGE_FACTOR,
-    makePlayer, fromDatabase, generate, resetIds, rollInjury, availability, durability, recordMove,
+    makePlayer, fromDatabase, fromForeign, generate, resetIds, rollInjury, availability, durability, recordMove,
     unitRating, keeperRating, squadRatings, squadNeeds, weakestUnit,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

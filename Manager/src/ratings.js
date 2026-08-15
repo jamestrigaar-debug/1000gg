@@ -130,6 +130,15 @@
    *   workRate         0-1. Drives fatigue, and how much a pressing system
    *                    costs him over a season.
    */
+  /* Keyed by player id, which never repeats — NEXT_ID only ever climbs. That
+   * makes this an UNBOUNDED leak on a long save: retired and released
+   * players kept their entry forever, since nothing ever removed one. In a
+   * page that is meant to stay open for a whole career rather than restart
+   * between seasons, "never" is a real span — measured on a 30-season run,
+   * ~800 new player ids a season left 22,800 entries in a cache serving a
+   * ~5,000-player world, most of them for men no longer in it. pruneHidden
+   * below is the fix: called once a season, it drops anyone not currently
+   * standing in a squad or an academy anywhere in the world. */
   const HIDDEN_CACHE = {};
   function hidden(player) {
     if (HIDDEN_CACHE[player.id]) return HIDDEN_CACHE[player.id];
@@ -145,6 +154,21 @@
     return h;
   }
   function resetHidden() { for (const k of Object.keys(HIDDEN_CACHE)) delete HIDDEN_CACHE[k]; }
+
+  /** Drop every cache entry for a player id not currently live in `world` —
+   *  not in any club's squad, not in any academy. Cheap (one pass building a
+   *  Set, one pass filtering keys) against the alternative of holding every
+   *  player who has ever existed in a save for as long as the tab stays open. */
+  function pruneHidden(world) {
+    const live = new Set();
+    for (const c of world.clubs) {
+      for (const p of c.squad) live.add(p.id);
+      if (c.academy) for (const p of c.academy.players) live.add(p.id);
+    }
+    for (const k of Object.keys(HIDDEN_CACHE)) {
+      if (!live.has(Number(k))) delete HIDDEN_CACHE[k];
+    }
+  }
 
   /* ------------------------- CONSISTENCY AND FORM --------------------------
    * Report formula 7, applied per season rather than per match because this
@@ -272,7 +296,7 @@
 
   MG.ratings = {
     ROLE_WEIGHTS, ROLE_INFLUENCE, attrValue, roleRating,
-    hidden, resetHidden, rollSeasonForm, fatigueFactor,
+    hidden, resetHidden, pruneHidden, rollSeasonForm, fatigueFactor,
     radarAxes, DEF_ATR_WEIGHT, heightScore, defenceAttribute,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

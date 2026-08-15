@@ -55,7 +55,16 @@
   /* ----------------------------- LEAGUE SEASON ----------------------------
    * `ctx` carries the per-club profiles and selections so they can be rebuilt
    * for a club that changes manager at the halfway hook. */
-  function runLeague(world, leagueId, hooks) {
+  /* A league season is played in three resumable pieces rather than one
+   * closed loop, so the game can genuinely STOP part-way through and hand
+   * control back — which is what the early-season decision window needs. A
+   * season simulated in a single pass can only ever offer decisions before
+   * kick-off or after the trophy, and "react to how the opening weeks
+   * actually went" is a different kind of decision from either.
+   *
+   * runLeague below is unchanged in behaviour: it is these three calls in a
+   * row, and every league the player is not in still goes through it. */
+  function beginLeague(world, leagueId) {
     const rng = world.rng;
     const clubs = world.clubsInLeague(leagueId);
     if (clubs.length < 4) return null;
@@ -77,47 +86,79 @@
     }
 
     const fixtures = buildFixtures(rng, clubs, single);
-    const halfway = Math.floor(fixtures.length / 2);
-
-    const playRange = (from, to) => {
-      for (let i = from; i < to; i++) {
-        const [home, away] = fixtures[i];
-        const hp = world.profile(home.id), ap = world.profile(away.id);
-        const derby = MG.match.isDerby(home.name, away.name);
-        const res = MG.match.simulateMatch(rng, hp, ap, { derby });
-        recordResult(table[home.id], res.homeGoals, res.awayGoals);
-        recordResult(table[away.id], res.awayGoals, res.homeGoals);
-        const hs = world.selection(home.id), as = world.selection(away.id);
-        MG.match.attributeGoals(rng, hs, res.homeGoals);
-        MG.match.attributeGoals(rng, as, res.awayGoals);
-        MG.match.recordAppearances(rng, hs);
-        MG.match.recordAppearances(rng, as);
-        world.recordManagerResult(home.id, res.homeGoals, res.awayGoals);
-        world.recordManagerResult(away.id, res.awayGoals, res.homeGoals);
-        /* The engine already knows WHY this result happened — how many chances
-         * each side deserved, whether it was an upset, whether it was a derby —
-         * and used to throw all of it away the moment the score was recorded.
-         * Keeping it for the managed club is what lets the season be explained
-         * back rather than just tallied. */
-        if (world.playerClubId === home.id || world.playerClubId === away.id) {
-          world.recordPlayerMatch({
-            round: i + 1, competition: league.name,
-            homeId: home.id, awayId: away.id, homeName: home.name, awayName: away.name,
-            hg: res.homeGoals, ag: res.awayGoals,
-            homeXG: res.homeXG, awayXG: res.awayXG,
-            upset: res.upset, derby,
-          });
-        }
-      }
+    return {
+      leagueId, leagueName: league.name, league, clubs, table, fixtures,
+      cursor: 0, midSeasonDone: false, fieldSize: clubs.length,
     };
+  }
 
-    playRange(0, halfway);
-    if (hooks && hooks.midSeason) hooks.midSeason(leagueId, sortTable(Object.values(table)), clubs);
-    playRange(halfway, fixtures.length);
+  /** Play a league state forward to (not including) fixture index `to`. */
+  function advanceLeague(world, st, to) {
+    const rng = world.rng;
+    const limit = Math.min(to, st.fixtures.length);
+    for (let i = st.cursor; i < limit; i++) {
+      const [home, away] = st.fixtures[i];
+      const hp = world.profile(home.id), ap = world.profile(away.id);
+      const derby = MG.match.isDerby(home.name, away.name);
+      const res = MG.match.simulateMatch(rng, hp, ap, { derby });
+      recordResult(st.table[home.id], res.homeGoals, res.awayGoals);
+      recordResult(st.table[away.id], res.awayGoals, res.homeGoals);
+      const hs = world.selection(home.id), as = world.selection(away.id);
+      MG.match.attributeGoals(rng, hs, res.homeGoals);
+      MG.match.attributeGoals(rng, as, res.awayGoals);
+      MG.match.recordAppearances(rng, hs);
+      MG.match.recordAppearances(rng, as);
+      world.recordManagerResult(home.id, res.homeGoals, res.awayGoals);
+      world.recordManagerResult(away.id, res.awayGoals, res.homeGoals);
+      /* The engine already knows WHY this result happened — how many chances
+       * each side deserved, whether it was an upset, whether it was a derby —
+       * and used to throw all of it away the moment the score was recorded.
+       * Keeping it for the managed club is what lets the season be explained
+       * back rather than just tallied. */
+      if (world.playerClubId === home.id || world.playerClubId === away.id) {
+        world.recordPlayerMatch({
+          round: i + 1, competition: st.league.name,
+          homeId: home.id, awayId: away.id, homeName: home.name, awayName: away.name,
+          hg: res.homeGoals, ag: res.awayGoals,
+          homeXG: res.homeXG, awayXG: res.awayXG,
+          upset: res.upset, derby,
+        });
+      }
+    }
+    st.cursor = limit;
+    return st;
+  }
 
-    const sorted = sortTable(Object.values(table));
+  /** The live table mid-season, positions filled in — what a paused season
+   *  actually looks like to the manager standing in it. */
+  function leagueStanding(st) {
+    const sorted = sortTable(Object.values(st.table));
     sorted.forEach((row, i) => { row.position = i + 1; });
-    return { leagueId, leagueName: league.name, table: sorted, fieldSize: clubs.length };
+    return sorted;
+  }
+
+  function finishLeague(st) {
+    const sorted = leagueStanding(st);
+    return { leagueId: st.leagueId, leagueName: st.leagueName, table: sorted, fieldSize: st.fieldSize };
+  }
+
+  /** Carry a part-played league through to the whistle, firing the winter
+   *  sacking hook on the way if it has not already gone off. */
+  function resumeLeague(world, st, hooks) {
+    const halfway = Math.floor(st.fixtures.length / 2);
+    if (!st.midSeasonDone) {
+      advanceLeague(world, st, halfway);
+      if (hooks && hooks.midSeason) hooks.midSeason(st.leagueId, leagueStanding(st), st.clubs);
+      st.midSeasonDone = true;
+    }
+    advanceLeague(world, st, st.fixtures.length);
+    return finishLeague(st);
+  }
+
+  function runLeague(world, leagueId, hooks) {
+    const st = beginLeague(world, leagueId);
+    if (!st) return null;
+    return resumeLeague(world, st, hooks);
   }
 
   /* ------------------------------- CUPS ------------------------------------
@@ -302,6 +343,7 @@
 
   MG.competitions = {
     newRow, recordResult, sortTable, buildFixtures, runLeague,
+    beginLeague, advanceLeague, resumeLeague, finishLeague, leagueStanding,
     runKnockout, roundLabel, ROUND_LABELS, CUP_PRIZE, EURO_PRIZE,
     EURO_LEAGUES, europeanQualifiers, runPromotionRelegation, runPlayoff,
   };

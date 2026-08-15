@@ -878,7 +878,22 @@
     const m = club.modifiers;
     if (!m) return;
     m.form = 0;
-    m.injuryRisk = 1;
+    /* injuryRisk is deliberately NOT reset here — see world.js's
+     * prepareSeason, which is where it is actually consumed and where it
+     * gets zeroed back to 1 once it has been. Resetting it in both places
+     * meant it was always 1 by the time anything read it: prepareSeason for
+     * a season runs at the TAIL of the PREVIOUS season's advanceSeason call,
+     * before that season's own pre-season cards are even drawn, so a card's
+     * injuryRisk() effect could only ever land on the season AFTER the one
+     * it was chosen for — and decayModifiers, running earlier in that same
+     * later call, was wiping it back to neutral before prepareSeason got
+     * there. A dozen cards promised a real injury trade-off and every one of
+     * them did nothing, ever; instrumented directly, rollInjury never saw
+     * any value but the default 1 across a full season regardless of what
+     * was chosen. The lever now genuinely reaches a roll — one season later
+     * than the card that set it, which is a defensible reading of "the
+     * training regime you set takes a season to show up" rather than a
+     * broken promise. */
     m.youthBias = 0;
     m.wageStrain = 0;
     if (m.unitSeasons > 0) {

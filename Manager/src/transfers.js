@@ -380,13 +380,18 @@
    * just left) has played a single minute for his new club, so undoing one is
    * a straight reverse of a transaction that has not yet had any other effect
    * on the world worth chasing down. */
-  function recordMovement(world, kind, player, otherClub, fee, wage, prevContract) {
+  function recordMovement(world, kind, player, otherClub, fee, wage, prevContract, pending) {
     if (!world.playerMovements) world.playerMovements = [];
     world.playerMovements.push({
       id: `${world.season}-${player.id}-${world.playerMovements.length}`,
       kind, playerId: player.id, otherClubId: otherClub ? otherClub.id : null,
       otherClubName: otherClub ? otherClub.name : "a free transfer",
       fee: round1(fee || 0), wage: round1(wage || 0), prevContract, resolved: false,
+      // Log line + fan reaction, held back until the card is actually
+      // resolved — see the note in transfers.js's completeDeal. Free
+      // signings (kind "free") have no seller involved so carry none of
+      // this; their own SIGN/VETO outcome text is enough.
+      pending: pending || null,
     });
   }
 
@@ -612,34 +617,35 @@
       // actually got against what it set out to get.
       if (MG.ai) MG.ai.noteSigning(buyer, player);
       const bestFee = fee;
-      if (world.playerClubId && (buyer.id === world.playerClubId || seller.id === world.playerClubId)) {
-        recordMovement(world, buyer.id === world.playerClubId ? "in" : "out", player, buyer.id === world.playerClubId ? seller : buyer, fee, wage, prevContract);
-      }
+      const involvesPlayerClub = world.playerClubId && (buyer.id === world.playerClubId || seller.id === world.playerClubId);
+      const warTag = meta && meta.contested ? ` — his agent (${meta.agentName}) took it to a bidding war` : "";
 
-        if (bestFee >= 12 || player.overall >= 80) {
-          news.push({
-            type: "transfer",
-            text: `${player.name} (${player.pos}, ${player.age}, ${player.overall}) joins ${buyer.name} from ${seller.name} for £${bestFee}m.`,
-            clubId: buyer.id, fee: bestFee,
-          });
-        }
-        /* A deal involving the managed club is ALWAYS reported, whatever the fee
-         * — the AI window used to be able to lift a player straight out of the
-         * player's squad and the only evidence was that he was no longer there.
-         * The supporters notice too: losing a good one hurts, signing one lifts
-         * the place. */
-        const warTag = meta && meta.contested ? ` — his agent (${meta.agentName}) took it to a bidding war` : "";
-        if (world.playerClubId) {
-          if (seller.id === world.playerClubId) {
-            news.push({ type: "transfer", text: `OUT — ${player.name} (${player.pos}, ${Math.round(player.overall)}) leaves for ${buyer.name} for £${bestFee}m${warTag}.`, clubId: seller.id });
-            const keyLoss = player.overall >= (seller.level || 60) + 2;
-            MG.clubs.fansReact(seller, keyLoss ? -5 : -1.5, keyLoss ? `${player.name} was sold` : `${player.name} was allowed to leave`);
-          } else if (buyer.id === world.playerClubId) {
-            news.push({ type: "transfer", text: `IN — ${player.name} (${player.pos}, ${player.age}, ${Math.round(player.overall)}) signs from ${seller.name} for £${bestFee}m${warTag}.`, clubId: buyer.id });
-            const marquee = player.overall >= (buyer.level || 60) + 2;
-            MG.clubs.fansReact(buyer, marquee ? 5 : 1.5, marquee ? `${player.name} was a statement signing` : `${player.name} came in`);
-          }
-        }
+      /* A deal involving the managed club goes through SIGN/VETO before the
+       * manager sees another screen — but the log feed is drawn on every
+       * frame regardless of stage, so if the "IN —"/"OUT —" line went into
+       * world.news here it would announce the deal as settled fact while the
+       * SIGN/VETO card was still asking whether to keep it. Deferred onto
+       * the movement record instead (see recordMovement below) and only
+       * reported — with the fan reaction that goes with it — once chooseMove
+       * actually resolves the card. A VETO then never happened in the log
+       * either, which is the whole point: nothing the manager sees is
+       * announced before he has actually decided it. */
+      if (involvesPlayerClub) {
+        const pendingText = seller.id === world.playerClubId
+          ? `OUT — ${player.name} (${player.pos}, ${Math.round(player.overall)}) leaves for ${buyer.name} for £${bestFee}m${warTag}.`
+          : `IN — ${player.name} (${player.pos}, ${player.age}, ${Math.round(player.overall)}) signs from ${seller.name} for £${bestFee}m${warTag}.`;
+        const keyImpact = seller.id === world.playerClubId
+          ? player.overall >= (seller.level || 60) + 2
+          : player.overall >= (buyer.level || 60) + 2;
+        recordMovement(world, buyer.id === world.playerClubId ? "in" : "out", player, buyer.id === world.playerClubId ? seller : buyer, fee, wage, prevContract,
+          { pendingText, fansClubId: seller.id === world.playerClubId ? seller.id : buyer.id, fansDelta: seller.id === world.playerClubId ? (keyImpact ? -5 : -1.5) : (keyImpact ? 5 : 1.5), fansReason: seller.id === world.playerClubId ? (keyImpact ? `${player.name} was sold` : `${player.name} was allowed to leave`) : (keyImpact ? `${player.name} was a statement signing` : `${player.name} came in`) });
+      } else if (bestFee >= 12 || player.overall >= 80) {
+        news.push({
+          type: "transfer",
+          text: `${player.name} (${player.pos}, ${player.age}, ${player.overall}) joins ${buyer.name} from ${seller.name} for £${bestFee}m.`,
+          clubId: buyer.id, fee: bestFee,
+        });
+      }
     }
 
     /* ---- the rounds: nominate, group, auction, repeat ---- */
@@ -888,8 +894,11 @@
          * anywhere — the transfer window was reporting itself properly and
          * three other doors into the squad were not. */
         if (club.id === world.playerClubId) {
-          news.push({ type: "transfer", text: `FREE — ${p.name} (${p.pos}, ${p.age}, ${Math.round(p.overall)}) signs on a free transfer.`, clubId: club.id });
-          recordMovement(world, "free", p, null, 0, p.contract.wage, { years: 0, wage: p.contract.wage });
+          // Deferred onto the movement, same as a paid signing — see the
+          // note in completeDeal above. Not reported here or it announces
+          // itself as done before the SIGN/VETO card ever shows.
+          recordMovement(world, "free", p, null, 0, p.contract.wage, { years: 0, wage: p.contract.wage },
+            { pendingText: `FREE — ${p.name} (${p.pos}, ${p.age}, ${Math.round(p.overall)}) signs on a free transfer.`, fansClubId: club.id, fansDelta: 1, fansReason: `${p.name} signed on a free transfer` });
         }
       }
     }

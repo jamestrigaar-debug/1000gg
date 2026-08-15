@@ -44,7 +44,7 @@
   /* ------------------------------- CONTEXT --------------------------------
    * Everything a card's req() and text() can ask about. Built fresh each time
    * a set of cards is drawn. */
-  function buildContext(world, club, manager, lastSeason) {
+  function buildContext(world, club, manager, lastSeason, early) {
     const squad = club.squad.slice().sort((a, b) => b.overall - a.overall);
     const league = MG.clubs.LEAGUES[club.leagueId];
     const board = club.board;
@@ -120,6 +120,28 @@
           .sort((a, b) => (b.potential - b.overall) - (a.potential - a.overall))
           .slice(0, 2);
       })(),
+
+      /* THE SEASON SO FAR, present only in the early-season window — the
+       * real table, the real form, the real injury list, a third of the way
+       * through (world.beginSeason). Every other window sees `early: null`,
+       * which is what every early-season card's req() checks first. */
+      early: early || null,
+      earlyPos: early ? early.position : null,
+      earlyPlayed: early ? early.played : 0,
+      earlyPts: early ? early.pts : 0,
+      earlyPpg: early ? early.ppg : 0,
+      // Positive = above the brief, negative = below it.
+      earlyVsTarget: early ? early.vsTarget : 0,
+      earlyStruggling: !!(early && early.vsTarget <= -4),
+      earlyFlying: !!(early && early.vsTarget >= 4),
+      earlyInRelegation: !!(early && early.relegationZone),
+      earlyInPromotion: !!(early && early.promotionRace),
+      earlyInjured: early ? early.injured : 0,
+      earlyScorer: early ? early.topScorer : null,
+      earlyGoalsFor: early ? early.gf : 0,
+      earlyGoalsAgainst: early ? early.ga : 0,
+      earlyLeaky: !!(early && early.played && early.ga / early.played > 1.7),
+      earlyBlunt: !!(early && early.played && early.gf / early.played < 0.9),
     };
   }
 
@@ -466,6 +488,34 @@
           fx: (api) => { const s = api.sign({ quality: "prospect", maxFee: 4 }); api.youth(0.05); return s ? `${s.player.name} (${s.player.age}, potential ${Math.round(s.player.potential)}) joins for ${api.money(s.fee)}. A punt worth taking at that price.` : `The prospects you liked cost more than you had. Nothing doing.`; } },
         { label: "Spend nothing — build from within", detail: "Trust the squad and the academy.",
           fx: (api) => { api.youth(0.06); api.form(0.5); return `You keep the money in your pocket. The younger players get the minutes a signing would have taken.`; } },
+      ],
+    },
+    {
+      /* PRE2 — "THE WINDOW" — turned out to have a hole in exactly the
+       * situation it exists to cover: pre_marquee needs budget>=8,
+       * pre_hole needs >=4, pre_bargain needs >=0.5, pre_sell_star needs a
+       * saleable star, pre_veteran needs an ageing player, pre_academy_promote
+       * needs a ready kid, pre_owner_vanity needs an Aggressive/Chaotic
+       * board. A skint, Balanced-board club with no veteran and no ready
+       * prospect — which is to say a club that most needs a transfer-window
+       * decision — passed every req and the window could draw NOTHING,
+       * measured directly at 3 empty windows in 20 simulated seasons for one
+       * mid-table career. This card has no req at all, so THE WINDOW can
+       * never come up with literally nothing to ask. */
+      id: "pre_broke", category: "TRANSFERS", weight: 5,
+      req: (c) => c.budget < 0.5,
+      text: (c) => `There is no transfer budget worth the name — ${fmt(c.budget)}, and the board are not finding any more. Whatever this window is, it has to be free.`,
+      choices: (c) => [
+        { label: "Trust the academy completely", detail: "Every gap gets filled from within, or not at all.",
+          fx: (api) => { api.youth(0.14); api.confidence(2); api.facilities({ youth: 2 }); return `You tell the board the kids will carry the squad this year. It costs nothing, and the pressure moves onto the academy.`; } },
+        { label: "Go looking on the free-agent list personally", detail: "No fee, whoever is actually available.",
+          fx: (api) => {
+            const s = api.sign({ quality: "prospect", maxFee: 0.05 });
+            return s ? `${s.player.name} (${s.player.age}) signs for nothing — a free transfer is still a transfer.`
+              : `You go through the free-agent list yourself and find nobody worth a squad number.`;
+          } },
+        { label: "Ask the board to sell before you buy", detail: "Fund the window by shrinking the squad first.",
+          fx: (api) => { api.confidence(-1); api.budget(api.club.finances.revenue * 0.05); return `The board agree to release a little cash against a promise to sell — a small window, bought with a bigger one owed.`; } },
       ],
     },
     {
@@ -1078,6 +1128,194 @@
     },
   ];
 
+  /* --------------------------- EARLY-SEASON CARDS --------------------------
+   * The window that could not exist while a season was simulated in one
+   * pass. A third of the campaign is played (world.beginSeason), the table
+   * is real, and every card below reads it — so these are the only decisions
+   * in the game made in REACTION to results rather than in anticipation of
+   * them, and every effect lands on the fixtures that have not happened yet.
+   *
+   * Every card here gates on `c.early` first: outside the early window the
+   * snapshot is null and none of them can be drawn. */
+  const EARLYSEASON = [
+    {
+      id: "early_crisis", category: "BOARDROOM", weight: 12,
+      req: (c) => c.early && (c.earlyInRelegation || c.earlyVsTarget <= -5),
+      text: (c) => `${c.earlyPlayed} games in, ${c.clubName} sit ${ordinal(c.earlyPos)} on ${c.earlyPts} points. The board asked for ${ordinal(c.target)}. There is a meeting, and it is not a friendly one.`,
+      choices: () => [
+        { label: "Take responsibility publicly", detail: "Shield the players. Wear it yourself.",
+          fx: (api) => { api.confidence(-3); api.form(2.5); api.fans(3, "the manager stood in front of the players"); return `You take the bullet in front of the cameras. The dressing room notices, and plays like it.`; } },
+        { label: "Call the squad out", detail: "Name the problem. Risk the room.",
+          fx: (api) => { api.confidence(2); api.form(api.rng.chance(0.5) ? 3 : -3); return `You tell the press exactly what you think of the performances. It will either sting them into life or break something.`; } },
+        { label: "Change the system mid-season", detail: "Rip it up and start again, in October.",
+          fx: (api) => {
+            const alt = Object.keys(MG.managers.TACTICS).filter((t) => t !== api.manager.tactic);
+            const pick = api.rng.pick(alt);
+            api.tactic(pick); api.form(-1.5); api.unit({ defence: 3 }, 1);
+            return `${api.club.name} switch to ${pick} with the season already running. Solider at the back, and a fortnight of confusion to get there.`;
+          } },
+      ],
+    },
+    {
+      id: "early_flying", category: "BOARDROOM", weight: 11,
+      req: (c) => c.early && (c.earlyFlying || c.earlyInPromotion),
+      text: (c) => `Nobody expected this. ${c.earlyPlayed} games, ${c.earlyPts} points, ${ordinal(c.earlyPos)} in the ${c.leagueName}. The question in the boardroom has changed from "will we survive" to "how far can this go".`,
+      choices: () => [
+        { label: "Tell them this is real — ask for backing", detail: "Cash in the goodwill now, while it is hot.",
+          fx: (api) => { api.budget(api.club.finances.revenue * 0.12); api.confidence(-2); return `The board release money mid-season on the strength of a start. If it fades, that conversation will be remembered.`; } },
+        { label: "Play it down and protect the players", detail: "No promises, no pressure.",
+          fx: (api) => { api.form(1.5); api.confidence(2); return `You refuse to be drawn. The squad go about their work without a bandwagon on their backs.`; } },
+        { label: "Rotate hard and target the cup too", detail: "Two competitions, one squad.",
+          fx: (api) => { api.form(-1); api.injuryRisk(0.85); api.fans(4, "the club went after everything"); return `You start sharing minutes around. Fresher legs in the spring, a little less certainty on Saturdays.`; } },
+      ],
+    },
+    {
+      id: "early_injuries", category: "MEDICAL", weight: 11,
+      req: (c) => c.early && c.earlyInjured >= 2,
+      text: (c) => `The treatment room has ${c.earlyInjured} in it${c.early.injuredNames.length ? ` — ${c.early.injuredNames.join(", ")}` : ""}. It is not yet a crisis. It is close enough to one to need a decision.`,
+      choices: () => [
+        { label: "Ease off in training until they are back", detail: "Protect the bodies, blunt the edge.",
+          fx: (api) => { api.injuryRisk(0.7); api.form(-1.5); return `The intensity comes down. Fewer setbacks, and a side that looks half a yard short.`; } },
+        { label: "Push through with the fit players", detail: "Same standards. Same demands.",
+          fx: (api) => { api.injuryRisk(1.25); api.form(2); return `Nothing changes. The eleven who are standing are asked for more, and give it — for now.`; } },
+        { label: "Bring in emergency cover", detail: "A free agent, today.",
+          fx: (api) => {
+            const s = api.sign({ quality: "solid", maxFee: 0.6 });
+            return s ? `${s.player.name} (${s.player.pos}, ${Math.round(s.player.overall)}) signs on a short deal to plug the gap.`
+              : `Nobody worth having was available at short notice. You make do.`;
+          } },
+      ],
+    },
+    {
+      id: "early_leaky", category: "TACTICS", weight: 10,
+      req: (c) => c.early && c.earlyLeaky,
+      text: (c) => `${c.earlyGoalsAgainst} conceded in ${c.earlyPlayed}. Whatever the plan was at the back, it is not happening on Saturdays.`,
+      choices: () => [
+        { label: "Drop the line and sit deeper", detail: "Concede territory, stop conceding goals.",
+          fx: (api) => { api.unit({ defence: 4, attack: -2 }, 1); return `The line drops fifteen yards. Harder to play through, and a longer walk to the other goal.`; } },
+        { label: "Drill the back four every day", detail: "Repetition until it is instinct.",
+          fx: (api) => { api.unit({ defence: 3 }, 1); api.form(-0.5); api.train("heading", 1); return `Shape work, every session. It sharpens up; the legs feel it.`; } },
+        { label: "Outscore the problem", detail: "Accept the leak. Open the taps.",
+          fx: (api) => { api.unit({ attack: 4, defence: -2 }, 1); api.fans(3, "the football got a lot more entertaining"); return `You go the other way entirely. Nobody is going to be bored watching this.`; } },
+      ],
+    },
+    {
+      id: "early_blunt", category: "TACTICS", weight: 10,
+      req: (c) => c.early && c.earlyBlunt,
+      text: (c) => `${c.earlyGoalsFor} goals in ${c.earlyPlayed} games. The chances are being made${c.earlyScorer ? `, and ${c.earlyScorer.name} has ${c.earlyScorer.goals}` : ""} — the finishing is the problem.`,
+      choices: () => [
+        { label: "Finishing drills, every session", detail: "Repetition in front of goal.",
+          fx: (api) => { api.train("rightFoot", 1); api.train("leftFoot", 1); api.unit({ attack: 2 }, 1); return `Hours in front of goal. The shooting looks better; whether it holds up at 2-2 in November is another matter.`; } },
+        { label: "Commit more bodies forward", detail: "More in the box, more exposed behind.",
+          fx: (api) => { api.unit({ attack: 4, defence: -3 }, 1); return `Full-backs high, midfield pushed on. The box is busier and so is your own.`; } },
+        { label: "Go and buy a finisher in January", detail: "Spend now, ask questions later.",
+          fx: (api) => {
+            const s = api.sign({ pos: "FW", quality: "solid" });
+            return s ? `${s.player.name} (${Math.round(s.player.overall)}) arrives from ${s.from} for ${api.money(s.fee)} to put the ball in the net.`
+              : `Nothing available that would actually improve you. The problem stays where it is.`;
+          } },
+      ],
+    },
+    {
+      id: "early_hot_striker", category: "DRESSING ROOM", weight: 9,
+      req: (c) => c.early && c.earlyScorer && c.earlyScorer.goals >= Math.max(4, Math.round(c.earlyPlayed * 0.5)),
+      text: (c) => `${c.earlyScorer.name} has ${c.earlyScorer.goals} in ${c.earlyPlayed} games and the phone has started ringing. His agent would like a conversation about terms.`,
+      choices: (c) => [
+        { label: "Give him the contract he wants", detail: "Pay him. Keep him.",
+          fx: (api) => { api.wage(-6); api.form(2); api.fans(4, `${api.ctx.earlyScorer.name} committed his future`); return `He signs. It costs, and the ground knows exactly what it means.`; } },
+        { label: "Tell him to keep scoring and talk in May", detail: "No panic. No precedent.",
+          fx: (api) => { api.form(-1); api.confidence(2); return `You hold the line on wages. The board approve; his agent does not, and will be back.`; } },
+        { label: "Build the side around him now", detail: "Make him the point of everything.",
+          fx: (api) => { api.unit({ attack: 4, midfield: -1 }, 1); api.form(1); return `Everything runs through him from here. If he stays fit, it works.`; } },
+      ],
+    },
+    {
+      id: "early_kid_forcing", category: "YOUTH", weight: 9,
+      req: (c) => c.early && c.academyReady.length > 0,
+      /* req() and render() are not the same instant — a context is built,
+       * then re-rendered after other effects have run, and by then the
+       * academy list it was built from can be empty. Every read of it here
+       * is guarded rather than assuming the boy is still on it. */
+      text: (c) => {
+        const kid = c.academyReady[0];
+        if (!kid) return `A boy in the reserves has been unplayable. The coaches want him involved now, not next summer.`;
+        return `${kid.name} (${kid.pos}, ${kid.age}) has been unplayable in the reserves. The coaches want him involved now, not next summer.`;
+      },
+      choices: (c) => [
+        { label: c.academyReady[0] ? `Throw ${c.academyReady[0].name.split(" ").slice(-1)[0]} in` : "Throw him in", detail: "Learn on the pitch, in real games.",
+          fx: (api) => {
+            const kid = api.ctx.academyReady[0];
+            if (!kid) return `By the time you moved, he had already been promoted.`;
+            const p = MG.youth.promote(api.club, kid.id, api.world.season);
+            api.youth(0.1); api.fans(3, "one of their own came through");
+            return p ? `${p.name} goes straight into the squad. Some of it will be rough; all of it will be useful.`
+              : `He was gone from the academy list before you got to him.`;
+          } },
+        { label: "Loan him out for real minutes", detail: "Games elsewhere beat a bench here.",
+          fx: (api) => { api.youth(0.06); api.confidence(1); return `He goes out to play every week somewhere smaller. He comes back a footballer rather than a prospect.`; } },
+        { label: "Leave him where he is", detail: "Not yet. Protect him.",
+          fx: (api) => { api.form(0.5); return `He stays in the reserves. The coaches disagree, quietly and often.`; } },
+      ],
+    },
+    {
+      id: "early_fans_turning", category: "SUPPORTERS", weight: 9,
+      req: (c) => c.early && c.fans <= 42 && c.earlyVsTarget <= -2,
+      text: (c) => `${c.earlyPlayed} games and the mood in the ground is ${c.fanMood.toLowerCase()}. It was audible again on Saturday.`,
+      choices: () => [
+        { label: "Go and speak to the supporters' groups", detail: "Face them. Explain the plan.",
+          fx: (api) => { api.fans(8, "the manager fronted up to the supporters"); api.confidence(-1); return `Two hours in a function room taking it on the chin. It buys you real credit.`; } },
+        { label: "Give the academy kids a run", detail: "A crowd forgives its own.",
+          fx: (api) => { api.youth(0.12); api.fans(6, "the kids got a chance"); api.form(-1.5); return `Three academy graduates start on Saturday. The ground lifts; the results might not, yet.`; } },
+        { label: "Ignore it and focus on the football", detail: "Noise is noise.",
+          fx: (api) => { api.fans(-4, "the manager dismissed the supporters' concerns"); api.form(1); return `You say nothing and work. The training ground is calmer than the terraces.`; } },
+      ],
+    },
+    {
+      id: "early_rival_circling", category: "TRANSFERS", weight: 8,
+      req: (c) => c.early && c.star && c.star.overall >= 70,
+      text: (c) => `A bigger club has been watching ${c.star.name} all autumn. A formal approach is coming in January, and everybody in the building knows it.`,
+      choices: (c) => [
+        { label: "Tell them he is not for sale, at any price", detail: "Draw the line publicly.",
+          fx: (api) => { api.form(2); api.confidence(-2); api.fans(5, "the club stood firm over its best player"); return `A flat, public no. The player is flattered, the squad is reassured, the board is nervous about the number you turned down.`; } },
+        { label: "Quietly agree a summer sale", detail: "He stays until May, then goes.",
+          fx: (api) => { api.confidence(3); api.form(-1); return `A deal is shaken on for the summer. He plays out the season knowing, which shows on some Saturdays.`; } },
+        { label: "Let him go in January if the money is right", detail: "Take the cash and reshape mid-season.",
+          fx: (api) => {
+            const sold = api.sell("star");
+            if (!sold) { api.confidence(-1); return `No offer materialised at the number you wanted. He stays.`; }
+            api.budget(sold.fee * 0.6); api.fans(-8, `${sold.player.name} was sold mid-season`);
+            return `${sold.player.name} leaves for ${api.money(sold.fee)} with the season half-run. The stands are furious; the accounts are not.`;
+          } },
+      ],
+    },
+    {
+      id: "early_fixture_pileup", category: "MEDICAL", weight: 8,
+      req: (c) => c.early && c.earlyPlayed >= 8,
+      text: (c) => `A congested run — cup replays and midweeks stacked on top of the league. The same eleven cannot start all of them.`,
+      choices: () => [
+        { label: "Rotate properly and trust the squad", detail: "Share the load. Live with the drop-off.",
+          fx: (api) => { api.injuryRisk(0.78); api.form(-1); api.youth(0.05); return `Wholesale changes in the cup. Legs preserved, one or two results dropped.`; } },
+        { label: "Play the strongest side every time", detail: "Win now. Pay later.",
+          fx: (api) => { api.injuryRisk(1.3); api.form(2.5); return `The best eleven start everything. You will find out in March whether that was clever.`; } },
+        { label: "Prioritise the league, throw the cup", detail: "One target, unapologetically.",
+          fx: (api) => { api.form(1.5); api.fans(-4, "the cup was thrown away"); api.injuryRisk(0.9); return `A reserve side goes out and loses. Nobody in the boardroom minds; plenty in the ground do.`; } },
+      ],
+    },
+    {
+      id: "early_board_check", category: "BOARDROOM", weight: 7,
+      req: (c) => c.early && Math.abs(c.earlyVsTarget) < 4,
+      text: (c) => `${ordinal(c.earlyPos)} after ${c.earlyPlayed}, against a brief of ${ordinal(c.target)}. Exactly where you are supposed to be, which is its own kind of question: is this the ceiling, or the floor?`,
+      choices: () => [
+        { label: "Push for more — go on the front foot", detail: "Risk the safe season on a better one.",
+          fx: (api) => { api.unit({ attack: 3, defence: -2 }, 1); api.confidence(-1); return `You turn the dial forward. Mid-table is no longer the likeliest outcome, in either direction.`; } },
+        { label: "Consolidate and bank the season", detail: "Deliver what was asked. Nothing more.",
+          fx: (api) => { api.unit({ defence: 2 }, 1); api.confidence(4); api.fans(-2, "the football turned cautious"); return `You settle it down. The brief gets met, and nobody remembers it.`; } },
+        { label: "Use the second half to blood youngsters", detail: "Spend a safe season on next season.",
+          fx: (api) => { api.youth(0.15); api.form(-1); api.facilities({ youth: 3 }); return `Minutes start going to the under-21s. This year costs a little; next year might not.`; } },
+      ],
+    },
+  ];
+
   /* ------------------------------ SELECTION -------------------------------
    * Weighted draw with hard requirement gates and no repeats inside a set.
    *
@@ -1090,16 +1328,24 @@
    * weight-5 one, it is simply no longer guaranteed. */
   function pick(pool, ctx, rng, count, recentIds) {
     const recent = new Set(recentIds || []);
-    const eligible = pool.filter((d) => {
-      if (recent.has(d.id)) return false;
-      if (d.req && !safe(() => d.req(ctx), false)) return false;
-      return true;
-    });
+    /* Req-eligible first; "seen recently" is a PREFERENCE applied below, not
+     * a hard filter here. It used to be a hard filter, which was fine for
+     * the old two big heaps (50+ cards each) but broke outright once the
+     * five-window split gave some windows a pool as small as 7 or 8 —
+     * against a 20-id shared recency memory spanning all five windows, a
+     * small pool's own cards could ALL be "recent" at once, and the window
+     * would draw nothing that season despite genuinely having eligible
+     * cards. Measured directly: THE WINDOW (7-8 cards) came up completely
+     * empty 3-4 times in 20 simulated seasons. A repeated card is a much
+     * smaller cost than a window with nothing to ask at all. */
+    const eligible = pool.filter((d) => !d.req || safe(() => d.req(ctx), false));
     const chosen = [];
     const used = new Set();
     for (let i = 0; i < (count || 2); i++) {
-      const field = eligible.filter((d) => !used.has(d.id) && !chosen.some((c) => c.category === d.category));
-      const source = field.length ? field : eligible.filter((d) => !used.has(d.id));
+      const notUsed = eligible.filter((d) => !used.has(d.id));
+      const fresh = notUsed.filter((d) => !recent.has(d.id));
+      const field = fresh.filter((d) => !chosen.some((c) => c.category === d.category));
+      const source = field.length ? field : fresh.length ? fresh : notUsed;
       if (!source.length) break;
       const d = rng.weighted(source.map((x) => ({ item: x, weight: (x.weight || 5) * rng.between(0.65, 1.35) })));
       if (!d) break;
@@ -1153,5 +1399,84 @@
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
   }
 
-  MG.decisions = { PRESEASON, ENDSEASON, buildContext, pick, present, apply, makeApi };
+  /* ============================== THE PHASES ================================
+   * The decision layer is the game, so it is no longer two undifferentiated
+   * heaps of cards fired either side of the simulation. Five named windows,
+   * each asking a different KIND of question, each able to carry more than
+   * one decision:
+   *
+   *   PRE1   THE GROUNDWORK   before the market opens. How you will play,
+   *                           how you will train, who leads the room, what
+   *                           you promise the board. No money moves here.
+   *   PRE2   THE WINDOW       the market itself, once the shape of the side
+   *                           is settled: who comes in, who goes, what the
+   *                           budget is actually for.
+   *   EARLY  THE OPENING WEEKS  a third of the way in, with real results on
+   *                           the board. The only window where the decision
+   *                           is a reaction rather than a plan — and the one
+   *                           that needed the season simulation split in
+   *                           half to exist at all (see world.beginSeason).
+   *   POST1  THE RECKONING    the immediate aftermath: the boardroom, the
+   *                           stands, the press, your own future.
+   *   POST2  THE REBUILD      what you do about it: squad surgery, contracts,
+   *                           the academy, next year's plan.
+   *
+   * Assignment lives here as one table rather than a `phase` key typed into
+   * all fifty-odd card literals — it keeps the cards themselves readable, and
+   * moving a card between windows is a one-line edit instead of a hunt. */
+  const PHASE_OF = {
+    /* ---- PRE1: the groundwork ---- */
+    pre_system: "PRE1", pre_shape: "PRE1", pre_setpiece: "PRE1",
+    pre_fitness: "PRE1", pre_medical_staff: "PRE1",
+    pre_captain: "PRE1", pre_discipline: "PRE1", pre_gametime: "PRE1",
+    pre_academy: "PRE1", pre_facilities: "PRE1",
+    pre_promise: "PRE1", pre_wages: "PRE1",
+    pre_tour: "PRE1", pre_sponsor: "PRE1",
+    /* ---- PRE2: the window ---- */
+    pre_marquee: "PRE2", pre_hole: "PRE2", pre_sell_star: "PRE2",
+    pre_veteran: "PRE2", pre_bargain: "PRE2", pre_broke: "PRE2",
+    pre_academy_promote: "PRE2", pre_owner_vanity: "PRE2",
+    /* ---- POST1: the reckoning ---- */
+    end_review: "POST1", end_ultimatum: "POST1", end_owner_change: "POST1",
+    end_gamble_promotion: "POST1", end_europe_prep: "POST1", end_stadium: "POST1",
+    end_media: "POST1", end_offer: "POST1", end_pundit_war: "POST1",
+    end_fan_revolt: "POST1", end_fan_darling: "POST1",
+    end_ticket_prices: "POST1", end_stadium_atmosphere: "POST1",
+    end_bustup: "POST1", end_captain_crisis: "POST1",
+    end_windfall: "POST1", end_debt: "POST1",
+    /* ---- POST2: the rebuild ---- */
+    end_bid: "POST2", end_rebuild: "POST2", end_contract_rebel: "POST2",
+    end_free_agent: "POST2", end_agent_terms: "POST2", end_scouting: "POST2",
+    end_prospect: "POST2", end_academy_sale: "POST2", end_academy_chief: "POST2",
+    end_tactical_review: "POST2", end_synergy_review: "POST2",
+    end_scouting_investment: "POST2", end_data_department: "POST2",
+    end_injury_crisis: "POST2", end_unsettled: "POST2",
+    end_bloated_squad: "POST2", end_veteran_farewell: "POST2", end_loyalty: "POST2",
+  };
+
+  const PHASES = {
+    PRE1: { key: "PRE1", label: "PRE-SEASON · THE GROUNDWORK", cards: 2 },
+    PRE2: { key: "PRE2", label: "PRE-SEASON · THE WINDOW", cards: 2 },
+    EARLY: { key: "EARLY", label: "THE OPENING WEEKS", cards: 2 },
+    POST1: { key: "POST1", label: "END OF SEASON · THE RECKONING", cards: 2 },
+    POST2: { key: "POST2", label: "END OF SEASON · THE REBUILD", cards: 2 },
+  };
+  const PHASE_KEYS = Object.keys(PHASES);
+
+  /* Every card that has not been assigned a window explicitly still has to
+   * live somewhere, or adding one to PRESEASON/ENDSEASON and forgetting the
+   * table below would silently delete it from the game. Anything unlisted
+   * falls back to the second window of its own half. */
+  function poolFor(phase) {
+    if (phase === "EARLY") return EARLYSEASON;
+    const source = (phase === "PRE1" || phase === "PRE2") ? PRESEASON : ENDSEASON;
+    const fallback = (phase === "PRE1" || phase === "PRE2") ? "PRE2" : "POST2";
+    return source.filter((d) => (PHASE_OF[d.id] || fallback) === phase);
+  }
+
+  MG.decisions = {
+    PRESEASON, ENDSEASON, EARLYSEASON,
+    PHASES, PHASE_KEYS, PHASE_OF, poolFor,
+    buildContext, pick, present, apply, makeApi,
+  };
 })(typeof globalThis !== "undefined" ? globalThis : this);

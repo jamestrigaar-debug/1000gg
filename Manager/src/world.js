@@ -67,6 +67,18 @@
     MG.managers.resetIds();
     if (MG.network) MG.network.resetCache();
 
+    // Real nationalities for ~2,000 players (Premier League plus the five
+    // foreign-database leagues — see src/data_foreign.js), sourced from an
+    // actual squad report rather than the league-weighted roll every
+    // uncovered player still falls back to. This layers ON TOP OF names.js's
+    // own REAL_NATIONALITY table (530 hand-checked PL entries, loaded at
+    // module init) — where the two disagree, this newer, wider report wins,
+    // since it is the more recent authoritative source. Anything neither
+    // table covers still falls back to the league-weighted roll, unchanged.
+    if (MG.dataForeign && MG.dataForeign.NATIONALITY) {
+      MG.names.setNationalities(MG.dataForeign.NATIONALITY);
+    }
+
     const world = {
       seed,
       rng: MG.createRng(seed, "world"),
@@ -108,6 +120,32 @@
         MG.players.recordMove(player, club.name, world.season);
         return player;
       });
+      realSquads.push(club);
+    }
+
+    /* ---- squads: real LaLiga/Bundesliga/SerieA/Saudi/MLS data next ----
+     * src/data_foreign.js carries real names, positions, nationalities and
+     * EA-FC-26-scale attributes for the clubs in those five leagues a squad
+     * report actually covered (see MG.players.fromForeign for the
+     * conversion). A club with no entry there still falls through to the
+     * generated squad below, exactly as it always did. */
+    for (const club of world.clubs) {
+      if (club.squad.length) continue;
+      const raw = MG.dataForeign && MG.dataForeign.SQUADS[club.name];
+      if (!raw || !raw.length) continue;
+      club.squad = raw.map((p) => {
+        const player = MG.players.fromForeign(world.rng, p, club.leagueId);
+        player.clubId = club.id;
+        MG.players.recordMove(player, club.name, world.season);
+        return player;
+      });
+      // The report is deliberately a CORE first-team squad, not a full 26-man
+      // registered list — some clubs list as few as four players, several
+      // list no goalkeeper at all. Filled out to the same shape every other
+      // squad in the world has, exactly as a club with no real data at all
+      // gets built (generateSquad below), so relegation, rotation and squad
+      // audits never see a real club fielding a nine-man squad.
+      topUpForeignSquad(world.rng, club);
       realSquads.push(club);
     }
 
@@ -249,6 +287,33 @@
     return squad;
   }
 
+  /** Tops up a real-data squad (foreign database) to every position's full
+   *  complement — see the call site above for why this is needed: the source
+   *  report is a first-team core, not a registered 26-man squad. Same
+   *  per-slot shape as generateSquad (starters near the club's level, depth
+   *  below it) so a topped-up club reads no differently to one built
+   *  entirely from scratch. club.level is not set yet at this point in
+   *  createWorld, so computed directly here rather than read off the club. */
+  function topUpForeignSquad(rng, club) {
+    const level = MG.clubs.playerLevelFor(club);
+    const have = {};
+    for (const p of club.squad) have[p.pos] = (have[p.pos] || 0) + 1;
+    for (const pos of MG.players.POSITION_KEYS) {
+      const def = MG.players.POSITIONS[pos];
+      const already = have[pos] || 0;
+      for (let i = already; i < def.need; i++) {
+        const drop = i < def.starters ? rng.between(-1, 3) : rng.between(3, 11);
+        const age = i < def.starters ? rng.int(21, 32) : rng.chance(0.45) ? rng.int(17, 21) : rng.int(22, 34);
+        const p = MG.players.generate(rng, {
+          league: club.leagueId, pos, age, target: level - drop, spread: 3.2,
+        });
+        p.clubId = club.id;
+        MG.players.recordMove(p, club.name, 1);
+        club.squad.push(p);
+      }
+    }
+  }
+
   /* Real names, ages and positions for 63 clubs outside the Premier League —
    * see src/data_intl.js. Unlike the PL database this carries no attribute
    * ratings, so it never replaces a squad, only relabels the best-fitting
@@ -371,11 +436,32 @@
         if (k === String(clubId) || k.startsWith(`${clubId}|`)) delete world._profiles[k];
       }
     };
+    /* A selection is only valid for the squad it was built from.
+     *
+     * It used to be cached until prepareSeason wiped the lot, which was fine
+     * while squads only ever changed in the summer — after the last ball of
+     * the season and before the next selection was built. The human club
+     * breaks that assumption every single year: prepareSeason builds its
+     * selection at the END of the previous advanceSeason, and the transfer
+     * window, the pre-season cards and now the early-season window all
+     * change the squad AFTER that. The consequence was silent and severe —
+     * a marquee signing was not in the cached selection, so he played no
+     * games and scored no goals all season, while his OLD club's cached
+     * selection still listed him and went on crediting him with the
+     * appearances and goals from ITS fixtures. Measured on a test save:
+     * Salah signed for Manchester City, finished the season on 0 apps for
+     * City and 32 apps / 18 goals generated by Liverpool's matches.
+     *
+     * Keying on the squad's own fingerprint fixes it for every path at once
+     * — a signing, a sale, a youth promotion, a vetoed transfer — without
+     * needing every caller to remember to invalidate. */
     world.selection = (clubId) => {
+      const club = world.clubIndex[clubId];
+      const stamp = MG.tactics ? MG.tactics.squadStamp(club) : club.squad.length;
       let s = world._selections[clubId];
-      if (!s) {
-        const club = world.clubIndex[clubId];
+      if (!s || s.stamp !== stamp) {
         s = world._selections[clubId] = MG.match.buildSelection(club, world.managerById(club.managerId), world.rng);
+        s.stamp = stamp;
       }
       return s;
     };
@@ -406,6 +492,7 @@
 
     world.prepareSeason = () => prepareSeason(world);
     world.advanceSeason = () => advanceSeason(world);
+    world.beginSeason = () => beginSeason(world);
     world.leagueTable = (leagueId) => {
       const last = world.history[world.history.length - 1];
       return last && last.leagues[leagueId] ? last.leagues[leagueId].table : null;
@@ -449,6 +536,9 @@
        * actually field. This is the one place the squad you planned and the
        * squad you get come apart, and it is what makes depth worth paying for. */
       const risk = (club.modifiers && club.modifiers.injuryRisk) || 1;
+      // Consumed here, not in decayModifiers — see clubs.js's decayModifiers
+      // for why resetting it in both places made the whole lever dead.
+      if (club.modifiers) club.modifiers.injuryRisk = 1;
       for (const p of club.squad) {
         MG.tactics.initMorale(p);
         const lastShare = p.season ? p.season.minutesShare || 0 : 0;
@@ -494,6 +584,67 @@
   }
 
   /* ------------------------------ THE SEASON ------------------------------ */
+  /* ---------------------- THE EARLY-SEASON CHECKPOINT ----------------------
+   * Plays the managed club's OWN division up to roughly a third of the way
+   * through, then stops and hands back what actually happened. Everything
+   * else in the world — the other nine divisions, the cups, Europe — is
+   * untouched and runs later, inside advanceSeason, exactly as before.
+   *
+   * This is what makes an early-season decision a real decision rather than
+   * a dressed-up pre-season one: the manager is looking at genuine results,
+   * a genuine table and a genuine injury list, and whatever he changes is
+   * played out over the fixtures that have not happened yet.
+   *
+   * Returns null when there is no human club (every test harness, and the
+   * realism benchmark) — in which case nothing about the season changes at
+   * all, which is exactly why the benchmark is unaffected by any of this. */
+  const EARLY_SEASON_SHARE = 0.32;
+
+  function beginSeason(world) {
+    if (!world.playerClubId) return null;
+    if (world._partialLeague) return world._earlySnapshot || null;   // already begun
+    const club = world.clubById(world.playerClubId);
+    if (!club) return null;
+    const st = MG.competitions.beginLeague(world, club.leagueId);
+    if (!st) return null;
+    const upTo = Math.max(1, Math.floor(st.fixtures.length * EARLY_SEASON_SHARE));
+    MG.competitions.advanceLeague(world, st, upTo);
+    world._partialLeague = st;
+
+    const standing = MG.competitions.leagueStanding(st);
+    const row = standing.find((r) => r.clubId === club.id) || null;
+    const targets = club.board.targets;
+    const injured = club.squad.filter((p) => (p.season.injured || 0) >= 0.25);
+    const scorer = club.squad.slice().sort((a, b) => (b.season.goals || 0) - (a.season.goals || 0))[0] || null;
+    const matches = (world.playerMatches || []).slice();
+    // Form over the opening weeks, as points per game against what the
+    // division's own pace looks like.
+    const ppg = row && row.played ? row.pts / row.played : 0;
+    const snapshot = {
+      leagueId: club.leagueId,
+      leagueName: st.leagueName,
+      fieldSize: st.fieldSize,
+      played: row ? row.played : 0,
+      position: row ? row.position : null,
+      pts: row ? row.pts : 0,
+      won: row ? row.won : 0, drawn: row ? row.drawn : 0, lost: row ? row.lost : 0,
+      gf: row ? row.gf : 0, ga: row ? row.ga : 0,
+      ppg: round1(ppg),
+      target: targets ? targets.position : null,
+      // Positive = doing better than the brief asked for.
+      vsTarget: (targets && row) ? targets.position - row.position : 0,
+      relegationZone: row ? row.position > st.fieldSize - 3 : false,
+      promotionRace: row ? row.position <= Math.max(2, Math.round(st.fieldSize * 0.12)) : false,
+      injured: injured.length,
+      injuredNames: injured.slice(0, 3).map((p) => p.name),
+      topScorer: scorer && scorer.season.goals ? { name: scorer.name, goals: scorer.season.goals, id: scorer.id } : null,
+      matches,
+      standing,
+    };
+    world._earlySnapshot = snapshot;
+    return snapshot;
+  }
+
   function advanceSeason(world) {
     const rng = world.rng;
     const seasonNews = [];
@@ -532,9 +683,22 @@
     };
 
     for (const leagueId of MG.clubs.LEAGUE_KEYS) {
-      const res = MG.competitions.runLeague(world, leagueId, { midSeason });
+      /* The player's own division may already be part-played — beginSeason
+       * runs it up to the early-season checkpoint so the manager can make
+       * decisions with real results in front of him. Whatever he decided
+       * there has already landed on the club by now, so the rest of the
+       * campaign is played out against the side he chose to become. */
+      const partial = world._partialLeague;
+      const res = (partial && partial.leagueId === leagueId)
+        ? MG.competitions.resumeLeague(world, partial, { midSeason })
+        : MG.competitions.runLeague(world, leagueId, { midSeason });
+      if (partial && partial.leagueId === leagueId) world._partialLeague = null;
       if (res) results[leagueId] = res;
     }
+    // A part-played league whose division somehow never came up in the loop
+    // above must not survive into next season as a stale half-table.
+    world._partialLeague = null;
+    world._earlySnapshot = null;
 
     /* ---- 2. domestic cups, one per country ---- */
     const cupWinners = {};
@@ -701,6 +865,11 @@
      * purpose is the one he heads into the summer with. */
     if (MG.agents) MG.agents.reassessRosters(world);
 
+    // Drop the hidden-attribute cache entries for anyone who left the world
+    // this season — see ratings.js's pruneHidden for why this cannot just
+    // be left to grow.
+    if (MG.ratings && MG.ratings.pruneHidden) MG.ratings.pruneHidden(world);
+
     // Does anyone genuinely bigger want to talk to the manager THIS season is
     // ending on? Checked after the carousel and the sackings above, so a
     // manager who just lost his job this summer is not also offered a new
@@ -709,6 +878,28 @@
 
     /* ---- 7. awards ---- */
     const awards = computeAwards(world, results, boardReports);
+
+    /* The managed club's own top scorer for the season THAT JUST FINISHED —
+     * captured here, before a single retirement or transfer touches the
+     * squad. The end-of-season screen used to read this straight off
+     * `club.squad` after advanceSeason() returned, which is AFTER the
+     * summer's transfer window (below) has already run: a sale already
+     * removed the man from the squad array, so the screen silently showed
+     * the second-highest scorer for a season its actual top scorer had just
+     * finished — the exact "the game already moved on before you saw it"
+     * problem the decision engine has to avoid everywhere, not just in the
+     * SIGN/VETO cards themselves. */
+    let clubTopScorer = null;
+    if (world.playerClubId) {
+      const pc = world.clubById(world.playerClubId);
+      if (pc) {
+        for (const p of pc.squad) {
+          if (!clubTopScorer || p.season.goals > clubTopScorer.goals) {
+            clubTopScorer = { name: p.name, goals: p.season.goals, playerId: p.id };
+          }
+        }
+      }
+    }
 
     /* ---- 8. the summer ---- */
     /* The international season runs behind the club game: caps and goals are
@@ -808,6 +999,7 @@
       moves,
       carousel,
       awards,
+      clubTopScorer,
       transferCount: window.deals,
       contestedDeals: window.contested || 0,
       transferRejections: window.rejections || 0,

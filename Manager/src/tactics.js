@@ -548,6 +548,18 @@
     return "balanced";
   }
 
+  /* A cheap fingerprint of WHO is in a squad — used by world.js's selection
+   * cache to notice a signing, a sale or a promotion without every one of
+   * those call sites needing to remember to invalidate it by hand. Sum of
+   * ids rather than a sorted join: collisions are astronomically unlikely
+   * for a squad-sized set and this is called every time a match is about to
+   * be simulated, so it has to be next to free. */
+  function squadStamp(club) {
+    let s = club.squad.length * 100003;
+    for (const p of club.squad) s += p.id;
+    return s;
+  }
+
   MG.tactics = {
     FORMATIONS, FORMATION_KEYS, FAMILIARITY, familiarity,
     initMorale, effectiveOverall, teamMorale, shiftMorale, settleMorale,
@@ -555,5 +567,6 @@
     MATCHUP, MATCHUP_XG, formationEdge, matchupLabel, backupsFor, depthScore,
     TRAINING_FOCUS, TRAINING_FOCUS_KEYS, formationFit, trainingFit, managerFit,
     synergyScore, developmentMultiplier, setTrainingFocus, autoTrainingFocus,
+    squadStamp,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);
