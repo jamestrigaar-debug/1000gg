@@ -486,7 +486,7 @@
       return null;
     }
 
-    function completeDeal(st, entry, fee, wageRaw) {
+    function completeDeal(st, entry, fee, wageRaw, meta) {
       const buyer = st.club;
       const { player, club: seller } = entry;
       const wage = round1(wageRaw);
@@ -523,13 +523,14 @@
          * player's squad and the only evidence was that he was no longer there.
          * The supporters notice too: losing a good one hurts, signing one lifts
          * the place. */
+        const warTag = meta && meta.contested ? ` — his agent (${meta.agentName}) took it to a bidding war` : "";
         if (world.playerClubId) {
           if (seller.id === world.playerClubId) {
-            news.push({ type: "transfer", text: `OUT — ${player.name} (${player.pos}, ${Math.round(player.overall)}) leaves for ${buyer.name} for £${bestFee}m.`, clubId: seller.id });
+            news.push({ type: "transfer", text: `OUT — ${player.name} (${player.pos}, ${Math.round(player.overall)}) leaves for ${buyer.name} for £${bestFee}m${warTag}.`, clubId: seller.id });
             const keyLoss = player.overall >= (seller.level || 60) + 2;
             MG.clubs.fansReact(seller, keyLoss ? -5 : -1.5, keyLoss ? `${player.name} was sold` : `${player.name} was allowed to leave`);
           } else if (buyer.id === world.playerClubId) {
-            news.push({ type: "transfer", text: `IN — ${player.name} (${player.pos}, ${player.age}, ${Math.round(player.overall)}) signs from ${seller.name} for £${bestFee}m.`, clubId: buyer.id });
+            news.push({ type: "transfer", text: `IN — ${player.name} (${player.pos}, ${player.age}, ${Math.round(player.overall)}) signs from ${seller.name} for £${bestFee}m${warTag}.`, clubId: buyer.id });
             const marquee = player.overall >= (buyer.level || 60) + 2;
             MG.clubs.fansReact(buyer, marquee ? 5 : 1.5, marquee ? `${player.name} was a statement signing` : `${player.name} came in`);
           }
@@ -552,7 +553,14 @@
       }
       if (!bids.size) break;
 
-      for (const [, list] of bids) {
+      for (const [pid, rawList] of bids) {
+        /* His agent decides how many of these interested clubs ever get a
+         * seat at the table — a star with a super-agency behind him lets the
+         * whole queue through, a lower-league player's local agent is making
+         * one phone call and that's the move. See agents.js. */
+        const somePlayer = rawList[0].entry.player;
+        const { list, agent } = MG.agents ? MG.agents.filterSuitors(somePlayer, rawList) : { list: rawList, agent: null };
+        void pid;
         // Highest ceiling wins; ties broken by who wanted him most.
         list.sort((a, b) => b.ceiling - a.ceiling || b.score - a.score);
         const winner = list[0];
@@ -564,11 +572,15 @@
 
         /* The price. Uncontested, he goes for the asking price. Contested, the
          * winner pays just past what the runner-up would have gone to — which
-         * is what makes a bidding war expensive without letting it run away. */
+         * is what makes a bidding war expensive without letting it run away.
+         * The premium itself scales with the agent's own networking: a
+         * super-agency plays two boardrooms off each other properly, a local
+         * agent barely knows there is a second bidder to leverage. */
         let fee = winner.base;
         if (runnerUp) {
           contested++;
-          fee = round1(clamp(Math.max(winner.base, runnerUp.ceiling * 1.05), winner.base, winner.ceiling));
+          const premium = agent ? MG.agents.contestPremium(agent) : 1.05;
+          fee = round1(clamp(Math.max(winner.base, runnerUp.ceiling * premium), winner.base, winner.ceiling));
         }
         if (fee > winner.st.budget) { winner.st.passed.add(player.id); continue; }
 
@@ -588,7 +600,7 @@
 
         // Everyone who did not get him remembers not to chase him again.
         for (const cand of list) if (cand !== taker) cand.st.passed.add(player.id);
-        completeDeal(taker.st, taker.entry, takerFee, taker.wage);
+        completeDeal(taker.st, taker.entry, takerFee, taker.wage, { contested: !!runnerUp, agentName: agent ? agent.name : "his agent" });
       }
     }
 
@@ -1042,6 +1054,22 @@
       if (score > bestScore) { best = { player, seller, wage }; bestScore = score; bestFee = fee; }
     }
     if (!best) return null;
+
+    /* This search always found its man in one pass, with nobody else in the
+     * game ever getting a say — a guaranteed side-channel around the exact
+     * competition every AI club has to fight through in runWindow, and a real
+     * contributor to the game reading as too easy. His agent applies the same
+     * friction here it applies there: a premium on the fee scaled to his
+     * network, and — for a genuinely sought-after target — a real chance
+     * someone else already got there first. A free-agent-priced move (maxFee
+     * near 0) is left alone; nobody is fighting over a Bosman signing. */
+    if (MG.agents && bestFee > 0.2) {
+      const agent = MG.agents.agentFor(best.player);
+      const beatenChance = clamp((agent.network - 35) / 130, 0, 0.45);
+      if (rng.chance(beatenChance)) return null;
+      bestFee = round1(bestFee * MG.agents.contestPremium(agent));
+      if (bestFee > budget) return null;
+    }
 
     const { player, seller, wage } = best;
     seller.squad = seller.squad.filter((p) => p.id !== player.id);

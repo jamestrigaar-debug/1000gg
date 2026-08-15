@@ -209,13 +209,21 @@
   function radarAxes(player) {
     const a = player.attrs || {};
     const men = player.mentalityRating || 55;
-    const height = a.height || 180;
+    /* Aerial used to average heading and strength (both 0-99) against a
+     * height term that was scaled 0-60 before being blended in — Erling
+     * Haaland (heading 88, strength 94, 195cm) read as an Aerial ability in
+     * the low 80s, well below his heading alone, because that undersized
+     * height term dragged every blend down whenever height carried any real
+     * weight. heightScore() (already used by DEF-ATR below) puts height on
+     * the same 0-99 footing as everything else, so a genuinely elite header
+     * of the ball now reads as one. */
+    const heightPts = heightScore(a.height);
     return [
       { label: player.pos === "GK" ? "Goalkeeping" : "Defending", value: stretch(defenceAttribute(player)) },
       { label: "Physical", value: stretch((a.strength || 50) * 0.5 + (a.fitness || 50) * 0.5) },
       { label: "Speed", value: stretch(a.speed || 50) },
       { label: "Attacking", value: stretch(((a.leftFoot || 50) + (a.rightFoot || 50)) / 2) },
-      { label: "Aerial", value: stretch((a.heading || 50) * 0.68 + (a.strength || 50) * 0.14 + clamp((height - 165) * 1.1, 0, 60) * 0.18) },
+      { label: "Aerial", value: stretch((a.heading || 50) * 0.7 + (a.strength || 50) * 0.1 + heightPts * 0.2) },
       { label: "Mental", value: stretch(men) },
     ];
   }

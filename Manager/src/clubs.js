@@ -245,6 +245,7 @@
       history: { titles: 0, cups: 0, promotions: 0, relegations: 0, europeanTitles: 0, seasons: [] },
       form: 0,
       lastPosition: null,
+      lastLeagueId: null,
       formation: "4-4-2",   // overwritten per club at creation
       trainingFocus: "balanced",  // overwritten when a manager takes the job
       xi: null,             // null = auto-pick the best available side
@@ -563,9 +564,24 @@
     const size = leagueClubs.length;
     const standing = standingIn(club, leagueClubs);
 
+    /* Momentum: has this club just been finishing well ABOVE where its own
+     * reputation says it should? A board that never notices this is exactly
+     * the "too dumb" complaint — it kept setting a newly-promoted, now
+     * title-chasing side the same soft "avoid relegation" brief three years
+     * running while its manager quietly built a Champions League squad.
+     * Only compared within the SAME division a club was already in — the
+     * season right after promotion or relegation is not read as momentum,
+     * since standingIn() itself has not caught up with the new level yet. */
+    const momentum = (club.lastLeagueId === club.leagueId && club.lastPosition != null)
+      ? clamp(standing - club.lastPosition, -3, 12) : 0;
+
     const drift = cfg.drift * rng.gauss();
-    let position = Math.round(standing + cfg.expectationShift + drift);
+    let position = Math.round(standing + cfg.expectationShift + drift - momentum * 0.6);
     position = clamp(position, 1, size);
+    // Sustained overperformance also narrows how much slack the board gives —
+    // it has learned what this manager can actually do, and stops calling a
+    // repeat of it a bonus.
+    const tolerance = momentum >= 4 ? Math.max(1, cfg.tolerance - 1) : cfg.tolerance;
 
     // A board whose club sits in the promotion places expects promotion, and
     // one at the bottom expects survival. These are the lines the report reads.
@@ -577,7 +593,7 @@
 
     club.board.targets = {
       position,
-      tolerance: cfg.tolerance,
+      tolerance,
       standing,
       promotion: promotionSpot != null && position <= promotionSpot,
       survival: relegationLine != null && position > relegationLine - 3,

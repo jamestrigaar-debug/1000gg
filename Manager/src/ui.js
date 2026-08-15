@@ -47,7 +47,7 @@
     endingEntry: null, endingView: null, endingOutcome: null,
     tab: "squad", pendingSlot: null, marketPos: "",
     squadSort: "rating", chooserSort: "rating",
-    signCount: 0, signPositions: [], transfersSeason: null, boardRecs: null,
+    signCount: 0, signPositions: [], signAmbition: "solid", transfersSeason: null, boardRecs: null,
     lastSeenNewsId: 0, notifOpen: false,
   };
   root.MG_STATE = state;
@@ -267,6 +267,7 @@
     const c = club();
     state.signCount = 0;
     state.signPositions = [];
+    state.signAmbition = "solid";
     // Once per pre-season the board makes its OWN recommendations — surplus,
     // ageing or over-paid players it would move on. They are SUGGESTED (shown
     // and logged), never sold behind your back: you choose what actually goes
@@ -289,10 +290,12 @@
    * it lands AND the ones it cannot — straight into the log. */
   function confirmTransfers() {
     const world = state.world, c = club();
+    const ambition = c.mustSell && state.signAmbition === "star" ? "solid" : state.signAmbition;
     for (const pos of state.signPositions) {
-      const s = MG.transfers.findAndSign(world, c, { pos, quality: "solid" });
+      const s = MG.transfers.findAndSign(world, c, { pos, quality: ambition });
       const name = (MG.players.POSITIONS[pos] || {}).name || pos;
       if (s) world.report(`IN — ${s.player.name} (${s.player.pos}, ${Math.round(s.player.overall)}) signs from ${s.from} for ${money(s.fee)}.`, "transfer", c.id);
+      else if (ambition === "star") world.report(`NO DEAL — the ${name} you were chasing went elsewhere; his agent had other doors open.`, "sack", c.id);
       else world.report(`NO DEAL — the board could not land a ${name} within budget and reach.`, "sack", c.id);
     }
     for (const id of (c.transferList || []).slice()) {
@@ -638,6 +641,58 @@
   /* The pre-season transfer wizard: count -> positions -> who is for sale.
    * Deliberately three short questions rather than a spreadsheet — the board
    * does the actual dealing, you just point it. */
+  /* The board's own condition on HOW you spend, not just how much — the
+   * "additional requirements" the transfer window was missing. Ambitious
+   * targets carry a real agent premium and a real chance of missing out
+   * (see agents.js / findAndSign), so the board only backs a swing for a
+   * star when the finances can actually absorb the risk; a club mid
+   * fire-sale is locked out of it entirely rather than being quietly
+   * allowed to spend its way out of the crisis it is in. */
+  function ambitionHtml(c) {
+    const starLocked = !!c.mustSell;
+    const starTight = !starLocked && c.finances.transferBudget < c.finances.revenue * 0.25;
+    const OPTIONS = [
+      { key: "prospect", label: "PRUDENT", blurb: "Cheap, young, unfinished — a punt on potential rather than a fix for now." },
+      { key: "solid", label: "BALANCED", blurb: "A player who is ready now, priced at what he is actually worth." },
+      { key: "star", label: "AMBITIOUS", blurb: starLocked ? "Locked — the board will not fund a marquee move while the club is mid fire-sale."
+          : starTight ? "Available, but the budget is thin for it — expect the board to baulk if his agent smells a rival bidder."
+            : "A name above the club's own level. His agent will make you pay a premium for the privilege, and there is no guarantee he says yes." },
+    ];
+    if (starLocked && state.signAmbition === "star") state.signAmbition = "solid";
+    return `<div class="wizard-block">
+      <h4>How hard do you push it?</h4>
+      <div class="seg">${OPTIONS.map((o) => `
+        <button class="${state.signAmbition === o.key ? "on" : ""}" ${o.key === "star" && starLocked ? "disabled" : ""} data-signambition="${o.key}">${o.label}</button>`).join("")}</div>
+      <div class="muted" style="font-size:12px;margin-top:6px">${esc(OPTIONS.find((o) => o.key === state.signAmbition).blurb)}</div>
+    </div>`;
+  }
+
+  /* AT A GLANCE — the whole point of the decision layer being the USP: enough
+   * on screen, right where a choice gets made, that a manager never HAS to
+   * leave the card to go and look something up. Everything here is a
+   * one-line summary of a fact that lives in full elsewhere (SQUAD, TACTICS,
+   * WORLD) for anyone who wants to dig — this is the surface, not a
+   * replacement for the depth underneath it. */
+  function glanceHtml(c) {
+    const world = state.world;
+    const t = c.board.targets;
+    const rivals = world.clubsInLeague(c.leagueId);
+    const strength = (x) => MG.clubs.clubStrength(x);
+    const ranked = rivals.slice().sort((a, b) => strength(b) - strength(a));
+    const myRank = ranked.findIndex((x) => x.id === c.id) + 1;
+    const above = ranked[myRank - 2], below = ranked[myRank];
+    const wageRoom = c.finances.wageBudget - MG.clubs.wageBill(c);
+    const confCls = c.board.confidence >= 65 ? "accent" : c.board.confidence >= 40 ? "gold" : "bad";
+    return `<div class="panel" style="padding:10px 12px;margin-bottom:10px">
+      <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;font-size:12px">
+        <span><span class="muted">Brief</span> <b>${esc(t ? t.summary : "—")}</b></span>
+        <span><span class="muted">Squad rank</span> <b>${myRank}/${ranked.length}</b> in ${esc(MG.clubs.LEAGUES[c.leagueId].name)}${above ? ` · behind ${esc(above.name)}` : ""}${below ? ` · ahead of ${esc(below.name)}` : ""}</span>
+        <span><span class="muted">Board</span> <b class="${confCls}">${Math.round(c.board.confidence)}</b>/100</span>
+        <span><span class="muted">To spend</span> <b>${money(c.finances.transferBudget)}</b> · wage room ${money(wageRoom)}</span>
+      </div>
+    </div>`;
+  }
+
   function transfersWizardHtml() {
     const c = club();
     const wageRoom = c.finances.wageBudget - MG.clubs.wageBill(c);
@@ -651,6 +706,7 @@
       ? `Season ${state.world.season} begins. Last time out: ${row.champion ? "champions" : row.promoted ? "promoted" : row.relegated ? "relegated" : `${ordinal(row.position)} in the ${row.leagueName}`}.`
       : `Season ${state.world.season} begins.`;
     return `
+      ${glanceHtml(c)}
       <div class="decision boardroom">
         <div class="decision-tag">PRE-SEASON · THE WINDOW</div>
         <div class="decision-text">${esc(kickoff)} The board are ready to back you in the market — tell them how many to sign and where, and they do the deals and report back in the log.</div>
@@ -668,7 +724,8 @@
             return `<button class="${n ? "on" : ""}" data-signpos="${k}">${k}${n ? ` ×${n}` : ""}</button>`;
           }).join("")}</div>
           <div class="muted" style="font-size:12px;margin-top:6px">${state.signPositions.length ? `The board will chase: ${state.signPositions.map((p) => `<span class="ppos ${posClass(p)}">${p}</span>`).join(" ")}` : "Pick the positions to strengthen — one player per slot."}</div>
-        </div>` : ""}
+        </div>
+        ${ambitionHtml(c)}` : ""}
 
         <div class="wizard-block">
           <div class="row" style="justify-content:space-between;align-items:baseline">
@@ -704,6 +761,7 @@
     const label = state.stage === "preseason" ? "PRE-SEASON" : "END OF SEASON";
     return `${done}
       <div class="stage-step">${label} · decision ${state.cardIndex + 1} of ${state.cards.length}</div>
+      ${glanceHtml(club())}
       <div class="decision ${isBoard ? "boardroom" : ""}">
         <div class="decision-tag">${esc(card.view.category)}</div>
         <div class="decision-text">${esc(card.view.text)}</div>
@@ -887,6 +945,11 @@
       const k = b.dataset.signpos, idx = state.signPositions.indexOf(k);
       if (idx >= 0) state.signPositions.splice(idx, 1);
       else if (state.signPositions.length < max) state.signPositions.push(k);
+      render();
+    });
+    for (const b of document.querySelectorAll("[data-signambition]")) b.addEventListener("click", () => {
+      if (b.disabled) return;
+      state.signAmbition = b.dataset.signambition;
       render();
     });
     for (const b of document.querySelectorAll("[data-wlist]")) b.addEventListener("click", () => { toggleList(club(), Number(b.dataset.wlist)); render(); });
@@ -1582,7 +1645,7 @@
       <div class="sortbar"><span class="muted">Sort</span>
         ${["rating", "pos", "name"].map((k) => `<button class="btn tiny ${state.chooserSort === k ? "on-mentor" : ""}" data-csort="${k}">${k === "pos" ? "POSITION" : k.toUpperCase()}</button>`).join("")}
       </div>
-      <div class="muted" style="font-size:12px;margin-bottom:8px">The big number is the player's <b>rating</b>. <b>IN ROLE</b> is what he is actually worth in this shirt once his position, fitness, morale and form are taken into account.</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">The big number is the player's <b>rating</b> — fixed, the same everywhere in the game. <b>IN ROLE</b> is what he is worth <i>specifically in this shirt</i>, and it can land above or below that number: a natural fit, good form, high morale and full fitness push it up, an unfamiliar position or a knock pulls it down. This is about the <b>player</b>, not the manager or the formation — tactics and the manager's own influence affect the <b>team's</b> rating on the pitch, never an individual's number here.</div>
       <div class="chooser-list">${options.map((p) => {
         const fam = MG.tactics.familiarity(p.pos, slot);
         const inXI = currentIds.indexOf(p.id);
@@ -1662,10 +1725,7 @@
 
     modal(`
       <div class="profile-head">
-        <div class="profile-radar">
-          <div class="prating ${pc}" style="width:64px;height:64px;font-size:24px;margin:0 auto 8px">${Math.round(player.overall)}</div>
-          <canvas id="radar" width="200" height="200"></canvas>
-        </div>
+        <div class="prating ${pc}" style="width:64px;height:64px;font-size:24px;flex:0 0 64px">${Math.round(player.overall)}</div>
         <div class="profile-meta">
           <div style="font-size:20px;font-weight:800">${MG.names.flagFor(player.nationality)} ${esc(player.name)}</div>
           <div class="muted"><span class="ppos ${pc}">${esc(player.pos)}</span>${esc(MG.players.POSITIONS[player.pos].name)} · ${player.age} · ${esc(player.nationality)} · ${esc(from)}</div>
@@ -1674,14 +1734,16 @@
             <span class="trait-chip">${esc(player.mentality)}</span>
             ${player.homegrown ? '<span class="trait-chip">Homegrown</span>' : ""}
             ${intl && intl.caps ? `<span class="trait-chip gold">${esc(intl.nation)} · ${intl.caps} caps${intl.goals ? ` · ${intl.goals} gls` : ""}</span>` : ""}
+            ${MG.agents ? `<span class="trait-chip" title="${esc(MG.agents.agentFor(player).blurb)}">${esc(MG.agents.agentFor(player).name)} · ${esc(MG.agents.agentFor(player).tier)}</span>` : ""}
             ${mentored ? '<span class="trait-chip" style="color:var(--accent);border-color:var(--accent)">Mentored</span>' : ""}
             ${listed ? '<span class="trait-chip" style="color:var(--bad);border-color:var(--bad)">Transfer listed</span>' : ""}
             ${player.season.injured > 0 ? `<span class="trait-chip" style="color:var(--bad);border-color:var(--bad)">Out ${Math.round(player.season.injured * 100)}%</span>` : ""}
           </div>
-          ${stats.map((s) => `<div class="mini-bar"><span class="muted">${esc(s.label)}</span>
-            <div class="bar"><i style="width:${clamp(s.value, 0, 99)}%"></i></div><b>${Math.round(s.value)}</b></div>`).join("")}
         </div>
       </div>
+      <div class="muted" style="font-size:11px;margin:10px 0 4px">Read straight off his attributes — not a separate rating.</div>
+      ${stats.map((s) => `<div class="mini-bar"><span class="muted">${esc(s.label)}</span>
+        <div class="bar"><i style="width:${clamp(s.value, 0, 99)}%"></i></div><b>${Math.round(s.value)}</b></div>`).join("")}
       ${attrGrid(player)}
       <div class="stat-grid" style="margin-top:12px">
         <div class="stat-box"><div class="sb-num">${moraleDot(player.morale)}</div><div class="sb-lab">Morale</div></div>
@@ -1711,7 +1773,6 @@
       </div>` : ""}
     `);
 
-    drawRadar($("radar"), stats);
     const lb = $("profile-list");
     if (lb) lb.addEventListener("click", () => { toggleList(c, player.id); closeModal(); renderTab(); });
     const mb = $("profile-mentor");
@@ -1720,49 +1781,6 @@
     if (eb) eb.addEventListener("click", () => { toggleContractReq(c, player.id, "extend"); closeModal(); renderTab(); });
     const rb = $("profile-release");
     if (rb) rb.addEventListener("click", () => { toggleContractReq(c, player.id, "release"); closeModal(); renderTab(); });
-  }
-
-  /** Six-axis radar, drawn the same way 1000goals draws its card radar. */
-  function drawRadar(canvas, stats) {
-    if (!canvas || !canvas.getContext) return;
-    const ctx = canvas.getContext("2d");
-    const cx = canvas.width / 2, cy = canvas.height / 2, radius = 72;
-    const n = stats.length;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Web
-    ctx.strokeStyle = "#1e4d35";
-    for (let ring = 1; ring <= 4; ring++) {
-      ctx.beginPath();
-      for (let i = 0; i <= n; i++) {
-        const ang = (Math.PI * 2 * i) / n - Math.PI / 2;
-        const r = (radius * ring) / 4;
-        const x = cx + Math.cos(ang) * r, y = cy + Math.sin(ang) * r;
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-    // Shape
-    ctx.beginPath();
-    stats.forEach((s, i) => {
-      const ang = (Math.PI * 2 * i) / n - Math.PI / 2;
-      const r = radius * clamp(s.value, 0, 99) / 99;
-      const x = cx + Math.cos(ang) * r, y = cy + Math.sin(ang) * r;
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    });
-    ctx.closePath();
-    ctx.fillStyle = "rgba(0,208,108,.28)";
-    ctx.strokeStyle = "#00d06c";
-    ctx.lineWidth = 2;
-    ctx.fill(); ctx.stroke();
-    // Labels
-    ctx.fillStyle = "#7b9b8b";
-    ctx.font = "9px system-ui, sans-serif";
-    ctx.textAlign = "center";
-    stats.forEach((s, i) => {
-      const ang = (Math.PI * 2 * i) / n - Math.PI / 2;
-      ctx.fillText(s.label, cx + Math.cos(ang) * (radius + 14), cy + Math.sin(ang) * (radius + 14) + 3);
-    });
   }
 
   /* ---------------------------- CAREER ENDINGS ---------------------------- */

@@ -611,6 +611,7 @@
           if (club.id === world.playerClubId || club.reputation >= 55) world.report(text, "sack", club.id);
         }
         club.lastPosition = row.position;
+        club.lastLeagueId = club.leagueId;
         const selection = world.selection(club.id);
         const outcome = {
           season: world.season,
