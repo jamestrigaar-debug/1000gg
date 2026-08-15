@@ -1,106 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-YCK4GNJ15G"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'G-YCK4GNJ15G');
-</script>
-
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Football DNA Simulator — Football Career Simulator & Premier League Legends Draft Game</title>
-<meta name="description" content="Draft DNA from Premier League legends, build a striker, simulate every season and chase 1000 career goals. Play free in your browser — no download." />
-<link rel="canonical" href="https://1000goals.co.uk/" />
-<link rel="sitemap" type="application/xml" href="/sitemap.xml" />
-<meta property="og:site_name" content="Football DNA Simulator" />
-<meta property="og:title" content="Football DNA Simulator — Football Career Simulator & Premier League Legends Draft" />
-<meta property="og:description" content="Draft DNA from Premier League legends, build your player and simulate a career to 1000 goals. A free football simulator you can play in your browser." />
-<meta property="og:type" content="website" />
-<meta property="og:url" content="https://1000goals.co.uk/" />
-<meta property="og:image" content="https://1000goals.co.uk/share-card.png" />
-<meta property="og:image:width" content="1200" />
-<meta property="og:image:height" content="630" />
-<meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Football DNA Simulator — Football Career Simulator & Premier League Legends Draft" />
-<meta name="twitter:description" content="Draft DNA from Premier League legends, build your player and simulate a career to 1000 goals. A free football simulator you can play in your browser." />
-<meta name="twitter:image" content="https://1000goals.co.uk/share-card.png" />
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": ["VideoGame", "WebApplication"],
-      "name": "Football DNA Simulator",
-      "description": "A free browser football career simulator where you draft DNA from Premier League legends and chase 1000 goals.",
-      "url": "https://1000goals.co.uk/",
-      "image": "https://1000goals.co.uk/share-card.png",
-      "applicationCategory": "GameApplication",
-      "operatingSystem": "Web browser",
-      "gamePlatform": ["Desktop web", "Mobile web", "Tablet web"],
-      "inLanguage": "en-GB",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "GBP",
-        "availability": "https://schema.org/InStock"
-      },
-      "genre": ["Football simulation", "Sports draft game", "Career simulator"],
-      "isAccessibleForFree": true
-    },
-    {
-      "@type": "FAQPage",
-      "mainEntity": [
-        {
-          "@type": "Question",
-          "name": "What is Football DNA Simulator?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Football DNA Simulator is a free football career simulator that lets you draft DNA from Premier League legends and play through a striker's career from their academy days to retirement."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "How do you play the game?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Spin for DNA donors to build your striker's heading, finishing, speed, strength and fitness, then simulate each season and make career decisions on transfers, contracts and training."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Can I play without downloading anything?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Yes — Football DNA Simulator is a free browser game. It runs on any device with a modern web browser and requires no download or install."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "What eras and players are available?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "The game uses real Premier League squad data from 1992 to 2024, so you can draft from 30 years of Premier League legends and build a player with peak or at-the-time ratings."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "What is the goal of the game?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "The ultimate aim is to score 1000 career goals. You can also chase league titles, domestic cups, European trophies, Ballon d'Ors and golden boots."
-          }
-        }
-      ]
-    }
-  ]
-}
-</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%BD%3C/text%3E%3C/svg%3E">
+<title>Football Manager DNA — Draft a manager, survive your boardroom</title>
+<meta name="description" content="A free, browser-based football management simulator. Draft a manager from the DNA of the greats, take whatever job will have you, and survive your boardroom season by season.">
 <style>
+  /* Design tokens lifted from 1000goals (../index.html) so the two games read
+     as one family. Do not drift these — if the parent site retunes its palette,
+     retune here to match. */
   :root {
     --bg: #04120b;
     --bg2: #0a1f15;
@@ -116,7 +25,6 @@
     --bad: #ff6b7a;
     --radius: 12px;
     --shadow: 0 2px 8px rgba(0,0,0,.45);
-    --tab-active: #0a291a;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -133,48 +41,48 @@
   .screen { display: none; animation: fade .25s ease; }
   .screen.active { display: block; }
   @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
-  @media (max-width: 600px) { .wrap { padding: 12px 12px 120px; } }
-
   h1, h2, h3 { margin: 0 0 .4em; }
   .muted { color: var(--muted); }
+  .accent { color: var(--accent); }
+  .gold { color: var(--gold); }
+  .bad { color: var(--bad); }
+  @media (max-width: 600px) { .wrap { padding: 12px 12px 120px; } }
 
   .btn {
-    display: inline-block;
-    border: 1px solid var(--line);
-    background: var(--card2);
-    color: var(--txt);
-    padding: 11px 18px;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    text-decoration: none;
-    transition: background .12s, border-color .12s, transform .05s;
+    display: inline-block; border: 1px solid var(--line); background: var(--card2);
+    color: var(--txt); padding: 11px 18px; border-radius: 8px; font-size: 14px;
+    font-weight: 600; cursor: pointer; text-decoration: none; font-family: inherit;
+    transition: background .12s, border-color .12s;
   }
   .btn:hover { background: #24304a; border-color: var(--accent2); }
-  .btn:active { transform: translateY(0); }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
   .btn.primary { background: var(--accent); border-color: transparent; color: #052211; }
   .btn.primary:hover { background: #4ce29a; }
-  .card, .panel, .season-report, .decision { box-shadow: var(--shadow); border: 1px solid var(--line); }
   .btn.ghost { background: transparent; }
-  .btn.big { font-size: 16px; padding: 14px 26px; }
   .btn.danger { border-color: var(--bad); color: var(--bad); }
-  @media (max-width: 600px) { .btn { padding: 12px 16px; font-size: 14px; } }
+  .btn.big { font-size: 16px; padding: 14px 26px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); margin-bottom: 12px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  input[type=text] { background: var(--bg2); border: 1px solid var(--line); color: var(--txt); padding: 10px; border-radius: 8px; font-size: 14px; font-family: inherit; }
 
   /* ---------- Welcome ---------- */
   .hero { text-align: center; padding: 48px 14px; }
-  .hero h1 { font-size: clamp(38px, 7vw, 72px); letter-spacing: 2px; line-height: .95;
+  .hero h1 {
+    font-size: clamp(34px, 6.4vw, 64px); letter-spacing: 2px; line-height: .95;
     font-family: Impact, "Arial Black", "Helvetica Neue", sans-serif; text-transform: uppercase;
-    color: var(--txt); text-shadow: 3px 3px 0 #1a4a2e; }
-  .hero .sub { font-size: 16px; color: var(--muted); margin-bottom: 8px; }
+    color: var(--txt); text-shadow: 3px 3px 0 #1a4a2e;
+  }
+  .retro-badge { display: inline-block; background: var(--accent2); color: #04223f; font-weight: 800;
+    padding: 4px 12px; border-radius: 6px; text-transform: uppercase; letter-spacing: 1px; font-size: 11px; }
+  .beta-badge { display: inline-block; background: var(--gold); color: #2a1c00; font-weight: 900;
+    padding: 4px 14px; border-radius: 6px; text-transform: uppercase; letter-spacing: 2px; font-size: 11px; margin-left: 8px; }
   .barclays-strip { height: 8px; background: linear-gradient(90deg, var(--accent), var(--accent2), var(--gold)); margin: 16px 0; border-radius: 4px; }
-  /* The shared "Football DNA Simulator" mark — one brand, two games (this
-     one and the manager spin-off). The frame/banner pairing is the standard
-     gradient-border trick (a gradient background showing through a 2px
-     padding, with a solid card on top) since CSS border-image ignores
-     border-radius in most engines. The PLAYER/MANAGER badge is the only
-     thing that tells the two games apart. */
+  /* The shared "Football DNA Simulator" mark — one brand, two games. The
+     frame/banner pairing is the standard gradient-border trick (a gradient
+     background showing through a 2px padding, with a solid card sitting on
+     top) since CSS border-image ignores border-radius in most engines. The
+     PLAYER/MANAGER badge is the only thing that tells the two games apart —
+     everything else about the mark is identical on purpose. */
   .dna-frame { max-width: 640px; margin: 0 auto; padding: 2px; border-radius: 20px;
     background: linear-gradient(120deg, var(--accent), var(--gold)); }
   .dna-banner { border-radius: 18px; background: var(--bg); padding: 22px 20px 20px; }
@@ -185,1108 +93,519 @@
   .dna-badge { flex-shrink: 0; border: 1px solid var(--gold); border-radius: 8px; padding: 5px 16px;
     font-weight: 800; letter-spacing: 3px; font-size: 13px; color: var(--accent); white-space: nowrap; }
   .dna-badge::before, .dna-badge::after { content: "★"; color: var(--gold); margin: 0 7px; }
-  .retro-badge { display: inline-block; background: var(--accent2);
-    color: #04223f; font-weight: 800; padding: 4px 12px; border-radius: 6px;
-    text-transform: uppercase; letter-spacing: 1px; font-size: 11px; margin-bottom: 10px; }
-  .beta-badge { display: inline-block; background: var(--gold);
-    color: #2a1c00; font-weight: 900; padding: 4px 14px; border-radius: 6px;
-    text-transform: uppercase; letter-spacing: 2px; font-size: 11px; margin-left: 8px; }
-  .hero .goal { display: inline-block; margin: 14px 0 24px; padding: 8px 16px; border: 1px solid var(--gold);
+  .hero .sub { font-size: 16px; color: var(--muted); margin-bottom: 8px; }
+  .hero .goal { display: inline-block; margin: 14px 0 20px; padding: 8px 16px; border: 1px solid var(--gold);
     color: var(--gold); border-radius: 30px; font-weight: 700; font-size: 14px; }
-  .leaderboard-teaser { background: var(--card); border: 2px solid var(--gold); border-radius: 10px; padding: 14px 16px; margin: 18px auto; max-width: 420px; }
-  .lt-title { color: var(--gold); font-weight: 900; font-size: 14px; letter-spacing: 2px; margin-bottom: 4px; }
-  .lt-body { font-size: 13px; color: var(--muted); }
-  .lt-soon { color: var(--gold); font-weight: 700; }
-  @media (max-width: 600px) { .hero { padding: 28px 10px; } }
-  .how-to-play { max-width: 420px; margin: 18px auto 0; text-align: left; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 2px 14px; }
+  .features { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 26px; }
+  .feature { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; width: 240px; text-align: left; }
+  .feature b { color: var(--accent2); display: block; margin-bottom: 4px; }
+  .feature span { color: var(--muted); font-size: 13px; }
+  .how-to-play { max-width: 460px; margin: 26px auto 0; text-align: left; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 2px 14px; }
   .how-to-play summary { cursor: pointer; padding: 10px 0; font-weight: 700; color: var(--accent2); list-style: none; }
   .how-to-play summary::-webkit-details-marker { display: none; }
   .how-to-play summary::before { content: "▸ "; }
   .how-to-play[open] summary::before { content: "▾ "; }
   .how-to-play ol { margin: 0 0 12px; padding-left: 20px; color: var(--muted); font-size: 13px; line-height: 1.6; }
   .how-to-play li strong { color: var(--txt); }
-  .about-section { max-width: 420px; margin: 12px auto 0; text-align: left; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 2px 14px; }
-  .about-section summary { cursor: pointer; padding: 10px 0; font-weight: 700; color: var(--accent2); list-style: none; }
-  .about-section summary::-webkit-details-marker { display: none; }
-  .about-section summary::before { content: "▸ "; }
-  .about-section[open] summary::before { content: "▾ "; }
-  .about-section p { margin: 8px 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
-  .about-section strong { color: var(--txt); }
-  /* The two secondary entry points, side by side under START CREATION so the
-     primary action still leads. */
-  .welcome-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
-  /* A column now: "How to play" sits above the links rather than beside them,
-     because it expands and would shove them sideways when opened. */
-  .welcome-footer { margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 18px; align-items: center; }
-  .welcome-footer .how-to-play { margin-top: 0; width: 100%; }
-  .welcome-footer-links { display: flex; gap: 18px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .welcome-footer { margin-top: 34px; padding-top: 20px; border-top: 1px solid var(--line); text-align: center; }
   .footer-link { color: var(--accent2); text-decoration: none; font-weight: 600; font-size: 15px; }
   .footer-link:hover { color: var(--accent); text-decoration: underline; }
-  .bmc-wrap { display: flex; align-items: center; }
-  .modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; }
-  .modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.7); }
-  .modal-panel { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; width: min(420px, 92%); box-shadow: var(--shadow); }
-  @media (max-width: 360px) { .modal-panel { width: 95%; padding: 18px; } }
-  .modal-panel .field { margin-bottom: 14px; }
-  .modal-panel label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
-  .modal-panel input { background: var(--bg2); border: 1px solid var(--line); color: var(--txt); padding: 10px; border-radius: 8px; font-size: 14px; width: 100%; }
-  .copy-row { display: flex; gap: 8px; align-items: center; }
-  .copy-row input { flex: 1; }
-  .copy-row .btn { padding: 10px 12px; font-size: 13px; }
-  .ach-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; font-size: 13px; border: 1px solid var(--line); background: var(--bg2); }
-  .ach-row.unlocked { border-color: var(--gold); background: #2a1c00; }
-  .ach-row.locked { opacity: .55; }
-  .ach-name { font-weight: 700; min-width: 150px; }
-  .ach-row.unlocked .ach-name { color: var(--gold); }
-  .ach-desc { flex: 1; color: var(--muted); }
-  .ach-rare { background: var(--rare); color: #fff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; }
 
-  /* ---- Trophy Room ---- */
-  .trophy-wrap { max-width: 900px; margin: 0 auto; text-align: left; }
-  .trophy-heading { font-size: 16px; color: var(--gold); margin: 30px 0 12px; }
-  .trophy-heading:first-child { margin-top: 8px; }
-  #trophy-cabinet { display: flex; flex-direction: column; gap: 6px; }
-  .trophy-empty { color: var(--muted); font-size: 14px; padding: 22px 16px; text-align: center;
-                  background: var(--bg2); border: 1px dashed var(--line); border-radius: 10px; }
-  .trophy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
-  .trophy-card { background: var(--card); border: 2px solid var(--line); border-radius: 10px;
-                 overflow: hidden; text-align: center; }
-  .trophy-card img { width: 100%; display: block; }
-  .trophy-card-noimg { padding: 40px 0; font-size: 28px; color: var(--muted); background: var(--bg2); }
-  .trophy-card .tc-name { font-weight: 700; font-size: 13px; padding: 8px 8px 2px; white-space: nowrap;
-                           overflow: hidden; text-overflow: ellipsis; }
-  .trophy-card .tc-meta { font-size: 11px; color: var(--muted); padding: 0 8px 10px; }
-  .features { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 30px; }
-  .feature { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 14px 16px; width: 220px; text-align: left; }
-  .feature b { color: var(--accent2); }
-
-  /* ---------- Genesis ---------- */
+  /* ---------- Draft ---------- */
   .genesis-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
   .pill { background: var(--card); border: 1px solid var(--line); padding: 6px 12px; border-radius: 30px; font-weight: 700; font-size: 13px; }
-  .pill .accent { color: var(--accent); }
-  .genesis-grid { display: grid; grid-template-columns: 1fr 300px; gap: 14px; }
-  @media (max-width: 880px) { .genesis-grid { grid-template-columns: 1fr; } }
+  .reel { background: linear-gradient(180deg, var(--card2), var(--card)); border: 1px solid var(--accent2);
+    border-radius: 12px; padding: 24px; text-align: center; box-shadow: var(--shadow); margin-bottom: 14px; }
+  .reel.legendary { border-color: var(--gold); box-shadow: 0 0 24px rgba(245,224,80,.22); }
+  .reel.rare { border-color: var(--rare); }
+  .reel-rarity { display: inline-block; font-size: 11px; letter-spacing: 2px; color: var(--accent2);
+    border: 1px solid var(--accent2); padding: 2px 10px; border-radius: 20px; margin-bottom: 12px; }
+  .reel.legendary .reel-rarity { color: var(--gold); border-color: var(--gold); }
+  .reel.rare .reel-rarity { color: var(--rare); border-color: var(--rare); }
+  .reel-headline { font-size: 30px; font-weight: 900; margin-bottom: 2px; }
+  .reel-sub { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+  .reel-blurb { color: var(--muted); max-width: 560px; margin: 0 auto 16px; }
+  .reel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 14px; }
+  .reel-grid div { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+  .reel-grid span { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .attr-bars { max-width: 440px; margin: 0 auto; text-align: left; }
+  .bar-row { display: grid; grid-template-columns: 130px 1fr 28px; gap: 8px; align-items: center; font-size: 12px; margin-bottom: 5px; }
+  .bar { background: var(--bg2); height: 8px; border-radius: 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); }
 
-  .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
-  .attr-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
-  .attr-head h2 { color: var(--gold); font-size: 22px; }
-  #attr-desc { font-size: 14px; }
-  #roll-result { min-height: 140px; margin: 12px 0; }
-  .placeholder { color: var(--muted); text-align: center; padding: 40px 10px; border: 1px dashed var(--line); border-radius: 12px; }
-
-  .spin-board { text-align: center; padding: 28px 0 34px; }
-  .spin-labels { display: flex; justify-content: center; align-items: center; gap: 36px; margin-bottom: 16px; }
-  .spin-label { color: #8fa0bb; font-size: 11px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; }
-  .spin-boxes { display: flex; justify-content: center; align-items: center; gap: 18px; margin-bottom: 22px; }
-  .spin-box { min-width: 150px; min-height: 52px; display: flex; align-items: center; justify-content: center; padding: 14px 18px; border-radius: 10px; background: linear-gradient(180deg, #171827, #10111d); border: 1px solid #27304a; box-shadow: inset 0 1px 0 rgba(255,255,255,.04); font-size: 18px; font-weight: 900; }
-  .spin-box.accented { color: var(--gold); border-color: rgba(245,224,80,.45); }
-  .spin-x { color: #53617b; font-size: 22px; font-weight: 900; }
-  .spinner-team { text-align: center; font-size: 26px; font-weight: 800; padding: 46px 0; animation: pulse .15s infinite alternate; }
-  .spinner-year { display: block; font-size: 15px; color: var(--accent2); }
-  @keyframes pulse { from { opacity: .7; } to { opacity: 1; } }
-
-  @media (max-width: 600px) {
-    #roll-result { min-height: 100px; }
-    .sort-tab { padding: 10px 16px; }
-    .attr-chip { padding: 10px 16px; }
-    .donor-mini { font-size: 10px; }
-    .donor-value { font-size: 13px; }
-  }
-  @media (max-width: 480px) {
-    .spin-boxes { gap: 12px; }
-    .spin-box { min-width: 120px; min-height: 48px; font-size: 16px; }
-  }
-
-  .roll-landed { margin-bottom: 12px; }
-  .year-chip { background: var(--accent2); color: #04223f; padding: 1px 8px; border-radius: 6px; font-weight: 700; font-size: 13px; }
-  .roster-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0 14px; color: #9aa8c0; }
-  .roster-toolbar-title { font-size: 18px; color: #bac7dc; }
-  .sort-tabs { display: flex; gap: 2px; padding: 3px; background: #12131d; border: 1px solid #2c3142; border-radius: 9px; }
-  .sort-tab { border: 0; background: transparent; color: #9aa8c0; padding: 8px 14px; border-radius: 7px; font-weight: 800; cursor: pointer; }
-  .sort-tab.active { background: #3b3b44; color: #fff; }
-  .roster-grid { display: flex; flex-direction: column; gap: 12px; }
-  .donor-card { position: relative; display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 16px; text-align: left; background: #111119; border: 1px solid #2a2d39; border-radius: 10px; padding: 16px; min-height: 88px; cursor: pointer; color: var(--txt); transition: .12s; width: 100%; }
-  @media (max-width: 600px) { .donor-card { grid-template-columns: 50px 1fr; padding: 12px; } .donor-side { grid-column: 1 / -1; justify-content: flex-start; } .roster-toolbar { flex-direction: column; align-items: stretch; } }
-  .donor-card:hover { border-color: #47516b; background: #151620; transform: translateY(-1px); }
-  .donor-card.selected { border-color: var(--gold); background: #182016; box-shadow: 0 0 0 2px rgba(245,224,80,.65) inset, 0 0 22px rgba(245,224,80,.14); }
-  .donor-card.used { opacity: .45; cursor: not-allowed; filter: grayscale(.6); }
-  .donor-card.used:hover { border-color: #2a2d39; transform: none; }
-  .used-tag { color: var(--bad); font-size: 11px; font-weight: 800; margin-left: 4px; }
-  .donor-rating { width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; border-radius: 11px; color: #fff; font-size: 18px; font-weight: 900; }
-  .donor-rating.attack { background: #f04452; }
-  .donor-rating.defence { background: #347df1; }
-  .donor-rating.midfield { background: #10c986; }
-  .donor-rating.keeper { background: #f5c542; color: #221600; }
-  .donor-rating.ok { background: #586070; }
-  .donor-main { min-width: 0; }
-  .donor-name { font-weight: 900; font-size: 18px; padding-right: 0; letter-spacing: .2px; }
-  .donor-value { color: #95a4bb; font-size: 15px; margin-top: 4px; }
-  .donor-mini { color: var(--muted); font-size: 11px; }
-  .donor-side { display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
-  .donor-pos { position: static !important; display: inline-block; font-size: 11px; font-weight: 900; color: #4de0b4; background: rgba(0,208,108,.16); border-radius: 6px; padding: 4px 8px; }
-  .donor-pos.attack { color: #ff777f; background: rgba(255,70,85,.16); }
-  .donor-pos.defence { color: #70a7ff; background: rgba(52,125,241,.18); }
-  .donor-pos.midfield { color: #4de0b4; background: rgba(16,201,134,.16); }
-  .donor-pos.keeper { color: #f5c542; background: rgba(245,197,66,.18); }
-  .donor-attrs { display: grid; grid-template-columns: repeat(7, minmax(48px, 1fr)); gap: 5px; margin-top: 10px; font-size: 11px; }
-  .donor-attr { display: flex; flex-direction: column; gap: 2px; justify-content: center; background: rgba(255,255,255,0.045); padding: 5px 6px; border-radius: 6px; color: #8794aa; min-width: 0; }
-  @media (max-width: 600px) { .donor-attrs { display: flex; flex-wrap: wrap; } .donor-attr { flex: 1 1 52px; min-width: 52px; } }
-  .donor-attr.highlight { color: var(--gold); background: rgba(245,224,80,0.14); }
-  .donor-attr b { font-weight: 900; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .donor-attr.highlight b { color: var(--gold); }
-  .selected-donor { margin-top: 12px; padding: 12px 14px; background: #14361f; border: 1px solid var(--accent); border-radius: 8px; }
-
-  .genesis-actions { position: sticky; top: 8px; z-index: 45; display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0 12px; padding: 10px; background: rgba(7,12,24,.94); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(8px); }
-  .genesis-actions .btn { flex: 1; justify-content: center; min-width: 120px; }
-  @media (max-width: 600px) { .genesis-actions { top: 0; margin: 8px 0 10px; border-radius: 10px; } }
-
-  .preview h3 { color: var(--accent2); font-size: 15px; }
-  .prev-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
-  .prev-row.empty { color: var(--muted); }
-  .prev-val { font-weight: 700; color: var(--accent); }
-  .prev-src { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
-
-  /* ---------- Confirm ---------- */
-  .rating-hero { text-align: center; padding: 14px; }
-  .rating-num { font-size: 70px; font-weight: 900; line-height: 1;
-    background: linear-gradient(135deg, var(--gold), #ff9d3c); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .rating-label { letter-spacing: 3px; color: var(--muted); font-size: 13px; }
-  .playstyle-chip { display: inline-block; margin: 10px 6px 0; background: var(--accent2); color: #04223f; padding: 4px 14px; border-radius: 30px; font-weight: 700; }
-  .ment-chip { display: inline-block; margin-top: 10px; background: var(--card2); border: 1px solid var(--line); padding: 6px 14px; border-radius: 30px; font-size: 13px; }
-  .ment-chip.rare { border-color: var(--rare); color: var(--rare); }
-  .dna-table, .dna-key { margin-top: 16px; }
-  .dna-row { display: grid; grid-template-columns: 130px 70px 1fr; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
-  .dna-k { color: var(--muted); }
-  .dna-v { font-weight: 800; color: var(--accent); }
-  .dna-s { color: var(--muted); font-size: 12px; text-align: right; }
-  .name-field { margin: 18px 0; }
-  .name-field input { width: 100%; padding: 14px; font-size: 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2); color: var(--txt); }
+  /* ---------- Offers ---------- */
+  .offers { display: grid; gap: 10px; }
+  .offer { display: block; width: 100%; text-align: left; background: var(--card); color: var(--txt);
+    border: 1px solid var(--line); border-radius: 12px; padding: 14px; font: inherit; cursor: pointer; }
+  .offer:hover { border-color: var(--accent); background: var(--card2); }
+  .offer-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .offer-club { font-weight: 800; font-size: 18px; }
+  .offer-brief { color: var(--gold); font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+  .offer-blurb { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  .board-balanced { color: var(--accent2); }
+  .board-patient { color: var(--accent); }
+  .board-chaotic { color: var(--gold); }
+  .board-aggressive { color: var(--bad); }
 
   /* ---------- Career ---------- */
-  .career-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; background: var(--card); border: 2px solid var(--accent); border-radius: 10px; padding: 12px 14px; }
-  .career-head h2 { color: var(--gold); font-size: 22px; font-family: "Arial Black", "Arial Narrow", sans-serif; letter-spacing: 1px; margin: 0; }
-  .hdr-stats { display: flex; gap: 8px; flex-wrap: wrap; }
-  .hdr-stat { background: var(--bg2); border: 1px solid var(--line); padding: 5px 10px; border-radius: 6px; font-size: 13px; font-weight: 700; }
-  .hdr-stat b { color: var(--accent); margin-left: 4px; }
-  .goal-progress { margin: 12px 0; background: var(--bg2); border: 1px solid var(--line); border-radius: 30px; height: 20px; position: relative; overflow: hidden; }
-  #goal-progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--gold)); transition: width .6s ease; }
-  #goal-progress-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+  .career-head { display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 12px; }
+  .career-club { font-size: 26px; font-weight: 900; }
+  .conf-wrap { min-width: 250px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .conf-top { display: flex; justify-content: space-between; align-items: center; font-size: 11px;
+    letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .conf-track { background: var(--bg2); height: 10px; border-radius: 5px; overflow: hidden; }
+  .conf { display: block; height: 100%; background: var(--accent); transition: width .5s ease; }
+  .conf.warn { background: var(--gold); }
+  .conf.bad { background: var(--bad); }
 
-  /* ---- End-of-career totals ---- */
-  .legacy-totals { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 14px auto 0; max-width: 560px; }
-  .lt-box { flex: 1 1 90px; background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 6px; text-align: center; }
-  .lt-num { font-size: 20px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
-  .lt-lab { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+  .decision { background: linear-gradient(180deg, var(--card2), var(--card)); border: 1px solid var(--accent2);
+    border-radius: 12px; padding: 16px; box-shadow: var(--shadow); margin-bottom: 12px; }
+  .decision.boardroom { border-color: var(--gold); box-shadow: 0 0 24px rgba(245,224,80,.18); }
+  .decision-tag { display: inline-block; font-size: 11px; letter-spacing: 2px; color: var(--accent2);
+    border: 1px solid var(--accent2); padding: 2px 10px; border-radius: 20px; margin-bottom: 10px; }
+  .decision.boardroom .decision-tag { color: var(--gold); border-color: var(--gold); }
+  .decision-text { font-size: 16px; margin-bottom: 14px; }
+  .decision-choices { display: flex; flex-direction: column; gap: 8px; }
+  .btn.choice { text-align: left; }
+  .btn.choice b { display: block; }
+  .btn.choice span { color: var(--muted); font-size: 12px; font-weight: 400; }
+  .outcome { background: var(--bg2); border-left: 3px solid var(--accent); border-radius: 8px;
+    padding: 10px 12px; margin-top: 10px; font-size: 14px; }
+  .stage-step { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
 
-  /* ---- Leaderboard on the landing page ---- */
-  .welcome-lb { margin: 22px auto 4px; max-width: 460px; text-align: left; }
-  .welcome-lb-title { font-size: 14px; font-weight: 700; color: var(--accent); text-align: center; margin-bottom: 8px; }
-  .welcome-lb .lb-head { display: none; }          /* the section already has a heading */
-  .welcome-lb-more { margin-top: 10px; }
-  .welcome-lb-more summary { cursor: pointer; font-size: 12px; color: var(--muted); text-align: center; }
-  .welcome-lb-more summary:hover { color: var(--accent); }
-  .welcome-lb-more > div { margin-top: 8px; }
-  .welcome-lb > .footer-link { display: block; text-align: center; margin-top: 10px; font-size: 12px; }
-  /* Compact variant: rank, name, goals only. */
-  .lb-table.lb-compact .lb-row { grid-template-columns: 32px 1fr 56px; }
-
-  /* ---- Leaderboard ---- */
-  .lb-head { margin-bottom: 10px; }
-  .lb-title { font-size: 15px; font-weight: 700; color: var(--accent); }
-  .lb-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
-  .lb-live { color: var(--accent); font-weight: 700; }
-  .lb-offline { color: var(--gold); }
-  .lb-table { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  .lb-row { display: grid; grid-template-columns: 38px 1fr 58px 58px 62px; gap: 6px; align-items: center;
-            padding: 8px 10px; font-size: 13px; border-bottom: 1px solid var(--line); }
-  .lb-row:last-child { border-bottom: none; }
-  .lb-row.head { background: var(--bg2); color: var(--muted); font-size: 11px; text-transform: uppercase;
-                 letter-spacing: 1px; font-weight: 700; }
-  .lb-row.mine { background: var(--tab-active); }
-  .lb-rank { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
-  .lb-rank.gold { color: #ffd700; } .lb-rank.silver { color: #c0c0c0; } .lb-rank.bronze { color: #cd7f32; }
-  .lb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .lb-apps, .lb-ratio, .lb-goals { text-align: right; font-variant-numeric: tabular-nums; }
-  .lb-goals { font-weight: 700; color: var(--accent); }
-  .lb-tag { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; padding: 1px 5px; margin-left: 6px;
-            border-radius: 20px; border: 1px solid var(--line); color: var(--muted); vertical-align: 1px; }
-  .lb-tag.you { border-color: var(--accent); color: var(--accent); }
-  /* Difficulty a career was played on. Colour-coded so the hard runs stand out
-     without needing to read the word. */
-  .lb-tag.diff { border-color: var(--line); color: var(--muted); }
-  .lb-tag.diff.easy { border-color: #3d6b52; color: #6fbf8f; }
-  .lb-tag.diff.medium { border-color: #6b6134; color: var(--gold); }
-  .lb-tag.diff.hard { border-color: #7a4a2a; color: #e29a5c; }
-  .lb-tag.diff.impossible { border-color: #7a3030; color: #f0736b; }
-  /* Era: one quiet colour for all of them. Difficulty is colour-coded because
-     it ranks; era does not, so colouring it too would just be noise. */
-  .lb-tag.era { border-color: #2b4d63; color: #7fb3d5; }
-  .lb-foot { font-size: 11px; color: var(--muted); margin-top: 10px; text-align: center; }
-
-  /* ---- Challenge a friend ---- */
-  .challenge-panel { max-width: 460px; margin: 18px auto 0; padding: 16px; text-align: center;
-                     background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; }
-  /* The invite is the one thing to do on the page, so it gets the accent edge
-     that nothing else on the welcome screen has. */
-  .challenge-invite { border-color: var(--accent); margin-bottom: 18px; }
-  .challenge-invite-title { font-size: 14px; font-weight: 700; color: var(--accent);
-                            text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-  .challenge-note { font-size: 13px; color: var(--txt); line-height: 1.5; }
-  .challenge-invite .challenge-note { margin-bottom: 12px; }
-  .challenge-link-row { display: flex; gap: 8px; margin-top: 12px; }
-  .challenge-link-row input { flex: 1 1 auto; min-width: 0; padding: 10px; border-radius: 8px;
-                              border: 1px solid var(--line); background: var(--bg); color: var(--txt);
-                              font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .challenge-hint { font-size: 11px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
-  .challenge-result { margin: 22px auto; }
-  .challenge-result .challenge-note { margin-bottom: 12px; }
-  /* The panel is centred; the standings inside it are a table and read left. */
-  .challenge-panel .lb-table { text-align: left; }
-  /* How it works: numbered because the steps genuinely happen in this order. */
-  .challenge-steps { max-width: 460px; margin: 0 auto; padding-left: 22px; text-align: left;
-                     font-size: 13px; color: var(--muted); line-height: 1.6; }
-  .challenge-steps li { margin-bottom: 7px; }
-  .challenge-steps strong { color: var(--txt); font-weight: 700; }
-  /* The code is the thing people retype, so it is set large, monospaced and
-     wide-tracked — the shape of each character matters more than the styling. */
-  .challenge-code-display { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-                            font-size: 34px; font-weight: 800; letter-spacing: 6px;
-                            color: var(--gold); margin: 6px 0 12px; text-indent: 6px; }
-  .challenge-code-input { text-transform: uppercase; letter-spacing: 3px; font-weight: 700; }
-  /* The tracking is for a typed code; the hint text should read as prose. */
-  .challenge-code-input::placeholder { text-transform: none; letter-spacing: 0; font-weight: 400; }
-  .challenge-panel + .challenge-panel { margin-top: 14px; }
-  #challenge-hub .challenge-panel:first-of-type { margin-top: 18px; }
-  .setup-players { max-width: 720px; margin: 18px auto 0; text-align: left; }
-  .player-count { display: flex; gap: 8px; flex-wrap: wrap; }
-  .player-count .setup-option { flex: 1 1 60px; justify-content: center; font-weight: 700; }
-  .lb-submit { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
-  .lb-submit-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-  .lb-submit-row input { flex: 1 1 160px; max-width: 240px; padding: 10px; border-radius: 8px;
-                         border: 1px solid var(--line); background: var(--bg2); color: var(--txt); font-size: 13px; }
-  .lb-submit-note { font-size: 12px; color: var(--muted); margin-top: 8px; text-align: center; }
-  .lb-submit.done .lb-submit-note { color: var(--accent); }
-  @media (max-width: 520px) {
-    .lb-row { grid-template-columns: 30px 1fr 46px 62px; font-size: 12px; }
-    .lb-row > .lb-ratio { display: none; }
-  }
-  .career-tabs { display: flex; gap: 4px; margin-top: 12px; border-bottom: 1px solid var(--line); }
-  .career-tab { flex: 1; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--muted); padding: 10px 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
-  .career-tab.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--tab-active); }
-  .career-panels { margin-top: 14px; }
-  .career-panel { display: none; }
-  .career-panel.active { display: block; }
-  .career-panel .panel { margin-bottom: 12px; }
-  @media (max-width: 600px) { .career-tab { font-size: 12px; padding: 10px 4px; } }
-
-  .career-grid { display: grid; grid-template-columns: 1fr 340px; gap: 18px; margin-top: 16px; }
-  @media (max-width: 880px) { .career-grid { grid-template-columns: 1fr; } }
-  #career-stats-panel h3 { color: var(--gold); font-size: 15px; margin-bottom: 12px; }
-  .career-stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
-  @media (max-width: 600px) { .career-stats-grid { grid-template-columns: repeat(2, 1fr); } }
-
-  .profile-panel { margin-top: 14px; margin-bottom: 14px; }
-  .profile-panel h3 { color: var(--gold); font-size: 16px; margin-bottom: 14px; }
-  .profile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px; }
-  .profile-card { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
-  .profile-card .pc-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
-  .profile-card .pc-val { font-size: 20px; font-weight: 800; color: var(--accent); margin: 4px 0; }
-  .profile-card .pc-val.rare { color: var(--rare); }
-  .profile-card .pc-meta { font-size: 11px; color: var(--muted); }
-  .profile-section { margin-top: 14px; }
-  .profile-section h4 { color: var(--accent2); font-size: 14px; margin-bottom: 8px; }
-  .profile-attrs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-  .profile-attrs div { background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; text-align: center; font-size: 12px; }
-  .profile-attrs b { display: block; font-size: 18px; color: var(--accent); margin-top: 2px; }
-  .profile-derived { margin-top: 10px; font-size: 12px; color: var(--muted); }
-  .profile-top { display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: start; margin-bottom: 14px; }
-  .profile-left { min-width: 0; }
-  .profile-radar { display: flex; justify-content: center; margin: 0; }
-  .profile-radar canvas { width: 320px; height: 260px; }
-  .career-biography { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); }
-  @media (max-width: 880px) { .profile-top { grid-template-columns: 1fr; } .profile-radar canvas { width: 260px; height: 210px; } }
-  @media (max-width: 600px) { .profile-attrs { grid-template-columns: repeat(2, 1fr); } .profile-grid { grid-template-columns: repeat(2, 1fr); } .profile-radar canvas { width: 220px; height: 170px; } }
-  .cs-box { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 6px; text-align: center; }
-  .cs-num { font-size: 20px; font-weight: 900; color: var(--accent); }
-  .cs-lab { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
-  .cs-radar { display: flex; justify-content: center; margin: 10px 0; }
-  .cs-radar canvas { width: 180px; height: 140px; }
-  .cs-honours { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-  .cs-hon { background: var(--bg2); border: 1px solid var(--gold); color: var(--gold); border-radius: 30px; padding: 5px 12px; font-size: 11px; font-weight: 700; }
-  .cs-hon.award { border-color: var(--accent); color: var(--accent); }
-  .cs-hon.intl { border-color: #ff8a3c; color: #ff8a3c; }
-  .cs-section-title { font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
-  .cs-empty { font-size: 12px; color: var(--muted); font-style: italic; }
-
-  /* Club history table */
-  .club-history-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
-  .club-history-table th { background: var(--card2); color: var(--muted); font-size: 10px; text-transform: uppercase; padding: 5px 8px; text-align: left; }
-  .club-history-table td { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); background: var(--bg2); }
-  .club-history-table td.ch-club { font-weight: 700; color: var(--accent2); }
-  .club-history-table td.ch-num { text-align: center; font-weight: 700; color: var(--accent); }
-  .club-history-table td.ch-muted { text-align: center; color: var(--muted); }
-  .club-history-table tr:last-child td { border-bottom: none; }
-
-  /* WIP banner */
-  .wip-banner { background: linear-gradient(135deg, #1a1200, #2a1c00); border: 1px solid var(--gold); border-radius: 10px; padding: 18px 16px; text-align: center; margin-bottom: 16px; }
-  .wip-banner-title { font-size: 18px; font-weight: 900; color: var(--gold); margin-bottom: 6px; }
-  .wip-banner-sub { font-size: 13px; color: var(--muted); }
-
-  /* Agent tier display */
-  .agent-tier-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 12px; margin-left: 4px; }
-  .agent-tier-badge.poor { background: rgba(220,60,60,.12); color: var(--bad); border: 1px solid var(--bad); }
-  .agent-tier-badge.med { background: rgba(255,255,255,.06); color: var(--muted); border: 1px solid var(--line); }
-  .agent-tier-badge.average { background: rgba(0,208,108,.1); color: var(--accent); border: 1px solid var(--accent); }
-  .agent-tier-badge.worldclass { background: rgba(246,196,83,.15); color: var(--gold); border: 1px solid var(--gold); }
-
-  .records-table, .top10-table { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 14px; font-size: 13px; }
-  .rec-row, .top10-row { display: grid; grid-template-columns: 1fr 1.5fr 60px 60px; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); align-items: center; }
-  .top10-row { grid-template-columns: 28px 1fr 60px; }
-  .rec-row:last-child, .top10-row:last-child { border-bottom: none; }
-  .rec-row.head { font-weight: 700; color: var(--muted); background: var(--card); }
-  .top10-row.mine { background: #14361f; color: var(--accent); }
-  .top10-row span:first-child { color: var(--muted); font-weight: 700; }
-  .top10-row span:last-child { text-align: right; font-weight: 700; }
-  .rec-row span:last-child { text-align: right; font-weight: 700; color: var(--accent); }
-  @media (max-width: 600px) { .rec-row { grid-template-columns: 1fr 1fr 55px 55px; font-size: 12px; padding: 8px; } .top10-row { font-size: 12px; } }
-
-  /* Squad Info Styles */
-  .squad-section { margin-bottom: 24px; }
-  .squad-section h4 { color: var(--accent2); font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
-  .squad-info-box { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
-  .squad-team-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-  .squad-team-name { font-weight: 700; color: var(--txt); font-size: 15px; }
-  .squad-team-strength { display: flex; gap: 8px; font-size: 12px; }
-  .squad-attr { background: var(--card); padding: 2px 8px; border-radius: 4px; color: var(--muted); }
-  .squad-players-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
-  .squad-player-card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font-size: 12px; }
-  .squad-player-name { font-weight: 700; color: var(--txt); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .squad-player-pos { color: var(--accent2); font-size: 11px; font-weight: 700; margin-bottom: 4px; }
-  .squad-player-attrs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; font-size: 11px; }
-  .squad-player-attr-row { display: flex; justify-content: space-between; }
-  .squad-player-attr-label { color: var(--muted); }
-  .squad-player-attr-value { color: var(--accent); font-weight: 700; }
-  .manager-card { background: var(--card); border: 1px solid var(--accent2); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
-  .manager-name { font-weight: 700; color: var(--accent2); font-size: 15px; margin-bottom: 4px; }
-  .manager-focus { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
-  .manager-tactics { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 6px; }
-  .tactic-badge { background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 11px; text-align: center; }
-  .tactic-badge.attack { color: var(--bad); border-color: var(--bad); }
-  .tactic-badge.midfield { color: var(--accent2); border-color: var(--accent2); }
-  .tactic-badge.defence { color: var(--accent); border-color: var(--accent); }
-  .changelog { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; max-height: 300px; overflow-y: auto; }
-  .changelog-entry { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
-  .changelog-entry:last-child { border-bottom: none; }
-  .changelog-date { color: var(--accent2); font-weight: 700; }
-  .changelog-text { color: var(--txt); margin-top: 2px; }
-
-  .simming { text-align: center; padding: 30px; color: var(--accent2); font-weight: 700; animation: pulse .4s infinite alternate; }
-  .season-prompt { margin-bottom: 12px; color: var(--muted); }
-  .result-banner { padding: 10px 14px; border-radius: 10px; font-weight: 700; margin-bottom: 12px; }
+  .result-banner { padding: 12px 14px; border-radius: 10px; font-weight: 700; margin-bottom: 12px; font-size: 16px; }
   .result-banner.great { background: #123a22; color: var(--accent); }
   .result-banner.good { background: #14304a; color: var(--accent2); }
   .result-banner.ok { background: var(--card2); }
   .result-banner.bad { background: #3a2a14; color: var(--gold); }
   .result-banner.awful { background: #3a1620; color: var(--bad); }
-  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin-bottom: 12px; }
   .stat-box { background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; text-align: center; }
-  .sb-num { font-size: 26px; font-weight: 900; color: var(--accent); }
-  .sb-lab { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .sb-num { font-size: 24px; font-weight: 900; color: var(--accent); }
+  .sb-num.bad { color: var(--bad); }
+  .sb-num.gold { color: var(--gold); }
+  .sb-lab { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
 
-  .decision { background: linear-gradient(180deg, var(--card2), var(--card)); border: 1px solid var(--accent2); border-radius: 12px; padding: 16px; }
-  .decision.milestone-event { border-color: var(--gold); box-shadow: 0 0 24px rgba(246,196,83,.25); }
-  .decision-tag { display: inline-block; font-size: 11px; letter-spacing: 2px; color: var(--accent2); border: 1px solid var(--accent2); padding: 2px 10px; border-radius: 20px; margin-bottom: 10px; }
-  .milestone-event .decision-tag { color: var(--gold); border-color: var(--gold); }
-  .decision-text { font-size: 16px; margin-bottom: 14px; }
-  .decision-choices { display: flex; flex-direction: column; gap: 8px; }
-  .btn.choice { text-align: left; }
-  .contract-offer { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
-  .contract-club { font-weight: 800; font-size: 18px; color: var(--accent); }
-  .contract-terms { font-size: 22px; font-weight: 900; margin: 4px 0; }
-  .contract-meta { color: var(--muted); font-size: 12px; }
-  .contract-risk { font-size: 12px; margin-top: 4px; color: var(--muted); }
-  .transfer { background: var(--card2); border: 1px solid var(--gold); border-radius: 12px; padding: 16px; }
-  .offers { display: grid; gap: 8px; margin: 12px 0; }
-  .btn.offer { text-align: left; }
-  .offer-club { font-weight: 800; }
-  .offer-meta { color: var(--muted); font-size: 12px; }
-  .offer-contract { color: var(--gold); font-size: 11px; font-weight: 700; margin-top: 4px; }
-  .offer-wage { color: var(--accent); font-size: 11px; font-weight: 700; margin-top: 2px; }
-  .offer-risk { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .metric { display: grid; grid-template-columns: 1fr auto 110px auto; gap: 10px; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .metric:last-child { border-bottom: 0; }
+  .metric-label { font-weight: 700; }
+  .metric-detail { color: var(--muted); font-size: 12px; }
+  .metric-bar { position: relative; height: 8px; background: var(--bg2); border-radius: 4px; }
+  .metric-bar i { position: absolute; top: 0; height: 100%; border-radius: 4px; }
+  .metric-bar i.good { background: var(--accent); }
+  .metric-bar i.warn { background: var(--gold); }
+  .metric-bar i.bad { background: var(--bad); }
+  .metric-mid { position: absolute; left: 50%; top: -2px; width: 1px; height: 12px; background: var(--line); }
 
-  .log-panel h3 { color: var(--accent2); font-size: 15px; }
-  #career-log { max-height: 560px; overflow-y: auto; padding-right: 6px; }
-
-  /* Log preview on season tab */
-  .log-preview { margin-top: 14px; }
-  .log-preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-  .log-preview-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
-  .log-preview-link { font-size: 11px; color: var(--accent2); cursor: pointer; text-decoration: underline; background: none; border: none; padding: 0; }
-  .log-preview-link:hover { color: var(--accent); }
-  #log-preview-entries .log-entry { margin-bottom: 4px; font-size: 12px; padding: 6px 9px; }
-
-  /* Leagues view */
-  .leagues-view { display: flex; flex-direction: column; gap: 12px; }
-  .league-block { background: var(--bg2); border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
-  .league-block-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--card2); cursor: pointer; }
-  .league-block-name { font-size: 13px; font-weight: 800; color: var(--accent2); }
-  .league-block-winner { font-size: 12px; color: var(--gold); font-weight: 700; }
-  .league-block-table { display: none; }
-  .league-block.open .league-block-table { display: block; }
-  .league-block-table .league-table th { background: var(--card2); color: var(--muted); font-size: 10px; }
-  .leagues-no-data { color: var(--muted); font-size: 13px; font-style: italic; padding: 20px 0; text-align: center; }
-
-  /* Finance badge on header */
-  .finance-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
-  .finance-badge.rich { background: rgba(246,196,83,.15); color: var(--gold); border: 1px solid var(--gold); }
-  .finance-badge.stable { background: rgba(0,208,108,.1); color: var(--accent); border: 1px solid var(--accent); }
-  .finance-badge.poor { background: rgba(220,60,60,.1); color: var(--bad); border: 1px solid var(--bad); }
-  .log-entry { font-size: 13px; padding: 8px 10px; border-radius: 8px; margin-bottom: 6px; background: var(--bg2); border-left: 3px solid var(--line); }
-  .log-entry.milestone { border-left-color: var(--gold); }
-  .log-entry.decision { border-left-color: var(--accent2); background: #10243a; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 16px 0 12px; }
+  .tab { background: var(--card); border: 1px solid var(--line); color: var(--muted); padding: 8px 14px;
+    font: inherit; font-size: 12px; font-weight: 700; letter-spacing: 1px; border-radius: 8px; cursor: pointer; }
+  .tab.on { color: var(--txt); border-color: var(--accent); background: var(--card2); }
+  /* The log is a feed, not prose: tighter leading and a slightly condensed face
+     fit roughly twice as many lines on a screen without shrinking the text to
+     the point of being unreadable. */
+  .log-entry { font-size: 12px; line-height: 1.35; padding: 4px 8px; border-radius: 6px;
+    margin-bottom: 2px; background: var(--bg2); border-left: 2px solid var(--line);
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+  .log-entry .muted { font-size: 11px; opacity: .75; margin-right: 4px; }
+  .log-entry.trophy { border-left-color: var(--gold); }
   .log-entry.transfer { border-left-color: var(--rare); }
-  .log-entry.intl { border-left-color: #ff8a3c; }
-  .log-entry.great { border-left-color: var(--accent); }
-  .log-entry.bad, .log-entry.awful { border-left-color: var(--bad); }
-  .log-entry.info { border-left-color: var(--accent); color: #b8d4e8; font-size: 12px; }
-  .log-entry.achievement { border-left-color: var(--gold); background: #2a1c00; color: var(--gold); font-weight: 700; }
+  .log-entry.sack, .log-entry.relegated { border-left-color: var(--bad); }
+  .log-entry.hire, .log-entry.promoted { border-left-color: var(--accent); }
+  .log-entry.youth { border-left-color: var(--accent2); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 10px; letter-spacing: 1px;
+    text-transform: uppercase; padding: 7px 8px; background: var(--card2); }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  tr.you td { background: rgba(0,208,108,.09); font-weight: 700; }
+  .table-scroll { overflow-x: auto; }
+  .inj { color: var(--bad); font-size: 11px; }
+  .hg { font-size: 9px; color: var(--accent); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; }
+  .simming { text-align: center; padding: 40px 20px; color: var(--accent2); font-weight: 700; }
+
+  /* ---------- Tier 1: career dashboard ---------- */
+  .tier-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted);
+    margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+  .dash { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 780px) { .dash { grid-template-columns: 1fr; } }
+
+  /* ---------- Tactics ---------- */
+  .pitch { background:
+      linear-gradient(180deg, #0c3320, #082516);
+    border: 1px solid var(--line); border-radius: 12px; padding: 12px; position: relative; }
+  .pitch-rows { display: flex; flex-direction: column-reverse; gap: 8px; }
+  /* nowrap is what keeps a back four looking like a back four. Wrapping turned
+     every line into a stack on a phone, so the shape — the entire point of the
+     screen — was invisible on the device most people play on. */
+  .pitch-row { display: flex; justify-content: center; gap: 6px; flex-wrap: nowrap; }
+  @media (max-width: 620px) {
+    .pitch { padding: 8px 6px; }
+    .pitch-rows { gap: 5px; }
+    .pitch-row { gap: 4px; }
+    .slot { padding: 5px 3px; font-size: 10px; border-radius: 6px; }
+    .slot .slot-pos { font-size: 8px; letter-spacing: 0; margin-bottom: 0; }
+    .slot .slot-name { font-size: 10px; }
+    .slot .slot-flag { font-size: 8px; }
+    .log-entry { font-size: 11px; padding: 3px 6px; }
+  }
+  .slot { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 6px;
+    min-width: 0; flex: 1 1 0; max-width: 132px; text-align: center; cursor: pointer; font-size: 12px;
+    color: var(--txt); font-family: inherit; line-height: 1.3; }
+  .slot:hover { border-color: var(--accent2); }
+  .slot.warn { border-color: var(--gold); }
+  .slot.bad { border-color: var(--bad); }
+  .slot .slot-pos { font-size: 10px; line-height: 1.3; letter-spacing: 1px; color: var(--muted); margin-bottom: 1px; }
+  .slot .slot-name { font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .slot .slot-ovr { color: var(--accent); font-weight: 900; }
+  .slot .slot-flag { font-size: 10px; color: var(--gold); }
+  .slot .slot-flag.bad { color: var(--bad); }
+  .chooser { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; max-height: 300px; overflow-y: auto; }
+  .chooser-list { display: flex; flex-direction: column; gap: 6px; max-height: 56vh; overflow-y: auto; margin-top: 4px; }
+  .chooser-list .pcard { margin-bottom: 0; }
+  .chooser button { text-align: left; background: var(--bg2); border: 1px solid var(--line); color: var(--txt);
+    border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 12px; cursor: pointer; }
+  .chooser button:hover { border-color: var(--accent); }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg button { background: var(--card); border: 1px solid var(--line); color: var(--muted); border-radius: 8px;
+    padding: 8px 12px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .seg button.on { color: var(--txt); border-color: var(--accent); background: var(--card2); }
+  .seg button:disabled { opacity: 0.4; cursor: not-allowed; text-decoration: line-through; }
+
+  /* ---------- Modal / player profile ---------- */
+  .modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; }
+  .modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.72); }
+  .modal-panel { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 20px; width: min(620px, 94%); max-height: 88vh; overflow-y: auto; box-shadow: var(--shadow); }
+  .modal-close { position: absolute; top: 10px; right: 12px; background: none; border: 0; color: var(--muted);
+    font-size: 22px; cursor: pointer; line-height: 1; }
+  .profile-head { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  .profile-meta { flex: 1; min-width: 200px; }
+  .trait-chip { display: inline-block; font-size: 11px; border: 1px solid var(--line); border-radius: 20px;
+    padding: 2px 9px; margin: 2px 3px 2px 0; color: var(--accent2); }
+  .trait-chip.gold { color: var(--gold); border-color: var(--gold); }
+  .mini-bar { display: grid; grid-template-columns: 92px 1fr 28px; gap: 6px; align-items: center; font-size: 11px; margin-bottom: 4px; }
+  .mini-bar .bar { height: 6px; }
+
+  /* ---------- Transfers ---------- */
+  .market-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center;
+    padding: 7px 8px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .market-row:hover { background: var(--bg2); }
+  .tiny { font-size: 11px; padding: 4px 9px; }
+  .listed-tag { font-size: 9px; color: var(--gold); border: 1px solid var(--gold); border-radius: 3px; padding: 0 4px; }
+  .bid-tag { font-size: 9px; color: var(--accent); border: 1px solid var(--accent); border-radius: 3px; padding: 0 4px; }
+
+  /* ---------- Player cards (donor-card colours from 1000goals) ----------
+     Reused verbatim from ../index.html so a player reads the same colour
+     language whether he is being drafted in 1000goals or picked here:
+       attack (FW/WG/AM)  red    midfield (DM/CM) green
+       defence (CB/FB)    blue   keeper   (GK)     gold          */
+  .pcard { display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: 14px;
+    background: #0d1620; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px;
+    text-align: left; width: 100%; color: var(--txt); font: inherit; cursor: pointer; transition: .12s; }
+  .pcard:hover { border-color: #47516b; background: #101c28; }
+  .pcard.in-xi { border-color: var(--accent); }
+  .pcard.mentored { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(0,208,108,.4) inset; }
+  .pcard.listed { border-color: var(--bad); box-shadow: 0 0 0 1px rgba(255,107,122,.4) inset; }
+  /* Four families, four colours — reverted from an eight-shade scheme that
+     added clutter without adding information. The position letters are what
+     tell FB from CB now, and .ppos is boxed clearly enough to carry that on
+     its own (a real border, not just a colour wash). */
+  .prating { width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;
+    border-radius: 11px; color: #fff; font-size: 18px; font-weight: 900; flex-shrink: 0; }
+  .prating.attack { background: #f04452; }
+  .prating.defence { background: #347df1; }
+  .prating.midfield { background: #10c986; }
+  .prating.keeper { background: #f5c542; color: #221600; }
+  /* A quality ring, layered on top of the position colour rather than
+     replacing it — the badge still says WHAT he plays, the ring says HOW
+     GOOD at a glance, which a flat position-coloured number never could:
+     two very different players in the same shirt read identically. Only
+     the two ends stand out (elite / poor) so a 26-man list still reads as
+     mostly quiet — the point is to make outliers jump out, not to ring
+     every card and add the clutter back in from the other direction. */
+  .prating.rtier-elite { box-shadow: 0 0 0 3px var(--gold), 0 0 10px rgba(245,197,66,.55); }
+  .prating.rtier-poor { box-shadow: 0 0 0 3px var(--bad); }
+  .pbody { min-width: 0; }
+  .pname { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pmeta { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  /* A narrow phone has little enough room for the name that the rating badge
+     and the gaps around it are worth shrinking too, not just relying on the
+     freed-up actions column (see pcard() in ui.js — the four action buttons
+     moved to the player's own profile so the list card is name-first). */
+  @media (max-width: 420px) {
+    .pcard { grid-template-columns: 42px 1fr auto; gap: 10px; padding: 10px 12px; }
+    .prating { width: 42px; height: 42px; font-size: 15px; border-radius: 9px; }
+    .pname { font-size: 13.5px; }
+  }
+  .ppos { display: inline-block; font-size: 10px; font-weight: 900; letter-spacing: .5px; border-radius: 5px;
+    padding: 2px 7px; margin-right: 6px; border: 1px solid; }
+  .ppos.attack { color: #ff8790; background: rgba(255,70,85,.14); border-color: rgba(255,70,85,.55); }
+  .ppos.defence { color: #7fb2ff; background: rgba(52,125,241,.16); border-color: rgba(52,125,241,.55); }
+  .ppos.midfield { color: #4de0b4; background: rgba(16,201,134,.14); border-color: rgba(16,201,134,.55); }
+  .ppos.keeper { color: #f5c542; background: rgba(245,197,66,.16); border-color: rgba(245,197,66,.55); }
+  .pattrs { display: grid; grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: 5px; margin-top: 8px; font-size: 11px; }
+  .pattr { display: flex; flex-direction: column; gap: 1px; background: rgba(255,255,255,.045); padding: 4px 6px; border-radius: 6px; color: var(--muted); min-width: 0; }
+  .pattr b { color: var(--txt); font-weight: 800; }
+  .pactions { display: flex; flex-direction: column; gap: 5px; flex-shrink: 0; }
+  /* Four actions (list/mentor/extend/release) in a 2x2 grid rather than a
+     four-tall stack — the contracts tab merged into the squad card, and a
+     stack of four buttons made every row nearly as tall as the card itself. */
+  .pactions.quad { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; width: 118px; }
+  .pactions.quad .pbtn { padding: 5px 4px; }
+  .pbtn { font-size: 10px; font-weight: 800; letter-spacing: .5px; border: 1px solid var(--line); background: transparent;
+    color: var(--muted); border-radius: 6px; padding: 4px 8px; cursor: pointer; white-space: nowrap; font-family: inherit; }
+  .pbtn:hover { border-color: var(--accent2); color: var(--txt); }
+  .pbtn.on-list { border-color: var(--bad); color: var(--bad); background: rgba(255,107,122,.12); }
+  .pbtn.on-mentor { border-color: var(--accent); color: var(--accent); background: rgba(0,208,108,.12); }
+  .sortbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; }
+  .sortbar .muted { margin-right: 2px; }
+  .log-entry.contract { border-left-color: var(--accent2); }
+  .log-entry.season { border-left-color: var(--gold); background: var(--card2); }
+  .log-entry.match { border-left-color: var(--accent2); }
+  .log-entry.loan { border-left-color: var(--rare); }
+
+  /* ---------- Season marks and development ---------- */
+  .pmark { display: inline-block; font-size: 11px; font-weight: 800; padding: 1px 6px;
+    border-radius: 10px; margin-left: 6px; vertical-align: middle; }
+  .pmark.mark-great { background: rgba(245,224,80,.18); color: var(--gold); }
+  .pmark.mark-good { background: rgba(0,208,108,.16); color: var(--accent); }
+  .pmark.mark-ok { background: rgba(123,155,139,.16); color: var(--muted); }
+  .pmark.mark-poor { background: rgba(255,107,122,.16); color: var(--bad); }
+  .prating { position: relative; }
+  .pgrow { position: absolute; right: -2px; bottom: -6px; font-size: 9px; font-weight: 800;
+    padding: 0 3px; border-radius: 6px; background: var(--bg2); }
+  .pgrow.up { color: var(--accent); }
+  .pgrow.down { color: var(--bad); }
+  .log-entry.retirement { border-left-color: var(--muted); }
+
+  /* ---------- The pre-season transfer wizard ---------- */
+  .wizard-block { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 10px 0; }
+  .wizard-block h4 { margin: 0 0 8px; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+  .board-note { background: rgba(56,182,255,.08); border-left: 3px solid var(--accent2); border-radius: 8px;
+    padding: 8px 10px; font-size: 13px; margin: 8px 0; }
+
+  /* ---------- Matchup + depth ---------- */
+  .mrow { display: grid; grid-template-columns: 68px 1fr 28px 1fr; gap: 8px; align-items: center;
+    padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+  .mrow:last-child { border-bottom: 0; }
+  .mrow .mf { font-weight: 800; }
+  .mrow b { text-align: center; font-size: 14px; }
+  .depth-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+  .dcell { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 6px; text-align: center; }
+  .dname { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dslot { margin-bottom: 2px; }
+  @media (max-width: 620px) {
+    .mrow { grid-template-columns: 58px 1fr 24px; font-size: 11px; }
+    .mrow span:last-child { display: none; }
+    .depth-grid { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); }
+  }
+
+  /* ---------- Notifications ---------- */
+  .bell { position: relative; background: transparent; border: 1px solid var(--line); border-radius: 8px;
+    width: 32px; height: 32px; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .bell:hover { border-color: var(--accent2); }
+  .bell-badge { position: absolute; top: -6px; right: -6px; background: var(--bad); color: #2a0006; font-size: 10px;
+    font-weight: 900; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
+  .notif-panel { position: absolute; z-index: 40; top: 100%; margin-top: 6px; left: 0; width: min(360px, 88vw);
+    background: var(--card); border: 1px solid var(--accent2); border-radius: 10px; box-shadow: var(--shadow);
+    padding: 10px; max-height: 60vh; overflow-y: auto; }
+  .notif-wrap { position: relative; }
+  .notif-empty { color: var(--muted); font-size: 12px; padding: 6px 2px; }
+  .notif-panel .log-entry.unseen { background: rgba(56,182,255,.10); border-left-color: var(--accent2); }
+
+  /* ---------- The two verdicts: boardroom and supporters ---------- */
+  .verdict-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 560px) { .verdict-pair { grid-template-columns: 1fr; } }
+  .verdict-card { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; text-align: center; }
+  .verdict-card.good { border-color: var(--accent); }
+  .verdict-card.bad { border-color: var(--bad); }
+  .vc-label { font-size: 10px; letter-spacing: 2px; color: var(--muted); margin-bottom: 6px; }
+  .vc-score { font-size: 34px; font-weight: 900; line-height: 1; }
+  .vc-swing { font-size: 12px; font-weight: 700; margin-top: 4px; }
+  .vc-verdict { font-size: 13px; font-weight: 700; margin-top: 6px; }
+
+  /* ---------- Contracts tab ---------- */
+  .crow { display: flex; align-items: center; gap: 10px; background: var(--bg2); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
+  .crow.extend { border-color: var(--accent); }
+  .crow.release { border-color: var(--bad); }
+  .crow-yrs { min-width: 54px; text-align: center; font-weight: 800; font-size: 18px; }
+  .crow-yrs.soon { color: var(--gold); }
+  .crow-yrs.expiring { color: var(--bad); }
+  .crow-body { flex: 1; min-width: 0; }
+  .crow-body .nm { font-weight: 700; }
+  .crow-actions { display: flex; gap: 6px; }
 
   /* ---------- Legacy ---------- */
-  .legacy { text-align: center; padding: 30px 10px; }
-  .legacy-status { font-size: clamp(26px, 5vw, 44px); font-weight: 900; letter-spacing: 1px; }
-  .legacy-status.god { background: linear-gradient(135deg, var(--gold), #ff7b3c); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .legacy-status.legend { color: var(--accent2); }
-  .legacy-big { font-size: 90px; font-weight: 900; color: var(--accent); line-height: 1; margin: 10px 0; }
-  .legacy-big-lab { color: var(--muted); letter-spacing: 3px; }
-  .legacy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 28px 0; }
-  .leg-box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
-  .leg-num { font-size: 28px; font-weight: 900; color: var(--gold); }
-  .leg-lab { font-size: 12px; color: var(--muted); }
-  .dna-summary { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 10px 0 18px; }
-  .tag { background: var(--card2); border: 1px solid var(--line); padding: 5px 14px; border-radius: 30px; font-weight: 700; font-size: 13px; }
-  .tag.rare { border-color: var(--rare); color: var(--rare); }
-  .legacy-dna { max-width: 620px; margin: 0 auto; text-align: left; }
-  
-  /* ---------- DNA Attribute Report ---------- */
-  .dna-report { max-width: 620px; margin: 0 auto; text-align: left; }
-  .report-section { background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
-  .report-section h4 { margin: 0 0 12px; font-size: 14px; color: var(--accent2); }
-  .report-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 8px; }
-  .report-item { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
-  .attr-name { font-weight: 700; font-size: 13px; color: var(--accent); }
-  .attr-donor { font-size: 11px; color: var(--muted); }
-  .attr-val { font-size: 14px; font-weight: 700; color: var(--txt); }
-  .attr-impact { font-size: 13px; font-weight: 700; color: var(--accent2); }
-  .report-note { font-size: 13px; color: var(--muted); line-height: 1.5; padding: 10px 0; }
-
-  /* ---------- Shareable Career Card ---------- */
-  .share-card { max-width: 640px; margin: 28px auto 0; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; text-align: center; }
-  .share-card h3 { color: var(--accent2); font-size: 16px; margin-bottom: 12px; }
-  #share-card-canvas { width: 100%; max-width: 600px; height: auto; border-radius: 12px; border: 1px solid var(--line); box-shadow: 0 10px 24px rgba(0,0,0,.35); }
-  .share-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
-
-  .footer-note { text-align: center; color: var(--muted); font-size: 12px; margin-top: 40px; }
-
-  /* ---------- Biography ---------- */
-  .biography-panel { font-size: 14px; line-height: 1.65; }
-  .bio-intro { background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; color: var(--txt); }
-  .bio-entry { background: var(--bg2); border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0; padding: 12px 14px; margin-bottom: 10px; }
-  .bio-entry.bio-closing { border-left-color: var(--gold); background: #2a1c00; }
-  .bio-entry p { margin: 0; }
-  .bio-tag { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-  .bio-empty { color: var(--muted); font-style: italic; padding: 10px 0; }
-
-  /* ---------- Alpha 1.1 additions ---------- */
-  .chooser-label { color: var(--muted); font-size: 13px; margin: 10px 0 6px; }
-  .attr-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
-  .attr-chip { background: var(--card2); border: 1px solid var(--line); color: var(--txt);
-    padding: 8px 14px; border-radius: 30px; font-weight: 700; font-size: 13px; cursor: pointer; transition: .12s; }
-  .attr-chip:hover { border-color: var(--accent2); transform: translateY(-1px); }
-  .attr-chip.active { background: var(--accent2); color: #04223f; border-color: transparent; }
-  .donor-pos { position: absolute; bottom: 8px; right: 8px; font-size: 10px; font-weight: 700; color: var(--muted); }
-  .legend-chip { display: inline-block; background: var(--gold); color: #2a1c00; font-size: 10px;
-    font-weight: 800; padding: 0 5px; border-radius: 5px; vertical-align: middle; }
-  .academy-card { background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin: 10px 0; text-align: center; }
-  .academy-card.tierWorldClass { border-color: var(--gold); }
-  .academy-card.tierStrong { border-color: var(--accent2); }
-  .academy-tier { font-size: 20px; font-weight: 900; color: var(--accent); }
-  .academy-flavor { color: var(--muted); font-size: 13px; margin-top: 6px; }
-  .acad-chip { display: inline-block; margin-top: 10px; background: var(--card2); border: 1px dashed var(--gold); color: var(--gold); padding: 5px 14px; border-radius: 30px; font-size: 12px; }
-  .agent-chip { display: inline-block; margin-top: 8px; background: var(--card2); border: 1px solid var(--accent); color: var(--accent); padding: 5px 14px; border-radius: 30px; font-size: 12px; }
-  .longevity-chip { display: inline-block; margin-top: 8px; background: var(--card2); border: 1px dashed var(--gold); color: var(--gold); padding: 5px 14px; border-radius: 30px; font-size: 12px; }
-  .preview-hint { margin-top: 12px; font-size: 11px; color: var(--muted); font-style: italic; border-top: 1px dashed var(--line); padding-top: 10px; }
-  .scout-feedback { margin-top: 10px; padding: 10px 12px; background: #14233d; border: 1px dashed var(--accent2); border-radius: 8px; font-size: 13px; color: var(--txt); line-height: 1.4; }
-  .scout-feedback strong { color: var(--accent); }
-  .synergy-block { margin-top: 18px; }
-  .synergy-block h3 { color: var(--accent2); font-size: 15px; }
-  .mutation-block { margin-top: 14px; }
-  .mutation-block h3 { color: var(--gold); font-size: 15px; }
-  .pillars-block { margin-top: 18px; }
-  .pillars-block h3 { color: var(--gold); font-size: 15px; margin-bottom: 8px; }
-  .pillar-row { display: flex; align-items: center; gap: 10px; font-size: 12px; margin-bottom: 5px; }
-  .pillar-k { width: 110px; color: var(--text2); }
-  .pillar-bar { flex: 1; height: 8px; background: var(--bg2); border-radius: 4px; overflow: hidden; }
-  .pillar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
-  .pillar-v { width: 28px; text-align: right; color: var(--text); }
-  .season-decision { border-left-color: var(--gold); }
-  .syn-note { font-size: 13px; padding: 6px 10px; border-radius: 8px; margin-bottom: 6px; background: var(--bg2); border-left: 3px solid var(--line); }
-  .syn-note.good { border-left-color: var(--accent); }
-  .syn-note.bad { border-left-color: var(--bad); color: #ffb0b8; }
-
-  .season-summary { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
-  .summary-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--line); }
-  .summary-row:last-child { border-bottom: none; }
-  .summary-label { color: var(--muted); }
-  .summary-val { font-weight: 700; color: var(--txt); }
-  .season-honours { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-  .hon-badge { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--line); }
-  .hon-badge.title { color: var(--gold); border-color: var(--gold); }
-  .hon-badge.award { color: var(--accent2); border-color: var(--accent2); }
-  .summary-highlights { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-  .highlight-badge { font-size: 13px; font-weight: 700; padding: 6px 12px; border-radius: 6px; text-align: center; }
-  .highlight-badge.injury { background: rgba(220, 53, 69, 0.15); color: #ff6b6b; border: 1px solid #ff6b6b; }
-  .highlight-badge.trophy { background: rgba(255, 193, 7, 0.15); color: var(--gold); border: 1px solid var(--gold); }
-  .highlight-badge.ballon { background: rgba(76, 175, 80, 0.15); color: #4caf50; border: 1px solid #4caf50; }
-  @media (max-width: 600px) { .summary-row { flex-direction: column; gap: 2px; } }
-
-  .league-details { margin-top: 14px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .league-details summary { cursor: pointer; color: var(--accent2); font-weight: 700; font-size: 13px; padding: 6px 0; }
-  .league-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; font-family: "Arial Black", "Arial Narrow", sans-serif; min-width: 600px; }
-  .league-table th, .league-table td { padding: 5px 6px; text-align: center; border-bottom: 1px solid rgba(0,0,0,0.25); }
-  .league-table th { background: var(--accent); color: #052211; font-weight: 900; text-transform: uppercase; font-size: 11px; }
-  .league-table td { background: var(--bg2); }
-  .league-table td.lt-team { text-align: left; font-weight: 700; }
-  .league-table td.lt-pts { font-weight: 900; color: var(--gold); }
-  .league-table tr.mine td { background: rgba(0, 208, 108, 0.18); color: var(--accent); }
-  .league-table tr.mine td.lt-team { color: var(--accent); }
-  .league-table tr.champ td:first-child { color: var(--gold); font-weight: 800; }
-  .league-table tr.ucl td:first-child { color: var(--accent2); }
-  .league-table tr.uel td:first-child { color: var(--accent); }
-  .league-table tr.releg td:first-child { color: var(--bad); }
-
-  .honours-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 10px; }
-  .hon-item { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; align-items: center; gap: 8px; }
-  .hon-ic { font-size: 20px; }
-  .hon-count { font-weight: 900; color: var(--gold); font-size: 18px; }
-  .hon-name { font-size: 12px; color: var(--muted); }
-  .legacy-section { max-width: 720px; margin: 24px auto 0; text-align: left; }
-  .legacy-section h3 { color: var(--accent2); font-size: 16px; }
-  .legacy-summary-text { font-size: 15px; line-height: 1.6; color: var(--txt); background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
-  .legacy-summary-text .highlight { color: var(--accent); font-weight: 700; }
-  /* Clubs played — reuses the leaderboard row grid rather than a raw <table>,
-     so it reads as the same kind of stat row already established elsewhere. */
-  #legacy-clubs .lb-row { grid-template-columns: 1fr 54px 54px 54px 54px; }
-  #legacy-clubs .lb-row.head { text-align: right; }
-  #legacy-clubs .lb-row.head .lb-club { text-align: left; }
-  #legacy-clubs .lb-club { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #legacy-clubs .lb-club b { color: var(--gold); font-weight: 700; }
-  #legacy-clubs .lb-apps, #legacy-clubs .lb-goals, #legacy-clubs .lb-assists, #legacy-clubs .lb-seasons { text-align: right; font-variant-numeric: tabular-nums; }
-  #legacy-clubs .lb-goals { font-weight: 700; color: var(--accent); }
-  .clubs-table td.lt-pts { color: var(--accent); }
-  .history-list { list-style: none; padding: 0; margin: 8px 0 0; }
-  .history-list li { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
-  .hist-season { display: inline-block; min-width: 34px; color: var(--muted); font-weight: 700; }
-  .epilogue { background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 14px; font-size: 14px; line-height: 1.6; }
-  .epilogue div { margin: 2px 0; }
-  .decision.endcareer { border-color: var(--gold); box-shadow: 0 0 24px rgba(246,196,83,.2); }
-  .difficulty-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; max-width: 480px; margin: 0 auto; }
-  .difficulty-card { flex-direction: column; padding: 18px 14px; text-align: center; }
-  .difficulty-card .diff-name { font-size: 18px; font-weight: 800; letter-spacing: 1px; margin-bottom: 4px; }
-  .difficulty-card .diff-detail { font-size: 12px; color: var(--muted); }
-  .difficulty-card:hover { border-color: var(--accent); }
-  .club-assigned { margin-top: 16px; padding: 14px; background: var(--card2); border: 1px solid var(--line); border-radius: 10px; text-align: center; }
-  .club-assigned-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-  .club-assigned-name { font-size: 22px; font-weight: 800; color: var(--accent); }
-  .club-assigned-tier { font-size: 12px; color: var(--muted); margin-top: 4px; }
-  .club-offers { margin-top: 16px; }
-  .club-offers-label { font-size: 14px; margin-bottom: 10px; color: var(--muted); }
-  .club-offers-grid { display: flex; flex-direction: column; gap: 10px; }
-  .club-offer-card { display: block; text-align: left; padding: 14px; background: var(--card2); border: 2px solid var(--line); border-radius: 10px; cursor: pointer; transition: border-color .15s; }
-  .club-offer-card:hover { border-color: var(--accent); }
-  .club-offer-card.selected { border-color: var(--accent); box-shadow: 0 0 12px rgba(58,134,255,.2); }
-  .club-offer-name { font-size: 18px; font-weight: 700; }
-  .club-offer-tier { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .club-offer-role { font-size: 12px; color: var(--accent2); margin-top: 4px; }
-  .club-offer-manager { font-size: 13px; color: var(--text); margin-top: 8px; font-weight: 600; }
-  .club-offer-tags { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
-  .club-offer-tags .tag { font-size: 10px; padding: 2px 6px; background: var(--card); border: 1px solid var(--line); border-radius: 4px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
-  .club-offer-project { font-size: 12px; color: var(--muted); margin-top: 4px; font-style: italic; }
-  .club-assigned-manager { font-size: 13px; color: var(--text); margin-top: 8px; font-weight: 600; }
-  .club-assigned-project { font-size: 12px; color: var(--muted); margin-top: 4px; font-style: italic; }
-  .confirm-body { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
-  @media (max-width: 700px) { .confirm-body { grid-template-columns: 1fr; } }
-  .radar-wrap { display: flex; justify-content: center; align-items: center; min-height: 240px; }
-  .traits-block { margin-top: 14px; }
-  .traits-block h3 { color: var(--accent2); font-size: 15px; margin-bottom: 8px; }
-  .traits-list { display: flex; flex-wrap: wrap; gap: 6px; }
-  .trait-chip { display: inline-block; background: var(--card2); border: 1px solid var(--line); padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: help; }
-  .trait-chip small { font-size: 9px; font-weight: 900; margin-left: 3px; opacity: 0.8; }
-  .trait-tier-1 { border-color: #cd7f32 !important; color: #cd7f32 !important; }
-  .trait-tier-2 { border-color: #c0c0c0 !important; color: #c0c0c0 !important; }
-  .trait-tier-3 { border-color: #f5e050 !important; color: #f5e050 !important; box-shadow: 0 0 8px rgba(245, 224, 80, 0.15); }
-  .legacy-radar { display: flex; justify-content: center; margin-top: 18px; }
-  .roll-result { font-size: 28px; font-weight: 900; color: var(--accent); text-align: center; padding: 30px 0; }
-  .roll-placeholder { color: var(--muted); text-align: center; padding: 30px 0; font-style: italic; }
-  .career-pos { display: inline-block; background: var(--gold); color: #2a1c00; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 11px; margin-left: 4px; }
-  .career-contract { display: inline-block; background: var(--card2); border: 1px solid var(--line); padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px; color: var(--accent2); margin-left: 4px; }
-
-  /* ---------- About footer ---------- */
-  .about-footer {
-    margin: 28px auto 0;
-    max-width: 780px;
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 4px;
-    color: var(--txt);
-  }
-  .about-footer summary {
-    cursor: pointer;
-    padding: 14px 18px;
-    font-weight: 700;
-    font-size: 15px;
-    color: var(--accent);
-    list-style: none;
-  }
-  .about-footer summary::-webkit-details-marker { display: none; }
-  .about-footer summary::after {
-    content: "+";
-    float: right;
-    font-weight: 400;
-    color: var(--muted);
-  }
-  .about-footer[open] summary::after { content: "−"; }
-  .about-footer > div {
-    padding: 8px 18px 18px;
-    font-size: 14px;
-    line-height: 1.55;
-    color: var(--muted);
-  }
-  .about-footer > div p { margin: 0 0 12px; }
-  .about-footer > div a { color: var(--accent2); text-decoration: none; }
-  .about-footer > div a:hover { text-decoration: underline; }
-
-  /* ---------- Mobile clipping fixes ---------- */
-  @media (max-width: 600px) {
-    .career-tabs { flex-wrap: wrap; }
-    .career-tab { flex: 1 1 auto; min-width: 70px; font-size: 11px; padding: 8px 4px; }
-    .career-head h2 { font-size: 18px; }
-    .hdr-stat { font-size: 12px; padding: 4px 8px; }
-    .spin-labels { gap: 18px; }
-    .spin-boxes { gap: 8px; }
-    .spin-box { min-width: 110px; min-height: 42px; font-size: 14px; padding: 10px 12px; }
-    .spin-x { font-size: 18px; }
-    .spinner-team { font-size: 20px; padding: 28px 0; }
-    .roll-result { font-size: 22px; }
-    .rating-num { font-size: 52px; }
-    .contract-terms { font-size: 18px; }
-    .offer-club, .club-offer-name, .club-assigned-name { font-size: 16px; }
-    .decision-text { font-size: 14px; }
-    .legacy-big { font-size: 64px; }
-    .leg-num { font-size: 22px; }
-    .leg-lab { font-size: 11px; }
-    .league-table { font-size: 11px; }
-    .league-table th, .league-table td { padding: 4px 3px; }
-    .club-history-table { font-size: 11px; }
-    .club-history-table th, .club-history-table td { padding: 4px 5px; }
-    .league-block-table, .table-scroll { overflow-x: auto; }
-    .league-table { min-width: 520px; }
-    .biography-panel { font-size: 13px; }
-  }
+  .legacy-title { font-family: Impact, "Arial Black", sans-serif; text-transform: uppercase;
+    font-size: clamp(28px, 5vw, 48px); letter-spacing: 2px; color: var(--gold); text-shadow: 3px 3px 0 #2a1c00; }
 </style>
 </head>
 <body>
 <div class="wrap">
 
-<main>
-
-  <!-- ================= SCREEN 1b: DIFFICULTY ================= -->
-  <section id="screen-difficulty" class="screen">
-    <div class="hero">
-      <h2>SELECT DIFFICULTY</h2>
-      <div class="sub" style="margin-bottom:24px">Choose your challenge level</div>
-      <div class="difficulty-grid">
-        <button class="btn difficulty-card btn-difficulty" data-difficulty="easy">
-          <div class="diff-name">EASY</div>
-          <div class="diff-detail">3 rerolls · all attributes visible</div>
-        </button>
-        <button class="btn difficulty-card btn-difficulty" data-difficulty="medium">
-          <div class="diff-name">MEDIUM</div>
-          <div class="diff-detail">1 reroll · all attributes visible</div>
-        </button>
-        <button class="btn difficulty-card btn-difficulty" data-difficulty="hard">
-          <div class="diff-name">HARD</div>
-          <div class="diff-detail">0 rerolls · all attributes visible</div>
-        </button>
-        <button class="btn difficulty-card btn-difficulty" data-difficulty="impossible">
-          <div class="diff-name">IMPOSSIBLE</div>
-          <div class="diff-detail">0 rerolls · names only, no attributes</div>
-        </button>
-      </div>
-      <div style="margin-top:20px"><button class="btn" onclick="document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById('screen-welcome').classList.add('active')">← Back</button></div>
-    </div>
-  </section>
-
-  <!-- ================= SCREEN 1c: SETUP ================= -->
-  <section id="screen-setup" class="screen">
-    <div class="hero">
-      <h2>SETUP YOUR CAREER</h2>
-      <div class="sub" style="margin-bottom:24px">Pick the era and rating mode</div>
-      <div class="setup-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:720px;margin:0 auto;text-align:left">
-        <div class="panel">
-          <h3 style="font-size:16px;color:var(--gold);margin-bottom:12px">Era</h3>
-          <div class="setup-options" id="setup-era-options">
-            <label class="setup-option"><input type="radio" name="setup-era" value="all" checked> All Eras (1992–2026)</label>
-            <label class="setup-option"><input type="radio" name="setup-era" value="classic"> Classic Era (1992–2004)</label>
-            <label class="setup-option"><input type="radio" name="setup-era" value="modern"> Modern Era (2005–2014)</label>
-            <label class="setup-option"><input type="radio" name="setup-era" value="recent"> Recent Era (2015–2024)</label>
-            <label class="setup-option"><input type="radio" name="setup-era" value="current"> Current (2025–2026)</label>
-          </div>
-        </div>
-        <div class="panel">
-          <h3 style="font-size:16px;color:var(--gold);margin-bottom:12px">Rating Mode</h3>
-          <div class="setup-options" id="setup-mode-options">
-            <label class="setup-option"><input type="radio" name="setup-mode" value="peak" checked> Peak Rating</label>
-            <label class="setup-option"><input type="radio" name="setup-mode" value="at-time"> Rating at the Time</label>
-          </div>
-          <div class="muted" style="font-size:12px;margin-top:10px">Peak: donors always use their career-best attributes. At-the-time: attributes reflect the selected season.</div>
-        </div>
-      </div>
-      <!-- Only shown when these settings are being locked into a challenge:
-           an ordinary career has no other players to cap. -->
-      <div class="panel setup-players" id="setup-players" style="display:none">
-        <h3 style="font-size:16px;color:var(--gold);margin-bottom:12px">How many players?</h3>
-        <div class="player-count" id="setup-player-count">
-          <label class="setup-option"><input type="radio" name="setup-players" value="2" checked> 2</label>
-          <label class="setup-option"><input type="radio" name="setup-players" value="3"> 3</label>
-          <label class="setup-option"><input type="radio" name="setup-players" value="4"> 4</label>
-          <label class="setup-option"><input type="radio" name="setup-players" value="5"> 5</label>
-          <label class="setup-option"><input type="radio" name="setup-players" value="6"> 6</label>
-        </div>
-        <div class="muted" style="font-size:12px;margin-top:10px">Including you. Once that many careers have joined, the code stops accepting new players.</div>
-      </div>
-
-      <div style="margin-top:24px">
-        <button class="btn primary big" id="btn-setup-continue">CONTINUE TO CREATION ▶</button>
-      </div>
-      <div style="margin-top:12px"><button class="btn" id="btn-setup-back">← Back</button></div>
-    </div>
-  </section>
-
-  <!-- ============ SCREEN 1d: CHALLENGE HUB ============
-       Three panels, one at a time: the hub (how it works, create, join by
-       code), the created challenge (code + link), and a joined challenge
-       (its settings + accept). -->
-  <section id="screen-challenge" class="screen">
-    <div class="hero">
-      <h2>CHALLENGE A FRIEND</h2>
-
-      <div id="challenge-hub">
-        <ol class="challenge-steps">
-          <li><strong>One player creates a challenge</strong> and picks the difficulty, era and how many people can play (2–6).</li>
-          <li><strong>Share the code.</strong> Everyone enters it below, or opens the link.</li>
-          <li><strong>You all draft from the same seed</strong> — the same countries, clubs and squads come up in the same order. Only your decisions differ.</li>
-          <li><strong>Play your career out.</strong> Nobody sees anyone else's total until their own career ends.</li>
-          <li><strong>Highest career goals wins.</strong> The result stays at the code, so you can come back to it any time.</li>
-        </ol>
-
-        <div class="challenge-panel">
-          <div class="challenge-invite-title">Create</div>
-          <div class="challenge-note">Pick the rules, get a code, send it to your friends.</div>
-          <button class="btn primary big" id="btn-challenge-create" style="margin-top:12px">CREATE A CHALLENGE</button>
-        </div>
-
-        <div class="challenge-panel">
-          <div class="challenge-invite-title">Join with a code</div>
-          <div class="challenge-note">Got a code from a friend? Enter it here.</div>
-          <div class="challenge-link-row">
-            <input type="text" id="challenge-code" maxlength="12" autocomplete="off" autocapitalize="characters"
-                   spellcheck="false" aria-label="Challenge code" placeholder="e.g. K3F9A2" class="challenge-code-input" />
-            <button class="btn primary" id="btn-challenge-join">Find</button>
-          </div>
-          <div class="challenge-note" id="challenge-join-note"></div>
-          <button class="btn primary big" id="btn-challenge-join-accept" style="display:none;margin-top:12px">ACCEPT THE CHALLENGE ▶</button>
-        </div>
-
-        <div class="challenge-hint">Results are also viewable any time at <a href="challenge.html" class="footer-link">the challenge summary page</a>.</div>
-      </div>
-
-      <div class="challenge-panel" id="challenge-create" style="display:none">
-        <div class="challenge-invite-title">Your challenge code</div>
-        <div class="challenge-code-display" id="challenge-code-display">······</div>
-        <div class="challenge-note" id="challenge-create-note">Creating your challenge…</div>
-        <div class="challenge-link-row">
-          <input type="text" id="challenge-link" readonly aria-label="Challenge link" placeholder="Generating link…" />
-          <button class="btn" id="btn-challenge-copy">Copy link</button>
-        </div>
-        <div class="challenge-hint">Everyone drafts from the same seed, with the same era, rating mode and difficulty. Nobody sees another player's total until their own career ends.</div>
-      </div>
-
-      <div style="margin-top:22px">
-        <button class="btn primary big" id="btn-challenge-start" style="display:none">START MY CAREER ▶</button>
-      </div>
-      <div style="margin-top:12px"><button class="btn" id="btn-challenge-back">← Back</button></div>
-    </div>
-  </section>
-
-  <style>
-    .setup-options { display: flex; flex-direction: column; gap: 8px; }
-    .setup-option { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px; }
-    .setup-option:hover { border-color: var(--accent2); }
-    .setup-option input { margin: 0; }
-  </style>
-
-  <!-- ================= SCREEN 1: WELCOME ================= -->
+  <!-- ------------------------------ WELCOME ------------------------------ -->
   <section id="screen-welcome" class="screen active">
     <div class="hero">
       <div class="dna-frame"><div class="dna-banner">
-        <div class="dna-tags"><div class="retro-badge">Simulation Sports</div><div class="beta-badge">BETA</div></div>
-        <h1>FOOTBALL DNA SIMULATOR ⚽</h1>
-        <div class="dna-sub"><span class="dna-line"></span><span class="dna-badge">PLAYER</span><span class="dna-line"></span></div>
+        <div class="dna-tags"><span class="retro-badge">Simulation Sports</span><span class="beta-badge">Alpha</span></div>
+        <h1>Football DNA Simulator ⚽</h1>
+        <div class="dna-sub"><span class="dna-line"></span><span class="dna-badge">MANAGER</span><span class="dna-line"></span></div>
       </div></div>
-      <div class="sub">Pick an era and a rating mode — then roll your country, build, and draft attributes from squads</div>
-      <div class="goal">🎯 GOAL: 1000 CAREER GOALS</div>
-      <div id="continue-box" style="display:none; margin-bottom: 14px;">
-        <button class="btn primary big" id="btn-continue">▶ CONTINUE CAREER</button>
+      <p class="sub">Draft a manager from the DNA of the greats — then take whatever job will have you</p>
+      <div class="goal">🎯 SURVIVE YOUR BOARDROOM</div>
+      <div class="row" style="justify-content:center">
+        <input type="text" id="seed-input" placeholder="world seed" aria-label="World seed" style="width:180px">
+        <button class="btn primary big" id="begin">START A CAREER</button>
       </div>
-      <!-- An accepted challenge link takes over the landing page: there is one
-           thing to do next, and it is not "start creation". -->
-      <div class="challenge-panel challenge-invite" id="challenge-invite" style="display:none">
-        <div class="challenge-invite-title">⚔️ You have been challenged</div>
-        <div class="challenge-note" id="challenge-invite-note"></div>
-        <button class="btn primary big" id="btn-challenge-accept" style="display:none">ACCEPT THE CHALLENGE ▶</button>
-      </div>
-      <div><button class="btn primary big" id="btn-start">START CREATION</button></div>
-      <div class="welcome-actions">
-        <button class="btn" id="btn-challenge-friend">⚔️ Challenge a friend</button>
-        <a class="btn" href="challenge.html">🔎 Search challenges</a>
-        <button class="btn" id="btn-trophy-room">🏆 Trophy Room</button>
+      <p class="muted" style="margin-top:10px;font-size:12px">Same seed, same world — 221 clubs, ten divisions, all simulated around you.</p>
+
+      <div class="features">
+        <div class="feature"><b>THE DRAFT</b><span>Five independent rolls — tactic, origin, career, and two separate draws from history's coaching legends — that combine into a manager nothing on the reel quite tells you the value of. Three rerolls.</span></div>
+        <div class="feature"><b>THE DECISIONS</b><span>Two cards before the season, two after. Transfers, tactics, the medical room, the dressing room, the board.</span></div>
+        <div class="feature"><b>THE BOARDROOM</b><span>Balanced, Patient, Chaotic or Aggressive. It sets your targets and it decides how long you last.</span></div>
       </div>
 
-      <!-- The leaderboard, visible before you have played anything. It sits
-           below START CREATION so the primary action still leads. -->
-      <section class="welcome-lb">
-        <div class="welcome-lb-title">🏆 All-Time Leaderboard</div>
-        <div id="welcome-leaderboard"></div>
-        <details class="welcome-lb-more">
-          <summary>See the full top 25</summary>
-          <div id="welcome-leaderboard-full"></div>
-        </details>
-      </section>
+      <details class="how-to-play">
+        <summary>How to play</summary>
+        <ol>
+          <li><strong>Draft your manager.</strong> Five rolls — tactic, origin, career, and two separate draws from football's coaching history. What they add up to is never shown; you find out from the job offers.</li>
+          <li><strong>Take a job.</strong> Read the boardroom style before you sign. An Aggressive board sacks you in a year.</li>
+          <li><strong>Pre-season decisions.</strong> Two cards that shape the season — sign a striker, drill the defence, promise the board the world.</li>
+          <li><strong>Simulate the season.</strong> Every division in the world plays out at once.</li>
+          <li><strong>Face the board.</strong> They score you on league finish, cup run, finances and youth, weighted by their style.</li>
+          <li><strong>End-of-season decisions.</strong> React to what happened, then go again — until you are sacked.</li>
+        </ol>
+      </details>
 
-      <footer class="welcome-footer">
-        <!-- How to play lives down here with the other reference links: it is
-             something you read once, not a step on the way to playing. -->
-        <details class="how-to-play">
-          <summary>How to play</summary>
-          <ol>
-            <li>Pick an era, rating mode and difficulty.</li>
-            <li>Roll your country, academy and physical build.</li>
-            <li>Draft DNA — spin for real players and choose which attribute to inherit.</li>
-            <li>Simulate each season: play matches, make transfer/contract decisions, chase trophies.</li>
-            <li>Reach <strong>1000 career goals</strong> before you retire.</li>
-          </ol>
-        </details>
-        <div class="welcome-footer-links">
-          <a href="https://x.com/1000goalsgame" target="_blank" rel="noopener" class="footer-link">Feedback on X</a>
-          <span style="color: var(--line);">·</span>
-          <a href="https://www.buymeacoffee.com/trigaar" target="_blank" rel="noopener" class="footer-link">Support the project</a>
-        </div>
-      </footer>
+      <div class="welcome-footer">
+        <a class="footer-link" href="../">← 1000goals — the player career game</a>
+      </div>
     </div>
   </section>
 
-  <!-- ================= SCREEN 2: GENESIS ================= -->
-  <section id="screen-genesis" class="screen">
+  <!-- ------------------------------- DRAFT ------------------------------- -->
+  <section id="screen-draft" class="screen">
     <div class="genesis-top">
-      <h2>CHARACTER CREATION</h2>
-      <div>
-        <span class="pill"><span class="accent" id="roll-counter">Roll 1 of 6</span></span>
-        <span class="pill">Rerolls: <span class="accent" id="reroll-count">3</span></span>
-      </div>
+      <h2 id="draft-step-title">WHAT KIND OF MANAGER ARE YOU?</h2>
+      <span class="pill" id="draft-progress"></span>
     </div>
-    <div class="genesis-grid">
-      <div class="panel">
-        <div class="attr-head">
-          <h2 id="attr-name">Heading Ability</h2>
-        </div>
-        <div class="muted" id="attr-desc">Aerial threat — wins headers and attacks crosses.</div>
-        <div class="genesis-actions">
-          <button class="btn primary" id="btn-spin">🎲 SPIN</button>
-          <button class="btn primary" id="btn-accept" style="display:none">✓ ACCEPT</button>
-          <button class="btn" id="btn-reroll" style="display:none">↻ REROLL</button>
-        </div>
-        <div id="roll-result"><div class="placeholder">Press <strong>SPIN</strong> to begin.</div></div>
-      </div>
-      <div class="panel preview" id="player-preview"></div>
+    <div class="reel" id="draft-reel"></div>
+    <div class="row">
+      <button class="btn primary" id="draft-accept">ACCEPT</button>
+      <button class="btn" id="draft-reroll">REROLL</button>
+      <span class="pill" id="draft-rerolls"></span>
+      <input type="text" id="manager-name" placeholder="your name (optional)" aria-label="Manager name">
     </div>
   </section>
 
-  <!-- ================= SCREEN 3: CONFIRM ================= -->
-  <section id="screen-confirm" class="screen">
-    <h2>PLAYER PROFILE</h2>
-    <div class="panel" id="confirm-card"></div>
-    <div class="name-field">
-      <label class="muted" for="player-name-input">Name your player</label>
-      <input id="player-name-input" type="text" placeholder="e.g. Marcus Steel" maxlength="28" />
-    </div>
-    <button class="btn primary big" id="btn-confirm-career">START CAREER SIMULATION ▶</button>
+  <!-- ------------------------------ LOADING ------------------------------ -->
+  <section id="screen-loading" class="screen">
+    <div class="simming">BUILDING THE WORLD — 221 clubs, 5,000 players, 221 boardrooms…</div>
   </section>
 
-  <!-- ================= SCREEN 4: CAREER ================= -->
+  <!-- ------------------------------- OFFERS ------------------------------ -->
+  <section id="screen-offers" class="screen">
+    <h2>WHO WILL HAVE YOU</h2>
+    <div class="panel" id="offers-manager"></div>
+    <div class="offers" id="offers-list"></div>
+  </section>
+
+  <!-- ------------------------------- CAREER ------------------------------ -->
   <section id="screen-career" class="screen">
     <div class="career-head">
-      <h2 id="career-season">SEASON 1</h2>
-      <div class="hdr-stats">
-        <div class="hdr-stat">Age <b id="hdr-age">17</b></div>
-        <div class="hdr-stat">Goals <b id="hdr-goals">0</b></div>
-        <div class="hdr-stat">Club <b id="hdr-club">—</b></div>
-        <div class="hdr-stat">Pos <b id="hdr-position">ST</b></div>
-      </div>
-    </div>
-    <div class="goal-progress"><div id="goal-progress-fill"></div><div id="goal-progress-label">0 / 1000 career goals</div></div>
-
-    <div class="career-tabs">
-      <button class="career-tab active" data-tab="season">Season</button>
-      <button class="career-tab" data-tab="stats">Career Profile</button>
-      <button class="career-tab" data-tab="history">History</button>
-      <button class="career-tab" data-tab="squad">Squad Info</button>
-      <button class="career-tab" data-tab="leaderboard">Leaderboard</button>
-    </div>
-
-    <div class="career-panels">
-      <div class="career-panel active" data-tab="season">
-        <div class="panel" id="season-result"></div>
-        <div class="panel" id="season-action"></div>
-        <div class="panel log-preview" id="log-preview-panel">
-          <div class="log-preview-header">
-            <span class="log-preview-title">Recent Activity</span>
-            <button class="log-preview-link" id="btn-view-full-log">View full log →</button>
+      <div>
+        <div class="row" style="gap:10px;align-items:center">
+          <div class="career-club" id="career-club">—</div>
+          <div class="notif-wrap">
+            <button class="bell" id="notif-bell" title="What's happened at the club">🔔<span class="bell-badge" id="notif-badge" style="display:none">0</span></button>
+            <div id="notif-panel"></div>
           </div>
-          <div id="log-preview-entries"></div>
         </div>
+        <div class="muted"><span id="career-league"></span> · <span id="career-season"></span></div>
+        <div class="muted" id="career-manager" style="font-size:13px"></div>
       </div>
-      <div class="career-panel" data-tab="stats">
-        <div class="panel" id="career-stats-panel">
-          <div id="career-stats-content"></div>
-        </div>
-      </div>
-      <div class="career-panel" data-tab="history">
-        <div class="panel log-panel">
-          <h3>Career Log</h3>
-          <div id="career-log"></div>
-        </div>
-      </div>
-      <div class="career-panel" data-tab="leaderboard">
-        <div class="panel">
-          <div id="leaderboard-content"></div>
-        </div>
-      </div>
-      <div class="career-panel" data-tab="squad">
-        <div class="panel">
-          <h3 style="color:var(--accent2);font-size:15px;margin-bottom:10px">Squad Info</h3>
-          <div id="squad-info-content"></div>
-        </div>
+      <div class="conf-wrap">
+        <div class="conf-top"><span>Board confidence</span><span id="board-style">—</span></div>
+        <div class="conf-track"><i class="conf" id="confidence-bar" style="width:60%"></i></div>
+        <div class="muted" style="font-size:12px;margin-top:4px"><span id="confidence-value">60</span>/100 · <span id="board-brief"></span></div>
+        <div class="conf-top" style="margin-top:10px"><span>The supporters</span><span id="fans-mood">—</span></div>
+        <div class="conf-track"><i class="conf" id="fans-bar" style="width:56%"></i></div>
+        <div class="muted" style="font-size:12px;margin-top:4px"><span id="fans-value">56</span>/100 · <span id="fans-blurb"></span></div>
       </div>
     </div>
+
+    <!-- Last season — a compact reminder of where you stand -->
+    <div class="tier-label">Last season</div>
+    <div id="lastseason"></div>
+
+    <!-- Decisions — the heart of the game, where almost everything happens -->
+    <div class="tier-label">Decisions</div>
+    <div id="stage"></div>
+
+    <!-- The log — always open, so you see what the board and the world did -->
+    <div class="tier-label">The log</div>
+    <div id="logfeed"></div>
+
+    <!-- Squad, contracts and the world — preference tools the board acts on -->
+    <div class="tier-label">Squad, contracts &amp; the world</div>
+    <div class="tabs">
+      <button class="tab on" data-tab="squad">SQUAD</button>
+      <button class="tab" data-tab="tactics">TACTICS</button>
+      <button class="tab" data-tab="youth">YOUTH</button>
+      <button class="tab" data-tab="table">TABLE</button>
+      <button class="tab" data-tab="career">CAREER</button>
+      <button class="tab" data-tab="world">WORLD</button>
+    </div>
+    <div id="tab-body" class="table-scroll"></div>
   </section>
 
-  <!-- ================= SCREEN 5: LEGACY ================= -->
+  <!-- ------------------------------- LEGACY ------------------------------ -->
   <section id="screen-legacy" class="screen">
-    <div class="legacy">
-      <div class="legacy-status" id="legacy-status">CAREER COMPLETE</div>
-      <div class="legacy-big" id="legacy-goals">0</div>
-      <div class="legacy-big-lab">CAREER GOALS</div>
+    <div id="legacy-body"></div>
+    <div class="row"><button class="btn primary big" id="legacy-restart">NEW CAREER</button></div>
+  </section>
 
-      <!-- The card is the deliverable. The career used to end on eight stacked
-           sections; the attributes, honours and totals they listed are all on
-           the card itself now. -->
-      <div class="share-card" id="share-card" style="display:none;">
-        <canvas id="share-card-canvas" width="600" height="1180"></canvas>
-        <div class="share-actions">
-          <button class="btn primary" id="btn-download-card">📥 Download Card</button>
-          <button class="btn" id="btn-share-card">🔗 Share / Copy</button>
-        </div>
-        <div class="lb-submit" id="lb-submit">
-          <div class="lb-submit-row">
-            <input type="text" id="lb-name" maxlength="24" placeholder="Display name" aria-label="Leaderboard display name" />
-            <button class="btn primary" id="btn-submit-leaderboard">🏆 Submit to leaderboard</button>
-          </div>
-          <div class="lb-submit-note" id="lb-submit-note"></div>
-        </div>
-      </div>
+  <div id="modal-root"></div>
 
-      <!-- Only rendered for a career started from a challenge link. -->
-      <div class="challenge-panel challenge-result" id="challenge-result" style="display:none">
-        <div class="challenge-invite-title">⚔️ Challenge result</div>
-        <div class="challenge-note" id="challenge-result-note"></div>
-        <div id="challenge-standings"></div>
-        <div class="challenge-hint" id="challenge-result-code"></div>
-      </div>
-
-      <div class="legacy-section" id="legacy-summary"></div>
-      <div class="legacy-totals" id="legacy-totals"></div>
-      <div class="legacy-section" id="legacy-clubs"></div>
-
-      <div class="share-card" id="share-tagline-card" style="display:none;">
-        <h3>Can You Beat Me?</h3>
-        <div class="tagline-box" id="share-tagline" style="font-size: 16px; background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; line-height: 1.5;"></div>
-        <div class="share-actions">
-          <button class="btn primary" id="btn-copy-tagline">📋 Copy Tagline</button>
-          <button class="btn" id="btn-copy-url">🔗 Copy Career Link</button>
-        </div>
-        <div class="career-code" id="career-code-box" style="margin-top: 14px; display:none;">
-          <div class="muted" style="font-size: 12px; margin-bottom: 6px;">Career Code</div>
-          <textarea id="career-code" readonly rows="3" style="width: 100%; background: var(--bg2); color: var(--txt); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 12px; resize: none;"></textarea>
-        </div>
-      </div>
-
-      <div style="margin-top:28px"><button class="btn primary big btn-play-again">PLAY AGAIN ↻</button></div>
+  <!-- ------------------------------- SACKED ------------------------------ -->
+  <section id="screen-sacked" class="screen">
+    <h2 class="bad">YOU HAVE BEEN SACKED</h2>
+    <div id="sacked-body"></div>
+    <div class="row">
+      <button class="btn primary" id="sacked-continue">FIND ANOTHER JOB</button>
+      <button class="btn" id="sacked-restart">NEW CAREER</button>
     </div>
   </section>
 
-  <!-- ================= TROPHY ROOM =================
-       The no-account answer to "save my achievements and my cards": every
-       finished career's card and achievements are saved straight to this
-       browser's localStorage (src/game.js: recordCareerToTrophyRoom) —
-       nothing here has ever asked for a username or password. -->
-  <section id="screen-trophy-room" class="screen">
-    <div class="hero">
-      <h2>🏆 TROPHY ROOM</h2>
-      <div class="sub">Every card you've played on this device, and everything you've earned along the way — saved right here in this browser. No account, no login.</div>
-    </div>
-    <div class="trophy-wrap">
-      <h3 class="trophy-heading">Achievement Cabinet</h3>
-      <div id="trophy-cabinet"></div>
-      <h3 class="trophy-heading">Saved Careers</h3>
-      <div id="trophy-cards"></div>
-    </div>
-    <div style="text-align:center;margin-top:24px"><button class="btn" id="btn-trophy-back">← Back</button></div>
-  </section>
-</main>
-
-<details class="about-footer">
-  <summary>About Football DNA Simulator</summary>
-  <div>
-    <p><strong>Football DNA Simulator</strong> is a free browser football career simulator. You draft DNA from 30 years of Premier League legends, build a striker and simulate every season — transfers, contracts, injuries, trophies and the chase for 1000 career goals.</p>
-    <p>Choose a difficulty mode (Easy, Medium, Hard or Impossible), pick an era from Classic (1992–2004) to the current season, and decide whether to use Peak Rating or Rating at the Time. Each playthrough is different because you are spinning from real Premier League squads across three decades of English football.</p>
-    <p>This is not a football manager game; it is a football draft game and player career simulator. The simulation engine creates match results, league tables, cup runs, European campaigns and international caps for England. Make the right decisions on training, transfers and final contracts to become a Premier League legend in your own right.</p>
-    <p>Play now at <a href="https://1000goals.co.uk/">1000goals.co.uk</a> — no download, no install, free browser game.</p>
-  </div>
-</details>
-
-<div class="footer-note">Football DNA Simulator · Beta · Inspired by 38-0.app · Premier League donor data (1992–2026 real squads, peak &amp; at-the-time ratings) is editable in <code>data.js</code>.</div>
 </div>
 
-<script src="src/data.js"></script>
-<script src="src/career_event_data.js"></script>
-<script src="src/career_share.js"></script>
-<!-- Firebase (compat build: the site has no bundler). Optional — the game
-     plays fine without it and the board falls back to the seed benchmarks. -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="src/leaderboard.js"></script>
-<script src="src/game.js"></script>
+<!-- Shared read-only database from 1000goals. Never written to by this game. -->
+<script src="../src/data.js"></script>
+<script src="src/rng.js"></script>
+<script src="src/names.js"></script>
+<script src="src/data_intl.js"></script>
+<script src="src/players.js"></script>
+<script src="src/ratings.js"></script>
+<script src="src/international.js"></script>
+<script src="src/tactics.js"></script>
+<script src="src/clubs.js"></script>
+<script src="src/network.js"></script>
+<script src="src/scouting.js"></script>
+<script src="src/managers.js"></script>
+<script src="src/match.js"></script>
+<script src="src/narrative.js"></script>
+<script src="src/youth.js"></script>
+<script src="src/competitions.js"></script>
+<script src="src/agents.js"></script>
+<script src="src/transfers.js"></script>
+<script src="src/ai.js"></script>
+<script src="src/world.js"></script>
+<script src="src/draft.js"></script>
+<script src="src/decisions.js"></script>
+<script src="src/endings.js"></script>
+<script src="src/ui.js"></script>
 </body>
 </html>
