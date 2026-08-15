@@ -115,9 +115,9 @@
   }
 
   /** Squad-wide morale, weighted toward the players who actually play. */
-  function teamMorale(club) {
+  function teamMorale(club, knownXI) {
     if (!club.squad.length) return 60;
-    const xi = new Set(effectiveXI(club).map((p) => p && p.id));
+    const xi = new Set((knownXI || effectiveXI(club)).map((p) => p && p.id));
     let total = 0, weight = 0;
     for (const p of club.squad) {
       const w = xi.has(p.id) ? 3 : 1;
@@ -162,19 +162,31 @@
     const taken = new Set();
     const xi = new Array(formation.slots.length).fill(null);
 
+    /* Picking a side is the hottest path in the whole engine — every club in
+     * the world picks one several times a summer — so the two counts this
+     * needs are taken in a single pass instead of a filter per slot, and the
+     * squad is split by keeper/outfielder once rather than re-testing every
+     * player against every slot. Same eleven out the other end. */
+    const posCount = {};
+    const keepers = [], outfield = [];
+    for (const p of available) {
+      posCount[p.pos] = (posCount[p.pos] || 0) + 1;
+      (p.pos === "GK" ? keepers : outfield).push(p);
+    }
+
     // Fill specialist slots first (a keeper, then the rest), because filling
     // an easy slot with a specialist leaves the hard slot to a passenger.
     const order = formation.slots
-      .map((slot, i) => ({ slot, i, scarcity: slot === "GK" ? 0 : available.filter((p) => p.pos === slot).length }))
+      .map((slot, i) => ({ slot, i, scarcity: slot === "GK" ? 0 : (posCount[slot] || 0) }))
       .sort((a, b) => a.scarcity - b.scarcity);
 
     for (const { slot, i } of order) {
       let best = null, bestScore = -Infinity;
-      for (const p of available) {
+      // Never put an outfielder in goal, or a keeper outfield, while any
+      // alternative exists — the familiarity penalty alone is not enough.
+      const eligible = slot === "GK" ? keepers : outfield;
+      for (const p of eligible) {
         if (taken.has(p.id)) continue;
-        // Never put an outfielder in goal, or a keeper outfield, while any
-        // alternative exists — the familiarity penalty alone is not enough.
-        if ((slot === "GK") !== (p.pos === "GK")) continue;
         const score = effectiveOverall(p, slot);
         if (score > bestScore) { best = p; bestScore = score; }
       }
@@ -252,7 +264,7 @@
      * position; now the tail is the average of the men who would ACTUALLY come
      * in for each starter, so cover in the positions you are thin at is what
      * moves the number. */
-    const covers = backupsFor(club).filter((r) => r.backup && r.slot !== "GK");
+    const covers = backupsFor(club, xi).filter((r) => r.backup && r.slot !== "GK");
     const benchAvg = covers.length
       ? covers.reduce((t, r) => t + r.rating, 0) / covers.length
       : 0;
@@ -348,10 +360,15 @@
    * which meant a squad with three spare wingers and no reserve goalkeeper
    * looked exactly as deep as one properly covered in every position. Cover is
    * per-shirt or it is not cover. */
-  function backupsFor(club) {
+  /* `knownXI` is an optimisation, not a feature: picking a side is the single
+   * most expensive thing the engine does, and xiRatings/depthScore both used to
+   * compute the XI and then call in here, which computed exactly the same XI a
+   * second time. Callers that already have it pass it through; callers that do
+   * not still get the old behaviour. */
+  function backupsFor(club, knownXI) {
     const formationKey = club.formation || "4-4-2";
     const formation = FORMATIONS[formationKey] || FORMATIONS["4-4-2"];
-    const xi = effectiveXI(club);
+    const xi = knownXI || effectiveXI(club);
     const xiIds = new Set(xi.map((p) => p && p.id));
     const rest = club.squad.filter((p) => !xiIds.has(p.id));
     const used = new Set();
@@ -374,8 +391,8 @@
   }
 
   /** One number for how well covered a squad is, 0-100. */
-  function depthScore(club) {
-    const rows = backupsFor(club);
+  function depthScore(club, knownXI) {
+    const rows = backupsFor(club, knownXI);
     const covered = rows.filter((r) => r.backup);
     if (!covered.length) return 0;
     const avgDrop = covered.reduce((t, r) => t + (r.dropOff == null ? 12 : r.dropOff), 0) / covered.length;

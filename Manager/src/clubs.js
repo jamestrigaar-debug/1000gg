@@ -614,7 +614,16 @@
    * is what sacks managers. Keeping every metric on the same scale is what
    * lets a Patient board and an Aggressive board read the same season and
    * come to opposite conclusions. */
-  const CUP_ROUND_RANK = { none: 0, R3: 1, R4: 2, R5: 3, QF: 4, SF: 5, F: 6, W: 7 };
+  /* R1 and R2 were missing from this table, and R2 is the single most common
+   * cup exit in the game — a 221-club field means roughly a quarter of all
+   * clubs go out in the second round every season. A missing key fell through
+   * `|| 0` to the same score as "none", so every one of those clubs was judged
+   * by its board as though it had not entered the cup at all, despite having
+   * played and lost a tie. They sit BELOW R3 and above "none" on fractional
+   * ranks rather than renumbering the table, so the scoring of every round
+   * from R3 upward — which is what the existing board calibration was tuned
+   * against — is left exactly where it was. */
+  const CUP_ROUND_RANK = { none: 0, R1: 0.25, R2: 0.5, R3: 1, R4: 2, R5: 3, QF: 4, SF: 5, F: 6, W: 7 };
 
   /* ---------------------------- THE SUPPORTERS ----------------------------
    * A second opinion on the season, and deliberately a different one from the

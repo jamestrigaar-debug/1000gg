@@ -726,6 +726,13 @@
       MG.clubs.fansReact(club, change.from.owner !== change.to.owner ? 4 : 0, "new ownership at the club");
     }
     for (const club of world.clubs) MG.clubs.setBudgets(club, rng);
+    /* ---- AI CYCLE 1: ASSESS ----
+     * Every AI club reads its own season and takes a posture for the summer
+     * before a single bid is made — rebuilding, pushing, consolidating,
+     * firefighting or steady — and writes down the positions it intends to
+     * fix, in order. See ai.js. Budgets are set first because a club's money
+     * is half of what decides its posture. */
+    if (MG.ai) MG.ai.planWorld(world);
     /* The managed club's own instructions are executed before the AI window
      * opens — you get first refusal on your own targets, and the world reacts
      * to a squad you have already changed. */
@@ -744,7 +751,16 @@
         for (const r of managerWindow.refused) world.report(`NO DEAL — ${r.player.name}: ${r.reason}.`, "sack", pc.id);
       }
     }
+    /* ---- AI CYCLE 2: ACT ---- the window itself, aimed by the plan. */
     const window = MG.transfers.runWindow(world);
+    /* ---- AI CYCLE 3: REVIEW ----
+     * The plan meets what actually happened. A club that failed to fill a
+     * priority position now solves it another way — a prospect promoted ahead
+     * of schedule, or a free agent it would not have looked at in cycle 2 —
+     * rather than sleepwalking into the season with the hole still in it.
+     * Runs before signFreeAgents so a desperate club gets first refusal on the
+     * free market, and takes its man out of the pool so nobody signs him twice. */
+    const reviewNews = MG.ai ? MG.ai.reviewWindow(world, freeAgents) : [];
     const freeNews = MG.transfers.signFreeAgents(world, freeAgents) || [];
     const fillerNews = MG.transfers.topUpSquads(world) || [];
     /* The academy year: train, promote or release, then take a new intake.
@@ -764,7 +780,8 @@
     }
 
     for (const n of retireNews.concat(window.news.slice(0, 60)).concat(youthNews)
-      .concat(loanReturns).concat(loansOut.news).concat(freeNews).concat(fillerNews).concat(academyNews)) {
+      .concat(loanReturns).concat(loansOut.news).concat(reviewNews).concat(freeNews)
+      .concat(fillerNews).concat(academyNews)) {
       world.report(n.text, n.type, n.clubId);
       seasonNews.push(n);
     }

@@ -1437,10 +1437,38 @@
       </div>
       <div class="muted" style="font-size:13px;margin-bottom:4px">Manager: <b>${esc(m ? m.name : "—")}</b>${m ? ` · ${esc(m.archetypeName)} · ${esc(m.tactic)} · ${esc(c.formation)}` : ""}</div>
       <div class="muted" style="font-size:13px;margin-bottom:8px">Boardroom: <b>${esc(c.board.style)}</b> · ${esc(ownerLabel(c))}</div>
+      ${rivalIntentHtml(world, mine, c, rep)}
       <div class="chooser-list">${squad.slice(0, 24).map((p) => pcard(p, Object.assign({ level: c.level }, rep ? { scoutRange: MG.scouting.playerBand(world, mine, c, p) } : {}))).join("")}</div>`);
     for (const el of document.querySelectorAll("[data-player]")) {
       el.addEventListener("click", (e) => { e.stopPropagation(); openPlayer(Number(el.dataset.player)); });
     }
+  }
+
+  /* What a rival is actually trying to do this summer — the posture its AI took
+   * in cycle 1 (ai.js), read back as a sentence. This is the payoff for having
+   * a scouting department at all: a well-resourced one tells you a rival is
+   * rebuilding and which positions it is chasing, which is exactly the sort of
+   * thing that decides whether you go for the same player. A poor department
+   * only gets the gist, and your own club is not scouted — you already know. */
+  function rivalIntentHtml(world, mine, target, rep) {
+    if (!rep || !MG.ai) return "";                     // own club, or no plan layer
+    const plan = target.plan;
+    if (!plan) return "";
+    const strength = MG.scouting.strength(world, mine).score;
+    const posture = MG.ai.POSTURES[plan.posture];
+    if (!posture) return "";
+    // Below a real department, you get the mood and not the detail.
+    if (strength < 45) {
+      return `<div class="board-note" style="margin-bottom:8px"><b class="gold">Summer intent</b> —
+        your scouts think they are <b>${esc(posture.label.toLowerCase())}</b>, but cannot tell you much more than that.</div>`;
+    }
+    const chasing = plan.priorities.length
+      ? plan.priorities.map((p) => `<span class="ppos ${posClass(p)}">${esc(p)}</span>`).join(" ")
+      : `<span class="muted">nothing obvious</span>`;
+    return `<div class="board-note" style="margin-bottom:8px">
+      <b class="accent">Summer intent</b> — <b>${esc(posture.label)}</b>. ${esc(posture.blurb)}
+      <div style="margin-top:4px">Chasing: ${chasing}${plan.signed.length ? ` · <span class="muted">${plan.signed.length} signed so far</span>` : ""}</div>
+    </div>`;
   }
 
   function wireTab() {

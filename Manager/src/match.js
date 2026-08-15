@@ -145,6 +145,11 @@
     // A goalkeeper is worth roughly a fifth of the defensive rating — enough
     // that an elite keeper behind an ordinary back four is worth buying.
     const defence = r.defence * 0.8 + r.keeper * 0.2;
+    /* Picking a side is the most expensive thing in the engine, and this
+     * function used to trigger it twice — once inside depthScore and once
+     * inside teamMorale — for the same club, in the same call, producing the
+     * same eleven both times. Picked once here and handed to both. */
+    const xi = MG.tactics ? MG.tactics.effectiveXI(club) : null;
     return {
       id: club.id,
       name: club.name,
@@ -157,7 +162,9 @@
       formation: club.formation || "4-4-2",
       // How well the squad is covered behind the eleven, 0-100. Depth pays off
       // across a season of injuries and fatigue rather than in any one match.
-      depth: MG.tactics ? MG.tactics.depthScore(club) : 50,
+      // The XI is picked once above and handed on, rather than each of these
+      // helpers picking the same side again from scratch.
+      depth: MG.tactics ? MG.tactics.depthScore(club, xi) : 50,
       // Playstyle, shape, training and the manager himself, read together —
       // see tactics.js. 1.0 is neutral; the match engine applies it straight
       // to this side's xG.
@@ -173,7 +180,7 @@
        * season, it does not decide one. */
       form: (club.form || 0)
         + ((club.modifiers && club.modifiers.form) || 0)
-        + (MG.tactics ? (MG.tactics.teamMorale(club) - 60) / 12 : 0),
+        + (MG.tactics ? (MG.tactics.teamMorale(club, xi) - 60) / 12 : 0),
     };
   }
 

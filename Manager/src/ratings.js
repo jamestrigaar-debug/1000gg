@@ -61,6 +61,25 @@
     return player.attrs[key] != null ? player.attrs[key] : 55;
   }
 
+  /* roleRating is the single hottest function in the engine — measured at 3.7
+   * million calls across six simulated seasons, because picking a side walks
+   * every player against every slot and the whole world picks a side several
+   * times a summer. It used to call Object.entries(weights) on every one of
+   * those calls, allocating a fresh array of pairs each time purely to iterate
+   * a table that never changes. The pairs, their weight sum and their count are
+   * all constant per slot, so they are computed once here instead. Same
+   * arithmetic, same results — just not rebuilt three million times. */
+  const ROLE_WEIGHT_LIST = {};
+  for (const [slot, weights] of Object.entries(ROLE_WEIGHTS)) {
+    const keys = Object.keys(weights);
+    ROLE_WEIGHT_LIST[slot] = {
+      keys,
+      vals: keys.map((k) => weights[k]),
+      weightSum: keys.reduce((t, k) => t + weights[k], 0),
+      n: keys.length,
+    };
+  }
+
   /* How much of a player's effective rating comes from role fit rather than his
    * headline number. At 0.45 a specialist reads about six points better in his
    * best role than in a role he does not suit, which is enough to make squad
@@ -69,13 +88,14 @@
 
   /** A player's ability IN A GIVEN ROLE, on the same 0-99 scale as `overall`. */
   function roleRating(player, slot) {
-    const weights = ROLE_WEIGHTS[slot];
-    if (!weights) return player.overall;
-    let weighted = 0, weightSum = 0, plain = 0, n = 0;
-    for (const [key, w] of Object.entries(weights)) {
-      const v = attrValue(player, key);
-      weighted += v * w; weightSum += w;
-      plain += v; n++;
+    const table = ROLE_WEIGHT_LIST[slot];
+    if (!table) return player.overall;
+    const { keys, vals, weightSum, n } = table;
+    let weighted = 0, plain = 0;
+    for (let i = 0; i < n; i++) {
+      const v = attrValue(player, keys[i]);
+      weighted += v * vals[i];
+      plain += v;
     }
     if (!weightSum || !n) return player.overall;
     // Zero-centred: how much better he is at this role's demands than at the

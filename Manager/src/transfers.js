@@ -189,11 +189,23 @@
         for (const p of byValue.slice(0, 3)) listed.push({ player: p, club, forced: true, fireSale: true });
       }
 
+      // How many bodies the club has in each position, counted once. This used
+      // to be a fresh filter over the whole squad for every player in it —
+      // quadratic in squad size, for every club in the world, every summer.
+      const posDepth = {};
+      for (const p of club.squad) posDepth[p.pos] = (posDepth[p.pos] || 0) + 1;
+
+      /* Cycle 1's verdict on how much this club wants to move players on. A
+       * rebuilding side clears the decks; a side pushing for the title keeps
+       * what it has. See ai.js — without a plan this is 1 and the roll below
+       * behaves exactly as it always did. */
+      const appetite = MG.ai ? MG.ai.sellAppetite(club) : 1;
+
       for (let i = 0; i < ranked.length; i++) {
         const p = ranked[i];
         if (p.loan) continue;                      // on loan here: not ours to sell
         if (club.squad.length <= MIN_SQUAD + 2) break;
-        const depth = club.squad.filter((q) => q.pos === p.pos).length;
+        const depth = posDepth[p.pos];
         const need = MG.players.POSITIONS[p.pos].need;
 
         let chance = 0;
@@ -202,7 +214,7 @@
         if (i >= MG.players.SQUAD_TARGET - 4) chance += 0.15;   // fringe
         if (overWages) chance += 0.20;
         if (inDebt) chance += 0.30;
-        chance *= policy.churn;
+        chance *= policy.churn * appetite;
         if (chance > 0 && rng.chance(clamp(chance, 0, 0.85))) {
           // Tag it on the player too: an AI manager listing someone is the same
           // act as the human doing it, and the rest of the game should be able
@@ -235,9 +247,13 @@
     let multiple = 1.15;
     if (listedSet.has(player.id)) multiple = 0.9;
     // Reluctance: a club will not sell its best player to a rival cheaply, and
-    // a big club barely notices the money at all.
-    const isKeyPlayer = club.squad.filter((q) => q.overall > player.overall).length < 3;
-    if (isKeyPlayer) multiple += 0.55;
+    // a big club barely notices the money at all. Counted with an early exit
+    // rather than a full filter — the question is only ever "are there fewer
+    // than three better than him", and this runs for every candidate a club
+    // evaluates in every round of the window.
+    let better = 0;
+    for (const q of club.squad) { if (q.overall > player.overall && ++better >= 3) break; }
+    if (better < 3) multiple += 0.55;
     const repGap = club.reputation - buyer.reputation;
     if (repGap > 0) multiple += repGap / 55;          // selling down the ladder costs more
     if (club.finances.balance < 0) multiple -= 0.25;  // needs must
@@ -267,9 +283,21 @@
   function clubNeeds(club) {
     const { counts } = MG.players.squadNeeds(club.squad);
     const needs = [];
+    /* One pass over the squad instead of one per position: this is called once
+     * per club per window round (and again in the clearing pass), and it used
+     * to walk the whole squad nine times over — eight filters plus a squad-wide
+     * average recomputed identically inside every one of them. */
+    const byPos = {};
+    let squadTotal = 0;
+    for (const p of club.squad) {
+      (byPos[p.pos] = byPos[p.pos] || []).push(p);
+      squadTotal += p.overall;
+    }
+    const squadLevel = club.squad.length ? squadTotal / club.squad.length : 50;
+
     for (const pos of MG.players.POSITION_KEYS) {
       const def = MG.players.POSITIONS[pos];
-      const players = club.squad.filter((p) => p.pos === pos).sort((a, b) => b.overall - a.overall);
+      const players = (byPos[pos] || []).sort((a, b) => b.overall - a.overall);
       const short = Math.max(0, def.need - players.length);
       const starters = players.slice(0, def.starters);
       const currentQuality = starters.length
@@ -277,8 +305,6 @@
         : 30;
       // Urgency: missing bodies first, then the weakest position relative to
       // the rest of the squad.
-      const squadLevel = club.squad.length
-        ? club.squad.reduce((t, p) => t + p.overall, 0) / club.squad.length : 50;
       const gap = squadLevel - currentQuality;
       const urgency = 1 + short * 0.9 + clamp(gap, 0, 12) * 0.12 + (counts[pos] < def.starters ? 1.2 : 0);
       needs.push({ pos, short, currentQuality, urgency });
@@ -303,7 +329,9 @@
 
     // Where he stands in the pecking order now. A man who is not getting on the
     // pitch is a great deal more interested in a move than a first-choice one.
-    const better = seller.squad.filter((q) => q.overall > player.overall).length;
+    // Only the 11 and 4 thresholds matter, so the count stops at 11.
+    let better = 0;
+    for (const q of seller.squad) { if (q.overall > player.overall && ++better >= 11) break; }
     const fringe = better >= 11;
     const starter = better <= 4;
 
@@ -354,6 +382,11 @@
     for (const club of world.clubs) {
       const manager = world.managerById(club.managerId);
       const policy = MG.managers.recruitmentPolicy(manager);
+      /* Cycle 2 is aimed by cycle 1: the summer's posture decides how hard the
+       * club stretches and how many it is trying to sign. A club with no plan
+       * (the human's, or a world running without ai.js) gets 1 and the old
+       * numbers exactly. */
+      const spendBias = MG.ai ? MG.ai.spendAppetite(club) : 1;
       states.set(club.id, {
         club, policy,
         acumen: manager ? manager.attrs.transferAcumen : 50,
@@ -361,12 +394,14 @@
         // back, but never past what the club actually has — that overshoot was
         // how clubs ran up nine-figure debts they could never trade out of.
         budget: Math.min(
-          club.finances.transferBudget * policy.spend,
+          club.finances.transferBudget * policy.spend * spendBias,
           Math.max(0, club.finances.balance) + club.finances.revenue * 0.2
         ),
         wageRoom: club.finances.wageBudget - MG.clubs.wageBill(club),
         signings: 0,
-        maxSignings: clamp(Math.round(2 + policy.churn), 1, 6),
+        maxSignings: MG.ai
+          ? clamp(MG.ai.signingTarget(club, Math.round(2 + policy.churn)), 1, 6)
+          : clamp(Math.round(2 + policy.churn), 1, 6),
         passed: new Set(),      // players he has already lost out on or been refused by
       });
     }
@@ -379,19 +414,42 @@
       if (st.budget < 0.05 && st.wageRoom <= 0) return null;
       const needs = clubNeeds(buyer);
 
+      /* Reach is a property of the BUYER, so it is resolved once here rather
+       * than per candidate. It used to be asked inside the loop below, which
+       * measured at 11.8 million calls across six seasons — the single most
+       * expensive thing in the whole engine, purely from re-deriving a fact
+       * about the buying club for every player in the world. */
+      const reach = MG.network ? MG.network.reachLeagues(buyer) : null;
+      const ownLeague = buyer.leagueId;
+
       for (const need of needs) {
         const pool = index[need.pos] || [];
         let evaluated = 0;
         let best = null, bestScore = 0, bestFee = 0, bestWage = 0;
-        for (const entry of pool) {
+        /* The pool is sorted best-first and every player above the buyer's
+         * ceiling is skipped, so the scan used to walk the entire top of the
+         * list — hundreds of players a National League club was never going to
+         * sign — before reaching anyone it could evaluate. Binary-searching to
+         * the first affordable-quality player skips that prefix outright. The
+         * skipped entries hit `continue` before any RNG draw or side effect, so
+         * starting further down is behaviourally identical. */
+        const ceiling = need.currentQuality + 14;
+        let lo = 0, hi = pool.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (pool[mid].player.overall > ceiling) lo = mid + 1; else hi = mid;
+        }
+
+        for (let pi = lo; pi < pool.length; pi++) {
           if (evaluated > 60) break;
+          const entry = pool[pi];
           const { player, club: seller } = entry;
           if (seller.id === buyer.id || player.retired || player.clubId === buyer.id) continue;
           if (st.passed.has(player.id)) continue;
           // Reach: the buyer can only sign out of leagues its agent network can
           // actually touch. A National League side does not have the channels
           // to prise a player out of La Liga, however much it might want to.
-          if (MG.network && !MG.network.canRecruit(buyer, seller)) continue;
+          if (reach && seller.leagueId !== ownLeague && !reach.has(seller.leagueId)) continue;
           // The index is a snapshot taken before the window opened. Once a
           // player has moved, his entry in it is stale — without this check the
           // second buyer to reach him would remove him from a club he had
@@ -399,15 +457,19 @@
           // would turn out for five clubs at once.
           if (player.clubId !== seller.id) continue;
           if (player.loan) continue;                                 // not his club's to sell
-          if (player.overall > need.currentQuality + 14) continue;   // out of reach
+          if (player.overall > ceiling) continue;                    // out of reach
           evaluated++;
           if (seller.squad.length <= MIN_SQUAD) continue;
           const fee = askingPrice(entry, buyer, listedSet);
           if (fee > st.budget) continue;
           const wage = MG.players.expectedWage(player, buyer.leagueId) * rng.between(1.0, 1.2);
           if (wage * 52 / 1000 > st.wageRoom) continue;
-          // A better negotiator gets more player for the money.
-          const score = targetScore(player, buyer, policy, need) * (1 + (acumen - 50) / 250) - fee * 0.35;
+          /* A better negotiator gets more player for the money — and the
+           * summer's plan bends what "more player" means: a rebuilding club
+           * rates the 21-year-old its rival would not look at, and a club
+           * pushing for a title rates the opposite. See ai.js's targetBias. */
+          const bias = MG.ai ? MG.ai.targetBias(buyer, player) : 1;
+          const score = targetScore(player, buyer, policy, need) * (1 + (acumen - 50) / 250) * bias - fee * 0.35;
           if (score > bestScore) { best = entry; bestScore = score; bestFee = fee; bestWage = wage; }
         }
         if (best) {
@@ -444,6 +506,9 @@
       st.signings++;
       deals++;
       listedSet.delete(player.id);
+      // Written down against the plan so cycle 3 can tell what the club
+      // actually got against what it set out to get.
+      if (MG.ai) MG.ai.noteSigning(buyer, player);
       const bestFee = fee;
 
         if (bestFee >= 12 || player.overall >= 80) {
@@ -599,6 +664,13 @@
   function runLoans(world) {
     const news = [];
     let sent = 0;
+    /* Destinations, sorted once. The search below wants the LOWEST-level club a
+     * prospect would walk into, and used to filter and sort all 221 clubs for
+     * every player being sent out — the same sort, hundreds of times a summer.
+     * Sorting ascending once here and taking the first match that still fits
+     * gives the identical club (Array#sort is stable, so ties keep world order)
+     * for a fraction of the work. */
+    const byLevelAsc = world.clubs.slice().sort((a, b) => (a.level || 50) - (b.level || 50));
     for (const club of world.clubs) {
       // Who is going nowhere here: young, still improving, and behind enough
       // bodies in his own position that he will not get on the pitch.
@@ -610,19 +682,26 @@
         return ahead >= MG.players.POSITIONS[p.pos].starters;
       }).sort((a, b) => (b.potential - b.overall) - (a.potential - a.overall));
 
+      let moved = false;
       for (const p of blocked.slice(0, 3)) {
         if (club.squad.length <= MIN_SQUAD + 1) break;
         /* Somewhere he would actually play: a club whose own level he is at or
          * above, so he walks into the side, but not so far below him that the
          * football teaches him nothing. */
-        const dest = world.clubs.filter((c) => c.id !== club.id
-          && c.squad.length < MG.players.SQUAD_TARGET + 2
-          && p.overall >= (c.level != null ? c.level : 50) - 4
-          && p.overall <= (c.level != null ? c.level : 50) + 12
-          && (!MG.network || MG.network.canRecruit(c, club)))
-          .sort((a, b) => (p.overall - (b.level || 50)) - (p.overall - (a.level || 50)))[0];
+        let dest = null;
+        for (const c of byLevelAsc) {
+          const level = c.level != null ? c.level : 50;
+          if (c.id === club.id) continue;
+          if (c.squad.length >= MG.players.SQUAD_TARGET + 2) continue;
+          if (p.overall < level - 4) continue;
+          if (p.overall > level + 12) continue;
+          if (MG.network && !MG.network.canRecruit(c, club)) continue;
+          dest = c;
+          break;
+        }
         if (!dest) continue;
 
+        moved = true;
         club.squad = club.squad.filter((x) => x.id !== p.id);
         p.loan = { parentId: club.id, parentName: club.name, overallAtStart: p.overall };
         p.clubId = dest.id;
@@ -632,7 +711,10 @@
           news.push({ type: "loan", text: `LOAN — ${p.name} (${p.pos}, ${p.age}, potential ${Math.round(p.potential)}) goes to ${dest.name} for the season to get games.`, clubId: club.id });
         }
       }
-      MG.clubs.refreshRatings(club);
+      // Only the clubs that actually lost someone need their ratings rebuilt.
+      // Refreshing all 221 regardless meant picking a starting eleven for every
+      // club in the world to discover that most of them had not changed.
+      if (moved) MG.clubs.refreshRatings(club);
     }
     return { news, sent };
   }
@@ -686,6 +768,24 @@
     return news;
   }
 
+  /* The shape a squad must have whatever its total size.
+   *
+   * GOALKEEPERS ONLY, deliberately. An outfield gap is not a fault: autoPick
+   * fills an empty slot with the best available body at a familiarity penalty,
+   * which is a real thing football clubs do and which the engine already
+   * models. Plenty of real squads in the shipped database genuinely list no
+   * attacking midfielder because they do not play one.
+   *
+   * A missing GOALKEEPER is different, and is a silent disaster. autoPick will
+   * put an outfielder in goal rather than leave the shirt empty, but
+   * players.keeperRating has no such fallback — it returns a flat 45 when a
+   * squad contains no keeper at all, which quietly guts the club's defensive
+   * rating for a whole season with nothing anywhere to explain it. Two, so
+   * that losing one to injury or a sale does not recreate the hole. */
+  function minimumShape(pos) {
+    return pos === "GK" ? 2 : 0;
+  }
+
   /** Nobody fields nine players: fill genuine holes with generated journeymen. */
   function topUpSquads(world) {
     const rng = world.rng;
@@ -693,6 +793,35 @@
     for (const club of world.clubs) {
       const league = MG.clubs.LEAGUES[club.leagueId];
       let guard = 0;
+
+      /* SHAPE FIRST, and independently of size. The loop below tops a squad up
+       * to a HEADCOUNT, which quietly assumed a squad of the right size was a
+       * squad of the right shape. It is not: a club sitting exactly on the
+       * floor with no goalkeeper at all never entered that loop, went into the
+       * season with none, and had its keeper rating silently replaced by a flat
+       * 45 — a real fault the audit harness caught at San Jose Earthquakes,
+       * twenty-two players and not a keeper among them. */
+      const shapeLevel = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
+      const have = {};
+      for (const p of club.squad) have[p.pos] = (have[p.pos] || 0) + 1;
+      for (const pos of MG.players.POSITION_KEYS) {
+        const want = minimumShape(pos);
+        let n = have[pos] || 0;
+        let g = 0;
+        while (n < want && g++ < 4) {
+          const p = MG.players.generate(rng, {
+            league: club.leagueId, pos, target: shapeLevel - rng.between(4, 12),
+            spread: 3, age: rng.int(18, 26),
+          });
+          p.clubId = club.id;
+          MG.players.recordMove(p, club.name, world.season);
+          club.squad.push(p);
+          n++;
+          if (club.id === world.playerClubId) {
+            news.push({ type: "transfer", text: `COVER — ${p.name} (${p.pos}, ${p.age}, ${Math.round(p.overall)}) is signed: the club had no recognised ${(MG.players.POSITIONS[pos] || {}).name || pos} available.`, clubId: club.id });
+          }
+        }
+      }
       /* Fill to a REAL squad size, not the bare legal minimum. The floor used
        * to be MIN_SQUAD (18), which was fine only because the old youth intake
        * was separately pushing every squad back up toward the mid-twenties.
@@ -722,10 +851,26 @@
           news.push({ type: "transfer", text: `SQUAD FILLER — ${p.name} (${p.pos}, ${p.age}, ${Math.round(p.overall)}) is brought in to make up the numbers.`, clubId: club.id });
         }
       }
-      // Squads that ballooned past the target shed their worst players.
+      /* Squads that ballooned past the target shed their worst players — but
+       * never below the shape above. A straight rating sort would happily cut
+       * every goalkeeper at a club whose keepers rate below its outfielders,
+       * recreating the exact hole this function just filled. The minimum in
+       * each position is protected first, and the trim takes the worst of what
+       * is left over. */
       if (club.squad.length > MG.players.SQUAD_TARGET + 4) {
-        club.squad.sort((a, b) => b.overall - a.overall);
-        club.squad = club.squad.slice(0, MG.players.SQUAD_TARGET + 4);
+        const byPos = {};
+        for (const p of club.squad) (byPos[p.pos] = byPos[p.pos] || []).push(p);
+        const keep = [];
+        const spare = [];
+        for (const [pos, list] of Object.entries(byPos)) {
+          list.sort((a, b) => b.overall - a.overall);
+          const protectedCount = minimumShape(pos);
+          keep.push(...list.slice(0, protectedCount));
+          spare.push(...list.slice(protectedCount));
+        }
+        spare.sort((a, b) => b.overall - a.overall);
+        const room = Math.max(0, MG.players.SQUAD_TARGET + 4 - keep.length);
+        club.squad = keep.concat(spare.slice(0, room));
       }
       void league;
     }
@@ -1127,6 +1272,6 @@
   MG.transfers = {
     MIN_SQUAD, findAndSign, sellOne, sellListed, boardListings, market, runLoans, returnLoans, willJoin, executeManagerRequests, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
     askingPrice, targetScore, clubNeeds, runWindow, signFreeAgents, topUpSquads, youthIntake,
-    FREE_AGENT_SHORT_THRESHOLD,
+    FREE_AGENT_SHORT_THRESHOLD, minimumShape,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);
