@@ -191,6 +191,50 @@ transfer-listed, and it is worth about ±6% of a player's rating. Deliberately
 the smallest of the three form terms: it colours a season, it does not decide
 one.
 
+## How the AI thinks: three cycles
+
+Every AI club used to build its squad in a single reflex — look at what it was
+short of, walk the market, buy the highest score, done. Nothing about it was a
+plan: a relegated club shopped exactly like a promoted one, a club deep in debt
+shopped exactly like a rich one, and a club that failed to sign the centre-half
+it desperately needed simply started the season without one, because nothing
+ever went back and looked at what had happened.
+
+The AI now deliberates in three cycles (`src/ai.js`), each reading the last:
+
+| Cycle | What happens |
+|---|---|
+| **1 · ASSESS** | Before the market opens, the club reads its own season and takes a **posture**. It writes down its priority positions, in order, and how many it wants. |
+| **2 · ACT** | The window runs, *aimed* by the plan — priorities re-order what it chases, the posture bends how it values every target and how hard it stretches. |
+| **3 · REVIEW** | The plan meets reality. A priority it tried for and missed gets solved another way: a prospect promoted ahead of schedule, or a free agent it would have turned its nose up at in cycle 2. |
+
+Five postures, each pulling the same levers in a different direction:
+
+| Posture | When | Effect |
+|---|---|---|
+| **Firefighting** | in real debt, or forced to sell | sells hard, spends little |
+| **Rebuilding** | relegated, an aged squad, or a damning verdict | clears the decks, buys young |
+| **Pushing** | near the top of its division with money to act | keeps its core, pays up, wants ready-made |
+| **Consolidating** | just promoted | buys bodies who can cope now |
+| **Steady** | everything else | tidies the edges |
+
+**Cycle 3 is the one that did not exist**, and it is deliberately narrow. An
+unmet priority means the club *tried and came away with nothing* — it signed
+nobody in that position and is genuinely short there. An earlier version tested
+for "this position is a bit below our level", which matched nearly every club
+in nearly every position: it fired 2.8 times per club per summer and stuffed
+the world with bargain-bin free agents, pulling the bottom of the Premier
+League down to 15 points against a real 26. The fallback was doing more damage
+than the hole it was patching. It is now capped at two rescues a summer, and
+the player it brings in has to be a squad player rather than a passenger.
+
+**The player's club is never planned for.** Those are your decisions to make.
+Your scouting department, though, can read a rival's: open any rival club and a
+well-resourced department tells you its posture and the positions it is
+chasing, while a threadbare one only gets the gist. Knowing that the club above
+you is rebuilding — and going for the same winger — is exactly what a scouting
+department is for.
+
 ## The transfer market
 
 You do not execute transfers — you instruct the boardroom, which is how a
@@ -822,6 +866,8 @@ node manager/tests/run_world.js 30 my-seed # 30 seasons on your own seed
 node manager/tests/run_world.js 5 alpha -v # also dump the news feed
 node manager/tests/realism.js              # match engine vs real football
 node manager/tests/decisions.js            # every card, every choice, applied
+node manager/tests/audit.js                # structural invariants, 12 seasons
+node manager/tests/audit.js 25 my-seed     # 25 seasons on your own seed
 ```
 
 `tests/decisions.js` exists because `decisions.js` deliberately wraps each card
@@ -853,6 +899,7 @@ src/managers.js       archetypes, traits, personalities, tactics, hiring logic
 src/match.js          the match engine and goal attribution
 src/competitions.js   fixtures, tables, cups, Europe, promotion/relegation
 src/transfers.js      the summer window, youth intake, retirements
+src/ai.js             the AI's three-cycle summer: assess, act, review
 src/world.js          orchestration: createWorld() and advanceSeason()
 src/draft.js          the manager draft and the first-job market
 src/ratings.js        role-specific attribute weighting, hidden attributes, fatigue
@@ -863,10 +910,64 @@ src/ui.js             browser shell logic
 tests/run_world.js    headless multi-season simulation and invariant checks
 tests/realism.js      match-engine output measured against real football
 tests/decisions.js    every decision card and choice applied against a world
+tests/audit.js        structural invariants: duplicate players, orphaned loans, NaN, squad shape
 ```
 
 Load order matters (each file registers onto a global `MG` namespace); see the
 script tags at the bottom of `index.html`.
+
+## Speed, and how it was found
+
+A full season across ten divisions ran at **1,170ms**; it now runs at **490ms**,
+with byte-identical output — every optimisation below was verified by hashing
+the entire world state (every club's ratings, finances, squad, and every
+manager's record) after eight seasons on three seeds and checking the hash did
+not move.
+
+The costs were not where they looked. Profiling found:
+
+- **11.8 million calls to `network.canRecruit`** across six seasons — the single
+  most expensive thing in the engine. The transfer window asked "can I reach
+  this club?" once per *candidate player*, re-deriving a fact about the *buying*
+  club millions of times. Resolved once per club instead.
+- **The window scanned the whole player pool from the top.** The pool is sorted
+  best-first and every player above the buyer's ceiling is skipped, so a
+  National League club walked hundreds of players it was never going to sign
+  before reaching one it could evaluate. A binary search now starts the scan at
+  the first affordable player; the skipped entries hit `continue` before any RNG
+  draw, so the result is provably identical.
+- **`roleRating` called `Object.entries()` 3.7 million times**, allocating a
+  fresh array of pairs on every call to iterate a table that never changes.
+- **Picking a side was done two and three times over.** `xiRatings` computed the
+  XI and then called `backupsFor`, which computed the same XI again;
+  `teamProfile` triggered it twice more through `depthScore` and `teamMorale`.
+  The eleven is picked once and handed on.
+- **Quadratic squad scans**: `clubNeeds` walked the squad nine times (a filter
+  per position, plus a squad-wide average recomputed identically inside each),
+  and `buildListings` counted a position's depth afresh for every player in the
+  squad.
+
+## Bugs the audit harness found
+
+`tests/audit.js` checks structural invariants nothing else does — a player in
+two squads, a club pointing at a manager who does not exist, an orphaned loan,
+NaN in a rating, a squad that cannot field a side. Two real faults it caught:
+
+- **A club with no goalkeeper at all.** `topUpSquads` guaranteed squad *size*
+  but not squad *shape*, on the unstated assumption that the two were the same
+  thing. A club sitting exactly on the 22-player floor with no keeper never
+  entered the top-up loop, went into the season with none, and had its keeper
+  rating silently replaced by `keeperRating`'s flat 45 fallback — gutting its
+  defence for a season with nothing anywhere to explain it. Goalkeepers are now
+  guaranteed independently of headcount, and the "shed your worst players" trim
+  can no longer cut the last of them.
+- **`R2` was missing from `CUP_ROUND_RANK`.** In a 221-club field, going out in
+  the second round is the single most common cup outcome — roughly a quarter of
+  all clubs, every season. The missing key fell through `|| 0` to the same score
+  as `none`, so every one of those clubs was judged by its board as though it
+  had never entered the cup. `R1` and `R2` now sit below `R3` on fractional
+  ranks, leaving the scoring of every round from `R3` upward — which is what the
+  board calibration was tuned against — exactly where it was.
 
 ## Notable design decisions
 
