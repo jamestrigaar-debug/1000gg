@@ -197,6 +197,10 @@
   /* ------------------------------ CREATION -------------------------------- */
   let NEXT_ID = 1;
   function resetIds() { NEXT_ID = 1; }
+  /** Fast-forward the counter — used when a save is loaded, so the next
+   *  generated manager never collides with an id already alive in the
+   *  world it is loading into. */
+  function setNextId(n) { if (n > NEXT_ID) NEXT_ID = n; }
   /* Claim the next free id without building a manager. The player's own manager
    * is drafted BEFORE the world exists, so it is minted from whatever the
    * counter happened to be — and createWorld() then resets the counter and hands
@@ -532,7 +536,7 @@
   MG.managers = {
     TACTICS, TACTIC_KEYS, TRAITS, TRAIT_KEYS, PERSONALITIES, PERSONALITY_KEYS,
     ARCHETYPES, ARCHETYPE_KEYS,
-    fromArchetype, generate, resetIds, nextId, applyTraitAttrs,
+    fromArchetype, generate, resetIds, setNextId, nextId, applyTraitAttrs,
     tacticalFit, matchModifiers, coachingQuality, youthAppetite, recruitmentPolicy,
     mentorCapacity, recruitCapacity, mentorBoost,
     TACTIC_PARAMS, pressIntensity, deriveShift,

@@ -83,6 +83,15 @@
     return clamp(age, 17, 38);
   }
 
+  /* A real player imported from the database (fromDatabase/fromForeign)
+   * starts with career.seasons at makePlayer's default of 0 — accurate for
+   * a generated academy graduate, but wrong for a 36-year-old real signing,
+   * who reads his FIRST in-game retirement roll as "hangs up his boots
+   * after 1 season", real career entirely uncounted. A rough debut age of
+   * 19 is close enough for the number to stop looking broken without
+   * needing real career-history data the source never carried. */
+  function estimateCareerSeasons(age) { return clamp(Math.round(age - 19), 0, 24); }
+
   function inferAge(rng, player, currentYear, firstSeason) {
     const first = firstSeason[player.name];
     const guess = guessAgeFromRating(rng, player.overall);
@@ -288,6 +297,10 @@
   /* --------------------------- PLAYER RECORDS ----------------------------- */
   let NEXT_ID = 1;
   function resetIds() { NEXT_ID = 1; }
+  /** Fast-forward the counter — used when a save is loaded, so the next
+   *  signing, academy graduate or regen never collides with an id already
+   *  alive in the world it is loading into. */
+  function setNextId(n) { if (n > NEXT_ID) NEXT_ID = n; }
 
   function makePlayer(fields) {
     const p = Object.assign({
@@ -327,6 +340,11 @@
     player.career.clubs.push(clubName);
     if (!player.career.history) player.career.history = [];
     player.career.history.push({ club: clubName, season: season != null ? season : null, age: player.age });
+    // The one flag every arrival passes through, whatever brought him in —
+    // see sellOne's guard in transfers.js for what it is for: stopping the
+    // board's own automated "who do we cash in on" picks from landing on a
+    // man who was signed earlier in this exact same summer.
+    if (season != null) player._arrivedSeason = season;
   }
 
   /** Convert a record from src/data.js into a live player. */
@@ -348,6 +366,7 @@
       mentality: raw.mentality, mentalityRating: raw.mentalityRating,
       contract: { years: rng.int(1, 5), wage: 0 },
     });
+    p.career.seasons = estimateCareerSeasons(p.age);
     p.potential = rollPotential(rng, p.overall, p.age);
     p.contract.wage = expectedWage(p, league);
     p.value = marketValue(p);
@@ -440,6 +459,7 @@
       mentalityRating,
       contract: { years: rng.int(1, 5), wage: 0 },
     });
+    p.career.seasons = estimateCareerSeasons(p.age);
     p.potential = rollPotential(rng, p.overall, p.age);
     p.contract.wage = expectedWage(p, league);
     p.value = marketValue(p);
@@ -594,7 +614,7 @@
     firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta,
     AGE_CURVE, ageCurve, MENTALITY_TRAITS, rollMentalityRating, rollMentalityTrait,
     marketValue, expectedWage, ageValueFactor, LEAGUE_WAGE_FACTOR,
-    makePlayer, fromDatabase, fromForeign, generate, resetIds, rollInjury, availability, durability, recordMove,
+    makePlayer, fromDatabase, fromForeign, generate, resetIds, setNextId, rollInjury, availability, durability, recordMove,
     unitRating, keeperRating, squadRatings, squadNeeds, weakestUnit,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

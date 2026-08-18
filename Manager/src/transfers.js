@@ -78,12 +78,28 @@
     for (const club of world.clubs) {
       const keep = [];
       for (const p of club.squad) {
-        // Retirement: rises steeply from 33, certain at 41, and comes early for
-        // players who have dropped below the level of their division.
+        /* Retirement (brief §22): age is a modifier, not the whole story — a
+         * flat age-bracket curve is exactly what produced the reported bug
+         * ("Grealish retires at 36 after one season"): the game had no way
+         * to tell a first-team regular from a man who barely played, so both
+         * retired off the same roll. Two more factors now feed the same
+         * chance: how much football he actually got this season (a bit-part
+         * veteran winds down for real reasons the age curve alone misses),
+         * and whether he is still clearly better than his level (the
+         * "ageing legend" case — Modrić at 40 stays a year longer than a
+         * bang-average 40-year-old would). Rates themselves are also a
+         * notch softer through the mid-30s than the old curve, since real
+         * top-flight careers routinely run to 35-37. */
         const league = MG.clubs.LEAGUES[club.leagueId];
         const belowLevel = p.overall < 35 + league.prestige * 25;
-        let retireChance = p.age >= 41 ? 1 : p.age >= 38 ? 0.55 : p.age >= 35 ? 0.28 : p.age >= 33 ? 0.10 : 0;
-        if (belowLevel && p.age >= 31) retireChance += 0.25;
+        const playingTime = p.season.minutesShare || 0;
+        const eliteForAge = p.overall >= (club.level != null ? club.level : 60) + 6;
+        let retireChance = p.age >= 41 ? 1 : p.age >= 38 ? 0.5 : p.age >= 36 ? 0.2
+          : p.age >= 34 ? 0.09 : p.age >= 32 ? 0.03 : 0;
+        if (p.age >= 32 && playingTime < 0.25) retireChance += 0.18;
+        if (eliteForAge) retireChance *= 0.55;
+        if (belowLevel && p.age >= 31) retireChance += 0.2;
+        retireChance = clamp(retireChance, 0, 1);
         if (retireChance > 0 && rng.chance(retireChance)) {
           p.retired = true;
           /* Anyone leaving the managed club is reported, not just the famous —
@@ -1189,13 +1205,27 @@
       if (seller.squad.length <= MIN_SQUAD) continue;
       if (o.quality === "prospect" && player.age > 22) continue;
       if (o.quality === "star" && player.overall < level + 2) continue;
+      // "The one player who changes the level of the team" never means a
+      // declining 39-year-old — but the score below had no age term at all,
+      // so a cheap, ageing free-transfer-priced player who happened to sit
+      // near the OVR bar could out-score a genuine prime-age target purely
+      // on being cheap. A hard ceiling for the marquee case, a real reported
+      // bug (a 39-year-old right-back signed as a "star" marquee buy, then
+      // immediately flagged as the squad's obvious veteran to offload —
+      // buying and reselling the same man in the same summer).
+      if (o.quality === "star" && player.age > 32) continue;
       const fee = askingPrice({ player, club: seller }, club, new Set());
       if (fee > budget) continue;
       const wage = MG.players.expectedWage(player, club.leagueId);
-      // Closeness to the calibre asked for, minus what it costs.
+      // A prime-age curve, not a cliff: penalty grows past 27, harder for a
+      // marquee target (a "star" signing should be someone the club builds
+      // around) than for ordinary or squad-depth business.
+      const agePenalty = o.quality === "prospect" ? 0
+        : Math.max(0, player.age - 27) * (o.quality === "star" ? 2.2 : 1.0);
+      // Closeness to the calibre asked for, minus what it costs, minus age.
       const score = -Math.abs(player.overall - bar) * 3
         + (o.quality === "prospect" ? (player.potential - player.overall) * 2 : 0)
-        - fee * 0.12;
+        - fee * 0.12 - agePenalty;
       if (score > bestScore) { best = { player, seller, wage }; bestScore = score; bestFee = fee; }
     }
     if (!best) return null;
@@ -1236,10 +1266,51 @@
     return { player, fee: bestFee, from: seller.name };
   }
 
+  /* ---------------------- SPECIFIC TARGET SHORTLIST -------------------------
+   * findAndSign above searches the same market blind — it picks a calibre
+   * ("star"/"solid"/"prospect") and the engine finds the closest fit with no
+   * say from the manager on WHO. club.targets is the other half of that
+   * feature: executeManagerRequests (below) already reads it every summer
+   * and tries each name in order, exactly like a bid on any other target —
+   * it has simply never had a UI populate it, so a manager could never
+   * actually point the board at one specific player. This is that UI's
+   * data source: a real, rankable shortlist to browse and choose from. */
+  function scoutTargets(world, club, pos, opts) {
+    const o = opts || {};
+    const limit = o.limit || 12;
+    const index = indexPlayers(world);
+    const level = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
+    const out = [];
+    for (const entry of (index[pos] || [])) {
+      const player = entry.player, seller = entry.club;
+      if (seller.id === club.id || player.retired || player.clubId !== seller.id) continue;
+      if (player.loan) continue;
+      if (MG.network && !MG.network.canRecruit(club, seller)) continue;
+      if (seller.squad.length <= MIN_SQUAD) continue;
+      // A realistic reach in both directions — a shortlist including every
+      // player in the world at the position would just be a database dump.
+      if (player.overall < level - 10 || player.overall > level + 18) continue;
+      const fee = askingPrice({ player, club: seller }, club, new Set());
+      const wage = round1(MG.players.expectedWage(player, club.leagueId) * 1.08);
+      out.push({ player, from: seller.name, fee, wage, affordable: fee <= club.finances.transferBudget });
+    }
+    out.sort((a, b) => b.player.overall - a.player.overall);
+    return out.slice(0, limit);
+  }
+
   /** Cash in on someone. `which`: "star" | "veteran" | "fringe". */
   function sellOne(world, club, which) {
     if (club.squad.length <= MIN_SQUAD) return null;
-    const own = club.squad.filter((p) => !p.loan);       // loanees are not ours to sell
+    /* Never the man who arrived THIS summer — a real reported bug was
+     * exactly this: a "marquee signing" decision card bought an ageing
+     * free-transfer bargain, and a completely separate "cash in on the
+     * veteran" card in the same pre-season batch immediately flagged that
+     * same player as the obvious oldest-in-the-squad sale, since nothing
+     * stopped one card from undoing what another had just done. Each card's
+     * fx runs independently with no idea what the rest of the batch did, so
+     * the guard belongs here, on the automated pick itself, not on any one
+     * card. */
+    const own = club.squad.filter((p) => !p.loan && p._arrivedSeason !== world.season);
     const ranked = own.slice().sort((a, b) => b.overall - a.overall);
     let player;
     if (which === "star") player = ranked[0];
@@ -1443,7 +1514,7 @@
   function fmtFee(f) { return f >= 10 ? `£${Math.round(f)}m` : `£${round1(f)}m`; }
 
   MG.transfers = {
-    MIN_SQUAD, findAndSign, sellOne, sellListed, boardListings, market, runLoans, returnLoans, willJoin, executeManagerRequests, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
+    MIN_SQUAD, findAndSign, scoutTargets, sellOne, sellListed, boardListings, market, runLoans, returnLoans, willJoin, executeManagerRequests, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
     askingPrice, targetScore, clubNeeds, runWindow, signFreeAgents, topUpSquads, youthIntake,
     FREE_AGENT_SHORT_THRESHOLD, minimumShape, recordMovement, reverseMovement,
   };

@@ -1292,5 +1292,5 @@
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
   }
 
-  MG.world = { createWorld, REAL_MANAGERS, appointManager, removeManager, hireFor, fitPlayerScale, ordinal };
+  MG.world = { createWorld, REAL_MANAGERS, appointManager, removeManager, hireFor, fitPlayerScale, ordinal, attachApi };
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -40,7 +40,7 @@
 
   const state = {
     world: null, draft: null, manager: null, clubId: null, seed: null,
-    stage: "tactics",   // tactics | preseason | ready | result | endseason | endseason-done | ending
+    stage: "preseason-hub",   // preseason-hub | ready | result | endseason | endseason-done | ending
     cards: [], cardIndex: 0, outcomes: [],
     recent: [], career: [], lastRow: null, lastReport: null, lastBrief: null,
     lastCup: null, lastWindow: null, sackReason: null,
@@ -49,6 +49,7 @@
     squadSort: "rating", chooserSort: "rating",
     signCount: 0, signPositions: [], signAmbition: "solid", transfersSeason: null, boardRecs: null,
     playerSearch: "",
+    hubTab: "overview", hubNewJob: false, targetPos: "",
     moveCards: [], moveIndex: 0, moveOutcomes: [], lastMoveSummary: null, lastApproach: null,
     phase: null, earlySnapshot: null, seasonBrief: null,
     lastSeenNewsId: 0, notifOpen: false,
@@ -106,8 +107,71 @@
   }
   const club = () => state.world.clubById(state.clubId);
 
+  /* ------------------------------ PERSISTENCE ------------------------------
+   * brief §3: a browser refresh must not destroy the career. Fired at the
+   * milestones the brief names — career start, season start, transfer
+   * window, midseason, end season, decision, season complete — from the
+   * handful of call sites below, never from render() itself (a save on
+   * every render would mean one on every scroll-preserving no-op redraw).
+   * Fire-and-forget: MG.saves.saveNow never throws, and nothing here blocks
+   * on it — the career keeps moving whether or not the write has landed. */
+  function autosave() {
+    if (!MG.saves || !state.world || !state.clubId) return;
+    MG.saves.saveNow(state.world, {
+      manager: state.manager, clubId: state.clubId, career: state.career, tab: state.tab,
+    });
+  }
+
+  /** Reopen a career IndexedDB last saw — a browser refresh, not a fresh
+   *  start. Everything the save actually carries (world, manager, club,
+   *  career table) is restored; everything it deliberately does not (which
+   *  screen, an open decision card, a scroll position) lands on "ready" —
+   *  the season-overview screen, which reads safely at any point in any
+   *  season rather than assuming exactly where play was interrupted. */
+  async function resumeSavedCareer() {
+    const loaded = await MG.saves.loadCurrent();
+    if (!loaded || !loaded.uiState.manager || loaded.uiState.clubId == null) {
+      // Corrupt or unreadable current save — fall back to the one-generation
+      // recovery slot before giving up on it entirely.
+      const recovered = await MG.saves.loadPrevious();
+      if (!recovered || !recovered.uiState.manager || recovered.uiState.clubId == null) {
+        alert("That save could not be read. Starting a new career instead.");
+        return;
+      }
+      return applyResumedCareer(recovered);
+    }
+    return applyResumedCareer(loaded);
+  }
+
+  function applyResumedCareer(loaded) {
+    state.world = loaded.world;
+    state.manager = loaded.uiState.manager;
+    state.clubId = loaded.uiState.clubId;
+    state.career = loaded.uiState.career || [];
+    state.tab = loaded.uiState.tab || "squad";
+    // Ephemeral, in-progress-screen state is exactly as disposable across a
+    // refresh as it always was — see saves.js's header comment — so it is
+    // reset to the same defaults a fresh career starts with, not restored.
+    state.cards = []; state.cardIndex = 0; state.outcomes = [];
+    state.moveCards = []; state.moveIndex = 0; state.moveOutcomes = []; state.lastMoveSummary = null;
+    state.lastApproach = null; state.phase = null; state.earlySnapshot = null; state.seasonBrief = null;
+    state.lastRow = null; state.lastReport = null; state.lastBrief = null; state.lastCup = null;
+    state.lastWindow = null; state.lastTopScorer = null; state.sackReason = null;
+    state.transfersSeason = null; state.signCount = 0; state.signPositions = []; state.boardRecs = null;
+    state.recent = [];
+    state.lastSeenNewsId = state.world.news.length ? state.world.news[state.world.news.length - 1].id : 0;
+    state.stage = "ready";
+    render();
+    show("screen-career");
+  }
+
   /* ================================ DRAFT ================================= */
   function startDraft() {
+    // "START A CAREER" from the welcome screen always means a fresh one —
+    // wipe any saved career now rather than leaving it to be silently
+    // overwritten at the new career's first autosave, so the CONTINUE
+    // button (and the warning beside it) never lies about what it does.
+    if (MG.saves && MG.saves.available()) MG.saves.clearAll();
     state.seed = ($("seed-input").value || "").trim() || `mg-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     state.draft = MG.draft.createDraft(state.seed, { rerolls: 3 });
     Object.assign(state, {
@@ -241,10 +305,13 @@
     // A new job opens with an introduction to the club before anything is
     // asked of the manager — team set-up is still mandatory, it just comes
     // after he has actually met the place.
-    state.stage = "intro";
+    state.stage = "preseason-hub";
+    state.hubTab = "overview";
+    state.hubNewJob = true;
     state.tab = "squad";
     render();
     show("screen-career");
+    autosave();   // milestone: Career Start
   }
 
   /* ============================ THE SEASON LOOP ===========================
@@ -262,10 +329,10 @@
    * gate on circumstances that may simply not have arisen. */
   const PHASE_AFTER = {
     PRE1: () => beginTransferWindow(),
-    PRE2: () => { state.stage = "ready"; render(); },
+    PRE2: () => { state.stage = "ready"; render(); autosave(); },     // milestone: Decision (pre-season)
     EARLY: () => finishSeason(),
     POST1: () => runPhase("POST2"),
-    POST2: () => { state.stage = "endseason-done"; render(); },
+    POST2: () => { state.stage = "endseason-done"; render(); autosave(); },   // milestone: Decision (post-season)
   };
   // Windows that begin a fresh run of outcomes rather than adding to the one
   // already on screen — so pre-season reads as one list and the post-season
@@ -299,15 +366,19 @@
     return picked.length;
   }
 
-  /* Every pre-season now opens on the briefing — not just the first one at a
-   * new club. A returning season used to skip straight to the transfer
-   * wizard, which meant the one screen that actually gathered "who you have,
-   * who's coming through, who you're up against, who's out of contract" in
-   * one place only ever showed up once per job, on year one. Everything
-   * after this is unchanged: briefing -> tactics -> the window -> the cards. */
+  /* Every pre-season now opens on the hub — not just the first one at a new
+   * club, and not just an overview any more either. A returning season used
+   * to skip straight to the transfer wizard, which meant the one screen
+   * that actually gathered "who you have, who's coming through, tactics,
+   * who's out of contract" only ever showed up once per job, on year one.
+   * Everything after this is unchanged once CONTINUE is pressed: the window
+   * -> the cards. */
   function beginPreSeason() {
-    state.stage = "briefing";
+    state.stage = "preseason-hub";
+    state.hubTab = "overview";
+    state.hubNewJob = false;
     render();
+    autosave();   // milestone: Season Start
   }
 
   /* The board's transfer brief — how many to sign, where, and who is up for
@@ -387,6 +458,7 @@
     $("stage").innerHTML = `<div class="panel simming">THE OPENING WEEKS of ${world.year}/${String(world.year + 1).slice(2)}…</div>`;
     setTimeout(() => {
       state.earlySnapshot = world.beginSeason();
+      autosave();   // milestone: Midseason
       runPhase("EARLY");
     }, 50);
   }
@@ -439,6 +511,7 @@
 
       if (!stillHere) {
         // Sacked — but the game may still offer a way out of the game entirely.
+        autosave();   // milestone: Season Complete (career takes a real turn here too)
         const entry = MG.endings.check(world, state.manager, null, { justSacked: true });
         if (entry) { openEnding(entry, "sacked"); return; }
         renderSacked(); show("screen-sacked"); return;
@@ -446,6 +519,7 @@
       MG.clubs.setSeasonTargets(c, world.clubsInLeague(c.leagueId), world.rng);
       state.stage = "result";
       render();
+      autosave();   // milestone: End Season
     }, 50);
   }
 
@@ -497,9 +571,12 @@
     state.lastReport = null; state.lastRow = null;
     state.transfersSeason = null; state.signCount = 0; state.signPositions = [];
     state.lastSeenNewsId = world.news.length ? world.news[world.news.length - 1].id : 0;
-    state.stage = "intro";
+    state.stage = "preseason-hub";
+    state.hubTab = "overview";
+    state.hubNewJob = true;
     state.tab = "squad";
     render();
+    autosave();   // milestone: Career Start (new club, mid-career)
   }
 
   function approachHtml() {
@@ -564,6 +641,7 @@
       // the instant the narrative end-of-season cards start drawing, and this
       // record needs to survive to the summary screen after them.
       state.lastMoveSummary = state.moveOutcomes.slice();
+      autosave();   // milestone: Transfer Window resolved
       proceedPastMovements();
       return;
     }
@@ -710,6 +788,12 @@
     renderNotifications();
     wireStage();
     renderTab();
+    // The pre-season hub puts squad/tactics/contracts directly in the
+    // Decisions panel above — with the lower tab strip still showing the
+    // very same club's squad a further scroll down, there was nothing to
+    // gain from it being visible and a duplicate list to scroll past to
+    // reach the log. Hidden here, restored the moment the hub is left.
+    $("lower-tabs").style.display = state.stage === "preseason-hub" ? "none" : "";
     if (scrollY != null) window.scrollTo(0, scrollY);
   }
 
@@ -818,9 +902,7 @@
   const CARD_STAGES = { preseason1: 1, preseason2: 1, earlyseason: 1, postseason1: 1, postseason2: 1 };
 
   function stageHtml() {
-    if (state.stage === "intro") return seasonBriefingHtml({ newJob: true });
-    if (state.stage === "briefing") return seasonBriefingHtml({ newJob: false });
-    if (state.stage === "tactics") return tacticsSetupHtml();
+    if (state.stage === "preseason-hub") return preseasonHubHtml();
     if (state.stage === "transfers") return transfersWizardHtml();
     if (CARD_STAGES[state.stage]) return cardHtml();
     if (state.stage === "endseason-done") {
@@ -850,8 +932,47 @@
    * for it. Runs on EVERY pre-season, not just the first one at a job: a
    * returning season used to skip straight to the transfer wizard, which
    * meant this whole picture only ever appeared once per job. */
-  function seasonBriefingHtml(opts) {
-    const o = opts || {};
+  /** The pre-season hub itself — sub-tab nav plus whichever section is
+   *  open, all inside #stage so nothing here is ever a scroll away. See
+   *  render()'s #lower-tabs toggle: the ordinary SQUAD/TACTICS tabs are
+   *  hidden while this is showing, since it already carries the same
+   *  content (hubOverviewHtml/squadHtml/tacticsHtml/contractsUpHtml are
+   *  reused verbatim, so every LIST/MENTOR/formation/slot control here is
+   *  the same live control, not a read-only summary of it). */
+  function preseasonHubHtml() {
+    const c = club();
+    const expiring = c.squad.filter((p) => !p.loan && p.contract.years <= 1).length;
+    const report = MG.tactics.xiReport(c);
+    const TABS = [
+      { key: "overview", label: "OVERVIEW" },
+      { key: "squad", label: "SQUAD" },
+      { key: "tactics", label: "TACTICS", badge: report.problems || null },
+      { key: "contracts", label: "CONTRACTS", badge: expiring || null },
+    ];
+    if (!TABS.some((t) => t.key === state.hubTab)) state.hubTab = "overview";
+    const nav = `<div class="seg" style="flex-wrap:wrap">${TABS.map((t) =>
+      `<button class="${state.hubTab === t.key ? "on" : ""}" data-hubtab="${t.key}">${t.label}${t.badge ? ` <span class="bad">●${t.badge}</span>` : ""}</button>`
+    ).join("")}</div>`;
+    const body = state.hubTab === "squad" ? squadHtml()
+      : state.hubTab === "tactics" ? tacticsHtml()
+        : state.hubTab === "contracts" ? (contractsUpHtml(c) || `<div class="panel muted" style="font-size:13px">Nobody is out of contract soon.</div>`)
+          : hubOverviewHtml();
+    return `
+      <div class="decision boardroom" style="margin-bottom:10px">${nav}</div>
+      <div class="decision-choices" style="margin-bottom:12px">
+        <button class="btn primary big" id="hub-continue">CONTINUE TO DECISIONS ▶</button>
+      </div>
+      ${body}`;
+  }
+
+  /* The pre-season briefing — everything that used to mean leaving this
+   * screen, or scrolling past the log to the tabs below, to go and check:
+   * who you have, who's coming through, who you're up against, the brief
+   * you're judged against. Runs on EVERY pre-season, not just the first
+   * one at a job. Now the OVERVIEW section of preseasonHubHtml — SQUAD,
+   * TACTICS and CONTRACTS are its siblings, not separate screens. */
+  function hubOverviewHtml() {
+    const o = { newJob: state.hubNewJob };
     const c = club(), m = state.manager;
     const board = MG.clubs.BOARD_STYLES[c.board.style];
     const key = c.squad.slice().sort((a, b) => b.overall - a.overall).slice(0, 5);
@@ -899,11 +1020,7 @@
           <div class="prating ${x.reputation >= c.reputation ? "attack" : "midfield"}" style="width:38px;height:38px;font-size:14px">${Math.round(MG.clubs.clubStrength(x))}</div>
           <div class="crow-body"><div class="nm">${esc(x.name)}</div><div class="muted" style="font-size:12px">reputation ${x.reputation}</div></div>
         </div>`).join("")}
-      </div>` : ""}
-
-      ${contractsUpHtml(c)}
-
-      <button class="btn primary big" id="to-team-setup" style="margin-top:12px">${o.newJob ? "MEET THE SQUAD, THEN SET UP THE TEAM ▶" : "CONFIRM THE TEAM ▶"}</button>`;
+      </div>` : ""}`;
   }
 
   /* A quick look at the academy — not the full YOUTH tab, just the one or
@@ -930,26 +1047,6 @@
     </div>`;
   }
 
-  function tacticsSetupHtml() {
-    const c = club();
-    const report = MG.tactics.xiReport(c);
-    return `
-      <div class="decision boardroom">
-        <div class="decision-tag">TEAM SET-UP</div>
-        <div class="decision-text">Before anything else: how does ${esc(c.name)} line up, and what is this season for?</div>
-        <p class="muted" style="font-size:13px">Set your formation, your starting eleven and the season's focus in the
-        <b>TACTICS</b> tab below. It stays as you leave it until you change it again.</p>
-        <div class="stat-grid">
-          <div class="stat-box"><div class="sb-num">${esc(c.formation)}</div><div class="sb-lab">Formation</div></div>
-          <div class="stat-box"><div class="sb-num ${report.problems ? "bad" : ""}">${report.averageFamiliarity}%</div><div class="sb-lab">In position</div></div>
-          <div class="stat-box"><div class="sb-num ${c.focus ? "" : "bad"}" style="font-size:15px">${c.focus ? esc(MG.clubs.FOCUS[c.focus].label) : "NOT SET"}</div><div class="sb-lab">Focus</div></div>
-        </div>
-        ${report.problems ? `<div class="outcome" style="border-left-color:var(--gold)">${report.problems} player${report.problems === 1 ? " is" : "s are"} out of position. That costs you.</div>` : ""}
-        <div class="decision-choices" style="margin-top:12px">
-          <button class="btn primary" id="confirm-tactics">CONFIRM TEAM AND CONTINUE</button>
-        </div>
-      </div>`;
-  }
 
   /* The pre-season transfer wizard: count -> positions -> who is for sale.
    * Deliberately three short questions rather than a spreadsheet — the board
@@ -977,6 +1074,70 @@
       <div class="seg">${OPTIONS.map((o) => `
         <button class="${state.signAmbition === o.key ? "on" : ""}" ${o.key === "star" && starLocked ? "disabled" : ""} data-signambition="${o.key}">${o.label}</button>`).join("")}</div>
       <div class="muted" style="font-size:12px;margin-top:6px">${esc(OPTIONS.find((o) => o.key === state.signAmbition).blurb)}</div>
+    </div>`;
+  }
+
+  const TARGET_CAP = 5;
+  /** A player wherever he actually is in the world right now — the targets
+   *  list holds ids of players who belong to OTHER clubs, so this walks
+   *  every squad rather than assuming the current club's own. */
+  function findPlayerAnywhere(id) {
+    for (const cl of state.world.clubs) {
+      const p = cl.squad.find((x) => x.id === id);
+      if (p) return p;
+    }
+    return null;
+  }
+
+  /* SCOUT SPECIFIC TARGETS — the other half of a feature the engine already
+   * had: executeManagerRequests (transfers.js) has always read club.targets
+   * and bid for each one by name every summer, exactly like any other
+   * transfer, with real refusal reasons if it falls through. Nothing in the
+   * UI ever put a name INTO that list, so the only way to sign anyone was
+   * the abstract count/position/ambition wizard above, with the board
+   * picking blind. This is real, specific control: browse a shortlist,
+   * point the board at one of them by name. Available to every board style,
+   * but called out for a Balanced board especially — it is the one that
+   * already "expects what the squad deserves and reacts in proportion"
+   * rather than pushing its own agenda, so a specific pick is the least
+   * likely of any board style to get overruled by its own ambition. */
+  function scoutTargetsHtml(c) {
+    const needs = MG.transfers.clubNeeds(c);
+    if (!state.targetPos || !MG.players.POSITIONS[state.targetPos]) {
+      state.targetPos = needs[0] ? needs[0].pos : "CM";
+    }
+    const targets = (c.targets || []).map((id) => findPlayerAnywhere(id)).filter(Boolean);
+    const shortlist = MG.transfers.scoutTargets(state.world, c, state.targetPos, { limit: 10 })
+      .filter((row) => !(c.targets || []).includes(row.player.id));
+    const balanced = c.board.style === "Balanced";
+    return `<div class="wizard-block">
+      <h4>Scout specific targets <span class="muted">(${targets.length}/${TARGET_CAP})</span></h4>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">
+        Point the board at a NAMED player instead of an abstract brief — it bids for exactly him, at his real price,
+        and tells you if his club or his agent said no.${balanced ? ` <b>${esc(c.board.style)}</b> board: this is
+        the board's default now — it backs a specific pick before it goes looking for one of its own.` : ""}
+      </div>
+      ${targets.length ? `<div style="margin-bottom:8px">${targets.map((p) => {
+        const home = state.world.clubById(p.clubId);
+        return `<div class="crow">
+          <div class="prating ${posClass(p.pos)}" style="width:34px;height:34px;font-size:13px">${Math.round(p.overall)}</div>
+          <div class="crow-body"><div class="nm">${esc(p.name)} <span class="ppos ${posClass(p.pos)}">${p.pos}</span></div>
+            <div class="muted" style="font-size:12px">${p.age}y · ${esc(home ? home.name : "—")}</div></div>
+          <div class="crow-actions"><button class="btn tiny danger" data-untarget="${p.id}">DROP</button></div>
+        </div>`;
+      }).join("")}</div>` : ""}
+      <div class="seg" style="flex-wrap:wrap">${MG.players.POSITION_KEYS.map((k) =>
+        `<button class="${state.targetPos === k ? "on" : ""}" data-targetpos="${k}">${k}</button>`).join("")}</div>
+      <div class="table-scroll" style="max-height:220px;margin-top:8px">${shortlist.length ? shortlist.map((row) => {
+        const p = row.player;
+        const full = targets.length >= TARGET_CAP;
+        return `<div class="crow">
+          <div class="prating ${posClass(p.pos)}" style="width:34px;height:34px;font-size:13px" data-player="${p.id}">${Math.round(p.overall)}</div>
+          <div class="crow-body"><div class="nm">${esc(p.name)} <span class="ppos ${posClass(p.pos)}">${p.pos}</span></div>
+            <div class="muted" style="font-size:12px">${p.age}y · ${esc(row.from)} · ${money(row.fee)}${row.affordable ? "" : ` <span class="bad">over budget</span>`} · £${row.wage}k/wk</div></div>
+          <div class="crow-actions"><button class="btn tiny" ${full ? "disabled" : ""} data-target="${p.id}">TARGET</button></div>
+        </div>`;
+      }).join("") : `<div class="muted" style="font-size:12px;padding:8px 0">No realistic ${esc(state.targetPos)} candidates in reach right now.</div>`}</div>
     </div>`;
   }
 
@@ -1039,6 +1200,8 @@
           <div class="muted" style="font-size:12px;margin-top:6px">${state.signPositions.length ? `The board will chase: ${state.signPositions.map((p) => `<span class="ppos ${posClass(p)}">${p}</span>`).join(" ")}` : "Pick the positions to strengthen — one player per slot."}</div>
         </div>
         ${ambitionHtml(c)}` : ""}
+
+        ${scoutTargetsHtml(c)}
 
         <div class="wizard-block">
           <div class="row" style="justify-content:space-between;align-items:baseline">
@@ -1188,7 +1351,7 @@
         ${runOut ? `<b class="bad">${runOut} run${runOut === 1 ? "s" : ""} out completely</b> before the window opens — a free
         release if nothing is done. ` : ""}Ask the board to extend or release now; anyone left alone just keeps running down.
       </div>
-      <div class="table-scroll" style="max-height:320px">${expiring.map((p) => {
+      <div class="table-scroll" id="contracts-up-scroll" style="max-height:320px">${expiring.map((p) => {
         const req = reqs[p.id];
         const outNow = p.contract.years <= 0;
         return `<div class="crow ${outNow ? "release" : ""}">
@@ -1287,11 +1450,14 @@
     bind("move-veto", () => chooseMove("veto"));
     bind("approach-accept", () => chooseApproach(true));
     bind("approach-decline", () => chooseApproach(false));
-    bind("confirm-tactics", () => {
+    bind("hub-continue", () => {
       const c = club();
       if (!c.focus) c.focus = "league";
       runPhase("PRE1");
     });
+    for (const b of document.querySelectorAll("[data-hubtab]")) {
+      b.addEventListener("click", () => { state.hubTab = b.dataset.hubtab; render(); });
+    }
     // Transfer wizard.
     for (const b of document.querySelectorAll("[data-signcount]")) b.addEventListener("click", () => {
       state.signCount = Number(b.dataset.signcount);
@@ -1309,6 +1475,23 @@
     for (const b of document.querySelectorAll("[data-signambition]")) b.addEventListener("click", () => {
       if (b.disabled) return;
       state.signAmbition = b.dataset.signambition;
+      render();
+    });
+    for (const b of document.querySelectorAll("[data-targetpos]")) b.addEventListener("click", () => {
+      state.targetPos = b.dataset.targetpos;
+      render();
+    });
+    for (const b of document.querySelectorAll("[data-target]")) b.addEventListener("click", () => {
+      if (b.disabled) return;
+      const c = club();
+      c.targets = c.targets || [];
+      const id = Number(b.dataset.target);
+      if (c.targets.length < TARGET_CAP && !c.targets.includes(id)) c.targets.push(id);
+      render();
+    });
+    for (const b of document.querySelectorAll("[data-untarget]")) b.addEventListener("click", () => {
+      const c = club();
+      c.targets = (c.targets || []).filter((id) => id !== Number(b.dataset.untarget));
       render();
     });
     for (const b of document.querySelectorAll("[data-wlist]")) b.addEventListener("click", () => {
@@ -1340,7 +1523,6 @@
       render();
     });
     bind("confirm-transfers", confirmTransfers);
-    bind("to-team-setup", () => { state.stage = "tactics"; render(); });
     for (const b of document.querySelectorAll("#stage [data-club]")) {
       b.addEventListener("click", () => openClub(Number(b.dataset.club)));
     }
@@ -1350,8 +1532,17 @@
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const [action, id] = b.dataset.contractup.split(":");
+        // Same sub-panel scroll-reset as the sale list (#sale-list-scroll,
+        // see data-wlist above) — EXTEND/RELEASE calls render(), which
+        // rebuilds this whole scrolling panel and threw the manager back to
+        // the top of the Contracts Up list every time he actioned a player
+        // more than a screen down it.
+        const panel = $("contracts-up-scroll");
+        const top = panel ? panel.scrollTop : 0;
         toggleContractReq(club(), Number(id), action);
         render();
+        const panel2 = $("contracts-up-scroll");
+        if (panel2) panel2.scrollTop = top;
       });
     }
     for (const el of document.querySelectorAll("#stage [data-player]")) {
@@ -1432,13 +1623,13 @@
     const yrs = p.contract.years;
     const yrsCls = yrs <= 0 ? "bad" : yrs === 1 ? "gold" : "muted";
     const yrsLabel = yrs <= 0 ? "OUT" : `${yrs}y left`;
-    // A rival's player, seen through your scouting department rather than the
-    // true number — see scouting.js. The badge shows the department's own
-    // best guess (the middle of its range); "pot" becomes the range itself,
-    // because a rival's ceiling is exactly the kind of thing scouts get wrong.
-    const scouted = o.scoutRange;
-    const ratingNum = scouted ? Math.round((scouted.floor + scouted.ceiling) / 2) : Math.round(p.overall);
-    const scoutCls = scouted ? (scouted.confident ? "accent" : "gold") : "";
+    // Overall is never fuzzed by scouting, a rival's player included — this
+    // is not the kind of game that hides a number behind a department's
+    // guesswork. See MG.scouting.playerBand, which nothing in the UI calls
+    // for a rating badge any more (openClub's scouting report still fuzzes
+    // a rival's TEAM shape, which is a different thing — an opinion about
+    // how the pieces fit, not a hidden fact about one player).
+    const ratingNum = Math.round(p.overall);
     /* LIST/MENTOR/EXTEND/RELEASE used to live here as a 2x2 button grid — a
      * fixed 118px column that, next to the rating badge, left almost nothing
      * for the name on a phone-width screen and made long names unreadable.
@@ -1454,10 +1645,10 @@
         : "";
     const tierCls = ratingTierClass(p.overall, o.level);
     return `<div class="pcard ${o.mentored ? "mentored" : o.listed ? "listed" : o.inXI ? "in-xi" : ""}">
-      <div class="prating ${pc} ${tierCls}" data-player="${p.id}" style="cursor:pointer">${ratingNum}${!scouted ? growthTag(p) : ""}</div>
+      <div class="prating ${pc} ${tierCls}" data-player="${p.id}" style="cursor:pointer">${ratingNum}${growthTag(p)}</div>
       <div class="pbody" data-player="${p.id}" style="cursor:pointer">
         <div class="pname">${flags}<span title="${esc(p.nationality)}">${natFlag}</span> ${esc(p.name)}${p.homegrown ? ' <span class="hg">HG</span>' : ""}${markTag(p)}</div>
-        <div class="pmeta"><span class="ppos ${pc}">${esc(p.pos)}</span>${p.age}y · ${scouted ? `<span class="${scoutCls}">scouted ${scouted.floor}–${scouted.ceiling}</span>` : `pot ${Math.round(p.potential)}`} · ${money(p.value)} · £${p.contract.wage}k
+        <div class="pmeta"><span class="ppos ${pc}">${esc(p.pos)}</span>${p.age}y · pot ${Math.round(p.potential)} · ${money(p.value)} · £${p.contract.wage}k
           · <span class="${yrsCls}">${yrsLabel}</span>
           ${p.lastSeason && p.lastSeason.apps ? ` · <span class="muted">last yr ${p.lastSeason.apps}a ${p.lastSeason.goals}g</span>` : ""}
           ${p.season.injured > 0 ? ` · <span class="inj">out ${Math.round(p.season.injured * 100)}%</span>` : durabilityTag(p)}</div>
@@ -1634,8 +1825,8 @@
     return `<div class="panel">
       <h3 class="muted">SCOUTING DEPARTMENT · <b class="${cls}">${s.score}</b>/100</h3>
       <div class="muted" style="font-size:12px;margin-bottom:8px"><b>${esc(label.label)}</b> — ${esc(label.blurb)}
-      This is why a rival's numbers show up as a range everywhere in the game — the report is only ever as good as
-      the department that produced it.</div>
+      Every player's rating is always the true one, yours or a rival's — this only colours the narrative read on a
+      rival CLUB's overall shape and intentions, never a number the engine already knows.</div>
       <div class="depth-grid">
         <div class="dcell"><div class="dname">Facilities</div><div style="font-size:13px;font-weight:700">${s.training}</div></div>
         <div class="dcell"><div class="dname">Backing</div><div style="font-size:13px;font-weight:700">${s.wealth >= 74 ? "Strong" : s.wealth >= 45 ? "Fair" : "Thin"}</div></div>
@@ -1887,19 +2078,19 @@
     const m = world.managerById(c.managerId);
     const squad = c.squad.slice().sort(SORTS.rating);
     const mine = club();
-    // Your own club is always read exactly — everyone else goes through the
-    // scouting department (scouting.js). What you SEE here is what your
-    // scouts can actually tell you, not the true numbers the engine plays with.
+    // Every rating here is the true one, your own club or a rival's alike —
+    // this is not the kind of game that makes you guess at a number the
+    // engine already knows. MG.scouting still colours the NARRATIVE (how
+    // confident your department is, what a rival looks like it's trying to
+    // do), never the numbers themselves.
     const rival = c.id !== mine.id && MG.scouting;
     const rep = rival ? MG.scouting.clubReport(world, mine, c) : null;
-    const statBox = (key, label) => rep
-      ? `<div class="stat-box"><div class="sb-num" style="font-size:16px">${rep[key].floor}–${rep[key].ceiling}</div><div class="sb-lab">${label}</div></div>`
-      : `<div class="stat-box"><div class="sb-num">${Math.round(c.ratings[key])}</div><div class="sb-lab">${label}</div></div>`;
+    const statBox = (key, label) =>
+      `<div class="stat-box"><div class="sb-num">${Math.round(c.ratings[key])}</div><div class="sb-lab">${label}</div></div>`;
     modal(`
       <h3 class="muted">${esc(c.name)} · ${esc(MG.clubs.LEAGUES[c.leagueId].name)}</h3>
       ${rep ? `<div class="muted" style="font-size:12px;margin-bottom:8px">
-        Scouting report — <b>${esc(rep.label.label)}</b>. ${esc(rep.label.blurb)} The ratings below are your department's
-        read, not the true numbers; a better-resourced, happier, further-reaching department reads a rival more accurately.
+        Scouting report — <b>${esc(rep.label.label)}</b>. ${esc(rep.label.blurb)}
       </div>` : ""}
       <div class="stat-grid" style="margin-bottom:10px">
         ${statBox("attack", "Attack")}${statBox("midfield", "Midfield")}${statBox("defence", "Defence")}
@@ -1908,7 +2099,7 @@
       <div class="muted" style="font-size:13px;margin-bottom:4px">Manager: <b>${esc(m ? m.name : "—")}</b>${m ? ` · ${esc(m.archetypeName)} · ${esc(m.tactic)} · ${esc(c.formation)}` : ""}</div>
       <div class="muted" style="font-size:13px;margin-bottom:8px">Boardroom: <b>${esc(c.board.style)}</b> · ${esc(ownerLabel(c))}</div>
       ${rivalIntentHtml(world, mine, c, rep)}
-      <div class="chooser-list">${squad.slice(0, 24).map((p) => pcard(p, Object.assign({ level: c.level }, rep ? { scoutRange: MG.scouting.playerBand(world, mine, c, p) } : {}))).join("")}</div>`);
+      <div class="chooser-list">${squad.slice(0, 24).map((p) => pcard(p, { level: c.level })).join("")}</div>`);
     for (const el of document.querySelectorAll("[data-player]")) {
       el.addEventListener("click", (e) => { e.stopPropagation(); openPlayer(Number(el.dataset.player)); });
     }
@@ -2191,6 +2382,7 @@
     const intl = player.intl;
 
     modal(`
+      <button class="btn tiny" id="profile-back" style="margin-bottom:10px">← BACK</button>
       <div class="profile-top">
         <div class="profile-bars">
           <div class="muted" style="font-size:11px;margin-bottom:6px">Read straight off his attributes — not a separate rating.</div>
@@ -2242,6 +2434,8 @@
       ${careerPathHtml(player)}
     `);
 
+    const backBtn = $("profile-back");
+    if (backBtn) backBtn.addEventListener("click", closeModal);
     const lb = $("profile-list");
     if (lb) lb.addEventListener("click", () => { toggleList(c, player.id); closeModal(); renderTab(); });
     const mb = $("profile-mentor");
@@ -2334,6 +2528,26 @@
       if (state.notifOpen && !e.target.closest(".notif-wrap")) { state.notifOpen = false; renderNotifications(); }
     });
     $("seed-input").value = `mg-${Math.random().toString(36).slice(2, 8)}`;
+
+    // A save from a previous visit — offered, never auto-loaded, so
+    // "START A CAREER" always still means exactly that.
+    if (MG.saves && MG.saves.available()) {
+      MG.saves.hasSave().then((yes) => {
+        if (!yes) return;
+        $("continue-row").style.display = "";
+        $("continue-hint").style.display = "";
+        $("continue-career").addEventListener("click", () => {
+          $("continue-career").disabled = true;
+          $("continue-career").textContent = "LOADING…";
+          resumeSavedCareer().catch((err) => {
+            console.warn("resume failed:", err);
+            alert("That save could not be read. Starting a new career instead.");
+            $("continue-career").disabled = false;
+            $("continue-career").textContent = "CONTINUE CAREER";
+          });
+        });
+      });
+    }
   }
 
   MG.ui = { init, state };
