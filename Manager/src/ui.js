@@ -49,8 +49,9 @@
     squadSort: "rating", chooserSort: "rating",
     signCount: 0, signPositions: [], signAmbition: "solid", transfersSeason: null, boardRecs: null,
     playerSearch: "",
-    hubTab: "overview", hubNewJob: false, targetPos: "",
-    moveCards: [], moveIndex: 0, moveOutcomes: [], lastMoveSummary: null, lastApproach: null,
+    hubTab: "overview", hubNewJob: false,
+    proposals: [], proposalChoices: [], proposalOutcomes: [],
+    moveCards: [], moveChoices: [], moveOutcomes: [], lastMoveSummary: null, lastApproach: null,
     phase: null, earlySnapshot: null, seasonBrief: null,
     lastSeenNewsId: 0, notifOpen: false,
   };
@@ -117,9 +118,12 @@
    * on it — the career keeps moving whether or not the write has landed. */
   function autosave() {
     if (!MG.saves || !state.world || !state.clubId) return;
-    MG.saves.saveNow(state.world, {
-      manager: state.manager, clubId: state.clubId, career: state.career, tab: state.tab,
-    });
+    // `state` itself is passed rather than a hand-picked subset: saves.js
+    // decides what is safe to store, and it is the file that knows why
+    // (see its pack()). Picking fields here as well meant adding a field
+    // to the save format silently did nothing until BOTH sides were
+    // updated — which is exactly how the post-season stage went missing.
+    MG.saves.saveNow(state.world, state);
   }
 
   /** Reopen a career IndexedDB last saw — a browser refresh, not a fresh
@@ -143,24 +147,67 @@
     return applyResumedCareer(loaded);
   }
 
+  /* Where a saved stage resumes. A decision card's own context holds live
+   * object graphs that JSON cannot round-trip, so a half-answered window is
+   * never restored mid-card — it re-enters at the START of the part of the
+   * season it was in, and draws fresh cards.
+   *
+   *   pre-season anything  -> the hub, and set the window up again
+   *   mid-season           -> "ready"; beginSeason() already refuses to
+   *                           replay opening weeks it has played (it returns
+   *                           the stored snapshot), so KICK OFF resumes into
+   *                           the early-season window rather than restarting
+   *   post-season anything -> "result", which flows on into the board's
+   *                           review, the SIGN/VETO on any movement still
+   *                           unresolved in world.playerMovements, and both
+   *                           end-of-season windows
+   *
+   * That last row is the one that matters: every post-season stage used to
+   * land on "ready", quietly skipping all of it. */
+  /* The only screen that shows the reference tab strip — see render(). */
+  const TAB_STAGES = { ready: true };
+
+  const RESUME_STAGE = {
+    "preseason-hub": "preseason-hub", transfers: "preseason-hub", "transfer-proposals": "preseason-hub",
+    preseason1: "preseason-hub", preseason2: "preseason-hub",
+    ready: "ready", earlyseason: "ready",
+    result: "result", "move-approval": "result", "manager-approach": "result",
+    postseason1: "result", postseason2: "result", "endseason-done": "result",
+  };
+
   function applyResumedCareer(loaded) {
+    const ui = loaded.uiState;
     state.world = loaded.world;
-    state.manager = loaded.uiState.manager;
-    state.clubId = loaded.uiState.clubId;
-    state.career = loaded.uiState.career || [];
-    state.tab = loaded.uiState.tab || "squad";
-    // Ephemeral, in-progress-screen state is exactly as disposable across a
-    // refresh as it always was — see saves.js's header comment — so it is
-    // reset to the same defaults a fresh career starts with, not restored.
+    state.manager = ui.manager;
+    state.clubId = ui.clubId;
+    state.career = ui.career || [];
+    state.tab = ui.tab || "squad";
+    state.hubTab = ui.hubTab || "overview";
+    state.hubNewJob = false;
+    // In-progress card state is disposable across a refresh — see the
+    // RESUME_STAGE note above and saves.js's header.
     state.cards = []; state.cardIndex = 0; state.outcomes = [];
-    state.moveCards = []; state.moveIndex = 0; state.moveOutcomes = []; state.lastMoveSummary = null;
-    state.lastApproach = null; state.phase = null; state.earlySnapshot = null; state.seasonBrief = null;
-    state.lastRow = null; state.lastReport = null; state.lastBrief = null; state.lastCup = null;
-    state.lastWindow = null; state.lastTopScorer = null; state.sackReason = null;
+    state.moveCards = []; state.moveChoices = []; state.moveOutcomes = [];
+    state.proposals = []; state.proposalChoices = []; state.proposalOutcomes = [];
+    state.phase = null; state.earlySnapshot = null; state.seasonBrief = null;
     state.transfersSeason = null; state.signCount = 0; state.signPositions = []; state.boardRecs = null;
     state.recent = [];
+    // The season just gone, as the post-season screens need it. lastReport
+    // is read back off the club rather than stored twice (it is saved with
+    // the club); lastWindow is display-only and holds live player refs, so
+    // it stays null and every screen that shows it already copes.
+    state.lastRow = ui.lastRow || null;
+    state.lastBrief = ui.lastBrief || null;
+    state.lastCup = ui.lastCup != null ? ui.lastCup : null;
+    state.lastTopScorer = ui.lastTopScorer || null;
+    state.lastMoveSummary = ui.lastMoveSummary || null;
+    state.lastApproach = ui.lastApproach || null;
+    state.sackReason = ui.sackReason || null;
+    state.lastWindow = null;
+    const resumedClub = state.world.clubById(state.clubId);
+    state.lastReport = resumedClub && resumedClub.board ? (resumedClub.board.report || null) : null;
     state.lastSeenNewsId = state.world.news.length ? state.world.news[state.world.news.length - 1].id : 0;
-    state.stage = "ready";
+    state.stage = RESUME_STAGE[ui.stage] || "preseason-hub";
     render();
     show("screen-career");
   }
@@ -410,27 +457,161 @@
   /* The board goes to work: it pursues one signing per position you asked for,
    * sells everyone it can find a buyer for, and reports each result — the deals
    * it lands AND the ones it cannot — straight into the log. */
+  /* The board goes away and comes back with NAMES.
+   *
+   * This used to be the one place in the game where a transfer happened to
+   * you rather than in front of you: "sign 2, a CM and a FW, be ambitious"
+   * and the engine committed both instantly, the manager finding out from a
+   * log line afterwards. The SIGN/VETO cards the board's own summer dealing
+   * goes through were the proof of the better pattern — you are shown a
+   * real player, with what he costs and what it does to the balance, and
+   * nothing moves until you say so. So the window now works the same way:
+   * the brief above is a SEARCH instruction, and every deal it turns up
+   * comes back as a card to approve or pass on. Nothing is committed here.
+   *
+   * Sales are proposed the same way. Listing a player says "find me a
+   * buyer", not "sell him at any price" — the offer that comes back is a
+   * number worth seeing before it is accepted. */
   function confirmTransfers() {
     const world = state.world, c = club();
     const ambition = c.mustSell && state.signAmbition === "star" ? "solid" : state.signAmbition;
+    const proposals = [];
+    // One search per position asked for. A club already proposed to the
+    // board is passed to the next search as off-limits, or asking for two
+    // centre-halves proposes the same man twice.
+    const taken = new Set();
     for (const pos of state.signPositions) {
-      const s = MG.transfers.findAndSign(world, c, { pos, quality: ambition });
-      const name = (MG.players.POSITIONS[pos] || {}).name || pos;
-      if (s) world.report(`IN — ${s.player.name} (${s.player.pos}, ${Math.round(s.player.overall)}) signs from ${s.from} for ${money(s.fee)}.`, "transfer", c.id);
-      else if (ambition === "star") world.report(`NO DEAL — the ${name} you were chasing went elsewhere; his agent had other doors open.`, "sack", c.id);
-      else world.report(`NO DEAL — the board could not land a ${name} within budget and reach.`, "sack", c.id);
+      const cand = MG.transfers.findSigning(world, c, { pos, quality: ambition, exclude: taken });
+      const label = (MG.players.POSITIONS[pos] || {}).name || pos;
+      if (cand) { taken.add(cand.player.id); proposals.push({ kind: "in", pos, cand }); }
+      else proposals.push({ kind: "none", pos, label });
     }
     for (const id of (c.transferList || []).slice()) {
-      const res = MG.transfers.sellListed(world, c, id);
-      if (res.ok) {
-        world.report(`OUT — ${res.player.name} joins ${res.to} for ${money(res.fee)}.`, "transfer", c.id);
-        c.transferList = c.transferList.filter((x) => x !== id);
-      } else if (res.player) {
-        world.report(`NO SALE — ${res.player.name}: ${res.reason}. He stays listed.`, "sack", c.id);
-      }
+      const offer = MG.transfers.findSaleOffer(world, c, id);
+      if (offer.ok) proposals.push({ kind: "out", offer });
+      else if (offer.player) proposals.push({ kind: "nosale", player: offer.player, reason: offer.reason });
     }
+    if (!proposals.length) { runPhase("PRE2"); return; }
+    state.proposals = proposals;
+    state.proposalChoices = proposals.map(() => true);   // everything on by default
+    state.proposalOutcomes = [];
+    state.stage = "transfer-proposals";
+    render();
+  }
+
+  /* THE WHOLE WINDOW ON ONE PAGE.
+   *
+   * These were dealt one card at a time — answer, next, answer, next, every
+   * answered card left stacked above the live one. On a phone (two thirds
+   * of the people playing this) that is a screen that only ever grows: five
+   * deals meant five taps and a page you kept scrolling back down through.
+   * The board's business is one decision made five times, not five separate
+   * screens, so it reads as one page now: every deal listed, one tap to
+   * flip a deal between yes and no, the money updating underneath, one
+   * button to commit the lot.
+   *
+   * Everything arrives set to YES — you asked for these signings and you
+   * listed these players — so the common case is read it, check the total,
+   * confirm. */
+  function toggleProposal(i) {
+    state.proposalChoices[i] = !state.proposalChoices[i];
+    render();
+  }
+
+  /** Commit every deal still set to yes. Nothing moved before this. */
+  function confirmProposals() {
+    const world = state.world, c = club();
+    state.proposalOutcomes = [];
+    state.proposals.forEach((p, i) => {
+      const yes = !!state.proposalChoices[i];
+      if (p.kind === "in") {
+        if (!yes) { state.proposalOutcomes.push({ label: "PASSED", outcome: `You pass on ${p.cand.player.name}.` }); return; }
+        const done = MG.transfers.commitSigning(world, c, p.cand);
+        if (!done) {
+          world.report(`NO DEAL — ${p.cand.player.name} was gone before the paperwork cleared.`, "sack", c.id);
+          state.proposalOutcomes.push({ label: "MISSED", outcome: `${p.cand.player.name} went elsewhere.` });
+          return;
+        }
+        world.report(`IN — ${done.player.name} (${done.player.pos}, ${Math.round(done.player.overall)}) signs from ${done.from} for ${money(done.fee)}.`, "transfer", c.id);
+        MG.clubs.fansReact(c, done.player.overall >= (c.level || 60) + 2 ? 4 : 1.5, `${done.player.name} was signed`);
+        MG.transfers.noteTransfer(world, { dir: "in", name: done.player.name, pos: done.player.pos, overall: Math.round(done.player.overall), age: done.player.age, fee: done.fee, other: done.from });
+        state.proposalOutcomes.push({ label: "SIGNED", outcome: `${done.player.name} joins for ${money(done.fee)}.` });
+      } else if (p.kind === "out") {
+        if (!yes) {
+          world.report(`REJECTED — the bid for ${p.offer.player.name} is turned down. He stays.`, "contract", c.id);
+          state.proposalOutcomes.push({ label: "REJECTED", outcome: `You turn down ${money(p.offer.fee)} for ${p.offer.player.name}.` });
+          return;
+        }
+        const res = MG.transfers.commitSale(world, c, p.offer);
+        if (!res.ok) { state.proposalOutcomes.push({ label: "NO SALE", outcome: `${p.offer.player.name}: ${res.reason}.` }); return; }
+        world.report(`OUT — ${res.player.name} joins ${res.to} for ${money(res.fee)}.`, "transfer", c.id);
+        MG.clubs.fansReact(c, res.player.overall >= (c.level || 60) + 2 ? -4 : -1, `${res.player.name} was sold`);
+        MG.transfers.noteTransfer(world, { dir: "out", name: res.player.name, pos: res.player.pos, overall: Math.round(res.player.overall), age: res.player.age, fee: res.fee, other: res.to });
+        c.transferList = (c.transferList || []).filter((x) => x !== res.player.id);
+        state.proposalOutcomes.push({ label: "SOLD", outcome: `${res.player.name} leaves for ${money(res.fee)}.` });
+      }
+    });
     MG.clubs.refreshRatings(c);
+    autosave();   // milestone: Transfer Window
     runPhase("PRE2");
+  }
+
+  /** One compact row per deal — arrow, rating, name, the numbers that
+   *  matter, and the yes/no toggle. One line of detail, not a card: this
+   *  list has to be scannable on a phone without scrolling. */
+  function dealRowHtml(p, i) {
+    const yes = !!state.proposalChoices[i];
+    if (p.kind === "none" || p.kind === "nosale") {
+      const text = p.kind === "none"
+        ? `No ${esc(p.label.toLowerCase())} found inside the budget and your reach.`
+        : `No bid for ${esc(p.player.name)} — ${esc(p.reason)}.`;
+      return `<div class="crow" style="opacity:.6"><div class="tdir muted">—</div>
+        <div class="crow-body"><div class="muted" style="font-size:12px">${text}</div></div></div>`;
+    }
+    const buying = p.kind === "in";
+    const player = buying ? p.cand.player : p.offer.player;
+    const fee = buying ? p.cand.fee : p.offer.fee;
+    const wage = buying ? Math.round(p.cand.wage * 10) / 10 : player.contract.wage;
+    const other = buying ? p.cand.from : p.offer.buyer.name;
+    const pc = posClass(player.pos);
+    return `<div class="crow ${yes ? "" : "release"}">
+      <div class="tdir ${buying ? "in" : "out"}">${buying ? "▸" : "◂"}</div>
+      <div class="prating ${pc}" style="width:34px;height:34px;font-size:13px;cursor:pointer" data-player="${player.id}">${Math.round(player.overall)}</div>
+      <div class="crow-body">
+        <div class="nm">${esc(player.name)} <span class="ppos ${pc}">${player.pos}</span></div>
+        <div class="muted" style="font-size:11px">${player.age}y · ${buying ? "from" : "to"} ${esc(other)} · <b class="${buying ? "bad" : "accent"}">${buying ? "−" : "+"}${money(fee)}</b> · £${wage}k/wk</div>
+      </div>
+      <div class="crow-actions"><button class="btn tiny ${yes ? "primary" : ""}" data-deal="${i}">${yes ? (buying ? "◤ SIGN" : "◤ SELL") : "NO"}</button></div>
+    </div>`;
+  }
+
+  function proposalsHtml() {
+    const c = club();
+    const live = state.proposals.filter((p) => p.kind === "in" || p.kind === "out");
+    let out = 0, inc = 0, yesCount = 0;
+    state.proposals.forEach((p, i) => {
+      if (!state.proposalChoices[i]) return;
+      if (p.kind === "in") { out += p.cand.fee; yesCount++; }
+      else if (p.kind === "out") { inc += p.offer.fee; yesCount++; }
+    });
+    const after = round1(c.finances.balance + inc - out);
+    return `
+      <div class="decision boardroom">
+        <div class="decision-tag">THE WINDOW · THE BOARD'S BUSINESS</div>
+        <div class="decision-text">${live.length
+          ? "This is everyone the board can actually get, and everyone who has been bid for. Nothing is signed yet — tap a deal to drop it, then confirm."
+          : "The board came back with nothing this window."}</div>
+        <div class="stat-grid" style="margin:10px 0">
+          <div class="stat-box"><div class="sb-num bad">−${money(out)}</div><div class="sb-lab">Spending</div></div>
+          <div class="stat-box"><div class="sb-num accent">+${money(inc)}</div><div class="sb-lab">Raising</div></div>
+          <div class="stat-box"><div class="sb-num gold">${money(after)}</div><div class="sb-lab">Balance after</div></div>
+        </div>
+        <div>${state.proposals.map((p, i) => dealRowHtml(p, i)).join("")}</div>
+        <div class="muted" style="font-size:11px;margin-top:6px">Tap a rating to see the full profile.</div>
+        <div class="decision-choices" style="margin-top:10px">
+          <button class="btn primary" id="proposals-confirm">${yesCount ? `CONFIRM ${yesCount} DEAL${yesCount === 1 ? "" : "S"} ▶` : "DO NOTHING THIS WINDOW ▶"}</button>
+        </div>
+      </div>`;
   }
 
   function chooseOption(i) {
@@ -605,47 +786,97 @@
 
   function beginMoveApproval(pending) {
     state.moveCards = pending;
-    state.moveIndex = 0;
+    // Signed off by default: the board has already done these, and the
+    // common answer is "fine". A veto is the deliberate act, so a veto is
+    // the one that costs a tap.
+    state.moveChoices = pending.map(() => true);
     state.moveOutcomes = [];
     state.stage = "move-approval";
     render();
   }
 
-  function chooseMove(action) {
-    const world = state.world;
-    const m = state.moveCards[state.moveIndex];
-    if (!m) return;
-    const c = club();
+  function toggleMove(i) {
+    if (club().board.style === "Chaotic") return;   // told, not asked
+    state.moveChoices[i] = !state.moveChoices[i];
+    render();
+  }
+
+  /** Resolve the board's whole window at once — see confirmProposals for
+   *  why these are one page rather than one card at a time. */
+  function confirmMoves() {
+    const world = state.world, c = club();
     const chaotic = c.board.style === "Chaotic";
-    if (action === "veto" && !chaotic) {
-      MG.transfers.reverseMovement(world, m);
+    state.moveOutcomes = [];
+    state.moveCards.forEach((m, i) => {
+      const player = world.clubs.reduce((f, cl) => f || cl.squad.find((p) => p.id === m.playerId), null);
+      const name = m.playerName || (player ? player.name : "the player");
+      const keep = chaotic || !!state.moveChoices[i];
       m.resolved = true;
-      const label = m.kind === "out" ? "recalled, the fee returned" : "sent back, the deal undone";
-      state.moveOutcomes.push({ label: "VETOED", outcome: `The board's move on ${m.playerName} is ${label}.` });
-      MG.clubs.fansReact(c, -1, "the board's own dealing was overruled");
-    } else {
-      m.resolved = true;
-      state.moveOutcomes.push({ label: chaotic && action === "veto" ? "NOTED" : "SIGNED OFF", outcome: `${m.playerName} stays as the board dealt it.` });
-      // The deal stands — only NOW does the world get to hear about it. See
-      // completeDeal's comment in transfers.js: this line and this fan
-      // reaction were held back off the log specifically so nothing
-      // announced the deal as done while this card was still open.
+      if (!keep && player) {
+        MG.transfers.reverseMovement(world, m);
+        const label = m.kind === "out" ? "recalled, the fee returned" : "sent back, the deal undone";
+        state.moveOutcomes.push({ label: "VETOED", outcome: `The board's move on ${name} is ${label}.` });
+        MG.clubs.fansReact(c, -1, "the board's own dealing was overruled");
+        return;
+      }
+      state.moveOutcomes.push({ label: chaotic && !state.moveChoices[i] ? "NOTED" : "SIGNED OFF", outcome: `${name} stays as the board dealt it.` });
+      // The deal stands — only NOW does the world hear about it. See
+      // completeDeal in transfers.js: the log line and the fan reaction are
+      // deliberately held back so nothing announces a deal as done while
+      // the manager is still being asked about it.
       if (m.pending) {
         world.report(m.pending.pendingText, "transfer", c.id);
         MG.clubs.fansReact(c, m.pending.fansDelta, m.pending.fansReason);
       }
-    }
-    state.moveIndex++;
-    if (state.moveIndex >= state.moveCards.length) {
-      // A durable copy, separate from state.outcomes — that array gets wiped
-      // the instant the narrative end-of-season cards start drawing, and this
-      // record needs to survive to the summary screen after them.
-      state.lastMoveSummary = state.moveOutcomes.slice();
-      autosave();   // milestone: Transfer Window resolved
-      proceedPastMovements();
-      return;
-    }
-    render();
+      if (player) {
+        MG.transfers.noteTransfer(world, {
+          dir: m.kind === "out" ? "out" : "in",
+          name, pos: player.pos, overall: Math.round(player.overall), age: player.age,
+          fee: m.fee || 0, other: m.otherClubName,
+        });
+      }
+    });
+    // A durable copy, separate from state.outcomes — that array is wiped the
+    // instant the end-of-season cards start drawing, and this record has to
+    // survive to the summary screen after them.
+    state.lastMoveSummary = state.moveOutcomes.slice();
+    autosave();   // milestone: Transfer Window resolved
+    proceedPastMovements();
+  }
+
+  /* ------------------------- THE TRANSFER SUMMARY --------------------------
+   * Shown either side of a season: what came in, what went out, and the
+   * headline business elsewhere. Green in, red out, one line each — the
+   * point is to take a whole window in at a glance rather than read a log
+   * back. */
+  function transferSummaryHtml(opts) {
+    const o = opts || {};
+    const world = state.world, c = club();
+    const rows = MG.transfers.clubTransfers(world, o.season);
+    const ins = rows.filter((r) => r.dir === "in");
+    const outs = rows.filter((r) => r.dir === "out");
+    const spent = ins.reduce((t, r) => t + (r.fee || 0), 0);
+    const raised = outs.reduce((t, r) => t + (r.fee || 0), 0);
+    const net = raised - spent;
+    const big = MG.transfers.biggestTransfers(world, 3);
+    if (!rows.length && !big.length) return "";
+    const line = (r) => `<div class="crow" style="padding:5px 8px">
+      <div class="tdir ${r.dir}">${r.dir === "in" ? "▸" : "◂"}</div>
+      <div class="prating ${posClass(r.pos)}" style="width:28px;height:28px;font-size:12px">${r.overall}</div>
+      <div class="crow-body"><div class="nm" style="font-size:13px">${esc(r.name)} <span class="ppos ${posClass(r.pos)}">${esc(r.pos)}</span></div>
+        <div class="muted" style="font-size:11px">${r.dir === "in" ? "from" : "to"} ${esc(r.other || "—")}</div></div>
+      <div class="crow-actions"><b class="${r.dir === "in" ? "bad" : "accent"}" style="font-size:12px">${r.dir === "in" ? "−" : "+"}${money(r.fee || 0)}</b></div>
+    </div>`;
+    return `<div class="panel">
+      <h3 class="muted">${esc(o.title || "THE WINDOW")} · <span class="accent">${ins.length} in</span> · <span class="bad">${outs.length} out</span></h3>
+      ${rows.length ? `<div class="muted" style="font-size:12px;margin-bottom:6px">Spent <b class="bad">${money(spent)}</b> · raised <b class="accent">${money(raised)}</b> · net <b class="${net >= 0 ? "accent" : "bad"}">${net >= 0 ? "+" : "−"}${money(Math.abs(net))}</b></div>
+        ${ins.map(line).join("")}${outs.map(line).join("")}`
+      : `<div class="muted" style="font-size:12px">No business done at ${esc(c.name)} this window.</div>`}
+      ${big.length ? `<div style="margin-top:8px">
+        <div class="muted" style="font-size:11px;margin-bottom:4px">BIGGEST DEALS ELSEWHERE</div>
+        ${big.map((n) => `<div class="log-entry transfer" style="font-size:12px">${esc(n.text)}</div>`).join("")}
+      </div>` : ""}
+    </div>`;
   }
 
   /** A durable "what the board did, and what you did about it" recap —
@@ -659,52 +890,46 @@
     </div>`;
   }
 
+  /** Every deal the board did, on one page. */
   function moveApprovalHtml() {
     const world = state.world, c = club();
-    const m = state.moveCards[state.moveIndex];
-    const done = state.moveOutcomes.map((o) => `<div class="outcome"><b>${esc(o.label)}</b> — ${esc(o.outcome)}</div>`).join("");
-    if (!m) return done;
-    const player = world.clubs.reduce((found, cl) => found || cl.squad.find((p) => p.id === m.playerId), null);
-    if (!player) { chooseMove("sign"); return done; }   // he is gone from the world entirely — nothing to approve
-    m.playerName = player.name;
-    const pc = posClass(player.pos);
     const chaotic = c.board.style === "Chaotic";
-    const kindLabel = m.kind === "in" ? "SIGNING" : m.kind === "out" ? "SALE" : "FREE TRANSFER";
-    const desc = m.kind === "in" ? `arrives from ${esc(m.otherClubName)} for ${money(m.fee)}`
-      : m.kind === "out" ? `is sold to ${esc(m.otherClubName)} for ${money(m.fee)}`
-        : `signs on a free transfer`;
-    // The fee has already moved (see recordMovement/reverseMovement in
-    // transfers.js — this card is your one chance to send it back before he
-    // plays a minute). Shown as before/after rather than a bare number so a
-    // sign-off is a read decision, not a leap of faith: this is what the
-    // balance already is, and this is what VETO would put it back to.
-    const feeSigned = m.kind === "out" ? m.fee : -m.fee;
-    const balanceBefore = round1(c.finances.balance - feeSigned);
-    const log = (player.career && player.career.seasonLog) || [];
-    const lastSeason = log.length ? log[log.length - 1] : null;
-    const lastSeasonLine = lastSeason
-      ? `Last season at ${esc(lastSeason.club || "his old club")}: ${lastSeason.apps} apps, ${lastSeason.goals} goals, ${lastSeason.rating != null ? lastSeason.rating.toFixed(1) : "—"} rating.`
-      : "No completed season on record yet.";
-    return `${done}
-      <div class="stage-step">TRANSFER MOVEMENTS · ${state.moveIndex + 1} of ${state.moveCards.length}</div>
+    let net = 0;
+    const rows = state.moveCards.map((m, i) => {
+      const player = world.clubs.reduce((f, cl) => f || cl.squad.find((p) => p.id === m.playerId), null);
+      if (!player) return "";        // gone from the world entirely; nothing to approve
+      m.playerName = player.name;
+      const keep = chaotic || !!state.moveChoices[i];
+      const inbound = m.kind !== "out";
+      if (keep) net += inbound ? -(m.fee || 0) : (m.fee || 0);
+      const pc = posClass(player.pos);
+      const where = m.kind === "free" ? "on a free" : `${inbound ? "from" : "to"} ${esc(m.otherClubName)}`;
+      return `<div class="crow ${keep ? "" : "release"}">
+        <div class="tdir ${inbound ? "in" : "out"}">${inbound ? "▸" : "◂"}</div>
+        <div class="prating ${pc}" style="width:34px;height:34px;font-size:13px;cursor:pointer" data-player="${player.id}">${Math.round(player.overall)}</div>
+        <div class="crow-body">
+          <div class="nm">${esc(player.name)} <span class="ppos ${pc}">${player.pos}</span></div>
+          <div class="muted" style="font-size:11px">${player.age}y · ${where} · <b class="${inbound ? "bad" : "accent"}">${inbound ? "−" : "+"}${money(m.fee || 0)}</b> · £${m.wage}k/wk</div>
+        </div>
+        ${chaotic ? "" : `<div class="crow-actions"><button class="btn tiny ${keep ? "primary" : "danger"}" data-move="${i}">${keep ? "◤ OK" : "VETO"}</button></div>`}
+      </div>`;
+    }).join("");
+    const after = round1(c.finances.balance + net);
+    return `
       <div class="decision boardroom">
-        <div class="decision-tag">THE BOARD'S OWN DEALING · ${kindLabel}</div>
-        <div class="decision-text">Without waiting on you, the board went and did this. ${chaotic ? "This board moves the goalposts on its own terms — you are told, not asked." : "Review it below, then sign off or veto — veto is a full, clean reversal: he goes back, the money returns, nothing is half-done."}</div>
-        <div class="crow" data-player="${player.id}" style="cursor:pointer;margin:10px 0">
-          <div class="prating ${pc}" style="width:44px;height:44px;font-size:17px">${Math.round(player.overall)}</div>
-          <div class="crow-body"><div class="nm">${esc(player.name)} <span class="ppos ${pc}">${player.pos}</span></div>
-            <div class="muted" style="font-size:12px">${esc(player.pos)} · ${player.age}y · ${esc(desc)} · £${m.wage}k/wk</div></div>
+        <div class="decision-tag">THE BOARD'S OWN DEALING</div>
+        <div class="decision-text">${chaotic
+          ? "This board moves the goalposts on its own terms — you are being told, not asked."
+          : "Everything the board did without waiting on you. Tap a deal to veto it — a veto is a full, clean reversal: he goes back, the money returns, nothing is half-done."}</div>
+        <div class="stat-grid" style="margin:10px 0">
+          <div class="stat-box"><div class="sb-num">${money(c.finances.balance)}</div><div class="sb-lab">Balance now</div></div>
+          <div class="stat-box"><div class="sb-num ${net >= 0 ? "accent" : "bad"}">${net >= 0 ? "+" : "−"}${money(Math.abs(net))}</div><div class="sb-lab">If you confirm</div></div>
+          <div class="stat-box"><div class="sb-num gold">${money(after)}</div><div class="sb-lab">Balance after</div></div>
         </div>
-        <div class="muted" style="font-size:12px;margin-bottom:8px">${esc(lastSeasonLine)}</div>
-        <div class="stat-grid" style="margin-bottom:8px">
-          <div class="stat-box"><div class="sb-num">${money(balanceBefore)}</div><div class="sb-lab">Balance before</div></div>
-          <div class="stat-box"><div class="sb-num ${feeSigned >= 0 ? "accent" : "bad"}">${feeSigned >= 0 ? "+" : ""}${money(feeSigned)}</div><div class="sb-lab">This deal</div></div>
-          <div class="stat-box"><div class="sb-num gold">${money(c.finances.balance)}</div><div class="sb-lab">Balance now</div></div>
-        </div>
-        <div class="muted" style="font-size:11px;margin-bottom:8px">Tap his rating to see the full profile before you decide.</div>
-        <div class="decision-choices">
-          <button class="btn choice" id="move-sign"><b>SIGN OFF</b><span>Let the deal stand.</span></button>
-          ${chaotic ? "" : `<button class="btn choice" id="move-veto"><b>VETO</b><span>Reverse it — he goes back, the money returns.</span></button>`}
+        <div>${rows}</div>
+        <div class="muted" style="font-size:11px;margin-top:6px">Tap a rating to see the full profile.</div>
+        <div class="decision-choices" style="margin-top:10px">
+          <button class="btn primary" id="moves-confirm">CONFIRM ▶</button>
         </div>
       </div>`;
   }
@@ -787,13 +1012,31 @@
     $("logfeed").innerHTML = logFeedHtml();
     renderNotifications();
     wireStage();
-    renderTab();
-    // The pre-season hub puts squad/tactics/contracts directly in the
-    // Decisions panel above — with the lower tab strip still showing the
-    // very same club's squad a further scroll down, there was nothing to
-    // gain from it being visible and a duplicate list to scroll past to
-    // reach the log. Hidden here, restored the moment the hub is left.
-    $("lower-tabs").style.display = state.stage === "preseason-hub" ? "none" : "";
+    /* WHERE THE REFERENCE TABS BELONG.
+     *
+     * The squad/tactics/youth/table strip is a reference surface, and it is
+     * long — a 26-man squad below every screen put the whole career page at
+     * over 4,000px on a phone, so a two-line decision sat on top of five
+     * screens of list nobody had asked to see. Two thirds of the people
+     * playing this are on a phone, and the game is meant to be played in
+     * the decisions and the log.
+     *
+     * So the tabs appear only where browsing is the point: the season-ahead
+     * screen. Everywhere a decision is being asked, the page is the
+     * decision and the log, full stop. Nothing is lost — the pre-season hub
+     * carries squad, tactics and contracts as its own sub-tabs, and the
+     * season-ahead screen carries the strip in full.
+     *
+     * The body is EMPTIED rather than just hidden, too. Rendering it anyway
+     * meant every squad existed twice in the DOM at once (measured: 46
+     * player rows on screen, 46 more in the hidden copy), each rebuilt on
+     * every render and each carrying its own click handlers. wireTab still
+     * runs either way — the hub's own tactics and squad controls are bound
+     * by it, since its selectors are document-wide by design. */
+    const showTabs = TAB_STAGES[state.stage];
+    $("lower-tabs").style.display = showTabs ? "" : "none";
+    if (showTabs) renderTab();
+    else { $("tab-body").innerHTML = ""; wireTab(); }
     if (scrollY != null) window.scrollTo(0, scrollY);
   }
 
@@ -904,9 +1147,10 @@
   function stageHtml() {
     if (state.stage === "preseason-hub") return preseasonHubHtml();
     if (state.stage === "transfers") return transfersWizardHtml();
+    if (state.stage === "transfer-proposals") return proposalsHtml();
     if (CARD_STAGES[state.stage]) return cardHtml();
     if (state.stage === "endseason-done") {
-      return outcomesHtml() + moveSummaryHtml() + windowReportHtml() + contractsUpHtml(club())
+      return outcomesHtml() + transferSummaryHtml({ title: "THE SUMMER JUST GONE" }) + moveSummaryHtml() + contractsUpHtml(club())
         + `<button class="btn primary big" id="to-preseason" style="margin-top:12px">PRE-SEASON ▶</button>`;
     }
     if (state.stage === "ready") return readyHtml();
@@ -1011,6 +1255,8 @@
         ${key.map((p) => pcard(p, { level: c.level })).join("")}
       </div>
 
+      ${transferSummaryHtml({ title: "THIS SUMMER'S BUSINESS" })}
+
       ${youthGlanceHtml(c)}
 
       ${rivals.length ? `<div class="panel">
@@ -1077,70 +1323,6 @@
     </div>`;
   }
 
-  const TARGET_CAP = 5;
-  /** A player wherever he actually is in the world right now — the targets
-   *  list holds ids of players who belong to OTHER clubs, so this walks
-   *  every squad rather than assuming the current club's own. */
-  function findPlayerAnywhere(id) {
-    for (const cl of state.world.clubs) {
-      const p = cl.squad.find((x) => x.id === id);
-      if (p) return p;
-    }
-    return null;
-  }
-
-  /* SCOUT SPECIFIC TARGETS — the other half of a feature the engine already
-   * had: executeManagerRequests (transfers.js) has always read club.targets
-   * and bid for each one by name every summer, exactly like any other
-   * transfer, with real refusal reasons if it falls through. Nothing in the
-   * UI ever put a name INTO that list, so the only way to sign anyone was
-   * the abstract count/position/ambition wizard above, with the board
-   * picking blind. This is real, specific control: browse a shortlist,
-   * point the board at one of them by name. Available to every board style,
-   * but called out for a Balanced board especially — it is the one that
-   * already "expects what the squad deserves and reacts in proportion"
-   * rather than pushing its own agenda, so a specific pick is the least
-   * likely of any board style to get overruled by its own ambition. */
-  function scoutTargetsHtml(c) {
-    const needs = MG.transfers.clubNeeds(c);
-    if (!state.targetPos || !MG.players.POSITIONS[state.targetPos]) {
-      state.targetPos = needs[0] ? needs[0].pos : "CM";
-    }
-    const targets = (c.targets || []).map((id) => findPlayerAnywhere(id)).filter(Boolean);
-    const shortlist = MG.transfers.scoutTargets(state.world, c, state.targetPos, { limit: 10 })
-      .filter((row) => !(c.targets || []).includes(row.player.id));
-    const balanced = c.board.style === "Balanced";
-    return `<div class="wizard-block">
-      <h4>Scout specific targets <span class="muted">(${targets.length}/${TARGET_CAP})</span></h4>
-      <div class="muted" style="font-size:12px;margin-bottom:8px">
-        Point the board at a NAMED player instead of an abstract brief — it bids for exactly him, at his real price,
-        and tells you if his club or his agent said no.${balanced ? ` <b>${esc(c.board.style)}</b> board: this is
-        the board's default now — it backs a specific pick before it goes looking for one of its own.` : ""}
-      </div>
-      ${targets.length ? `<div style="margin-bottom:8px">${targets.map((p) => {
-        const home = state.world.clubById(p.clubId);
-        return `<div class="crow">
-          <div class="prating ${posClass(p.pos)}" style="width:34px;height:34px;font-size:13px">${Math.round(p.overall)}</div>
-          <div class="crow-body"><div class="nm">${esc(p.name)} <span class="ppos ${posClass(p.pos)}">${p.pos}</span></div>
-            <div class="muted" style="font-size:12px">${p.age}y · ${esc(home ? home.name : "—")}</div></div>
-          <div class="crow-actions"><button class="btn tiny danger" data-untarget="${p.id}">DROP</button></div>
-        </div>`;
-      }).join("")}</div>` : ""}
-      <div class="seg" style="flex-wrap:wrap">${MG.players.POSITION_KEYS.map((k) =>
-        `<button class="${state.targetPos === k ? "on" : ""}" data-targetpos="${k}">${k}</button>`).join("")}</div>
-      <div class="table-scroll" style="max-height:220px;margin-top:8px">${shortlist.length ? shortlist.map((row) => {
-        const p = row.player;
-        const full = targets.length >= TARGET_CAP;
-        return `<div class="crow">
-          <div class="prating ${posClass(p.pos)}" style="width:34px;height:34px;font-size:13px" data-player="${p.id}">${Math.round(p.overall)}</div>
-          <div class="crow-body"><div class="nm">${esc(p.name)} <span class="ppos ${posClass(p.pos)}">${p.pos}</span></div>
-            <div class="muted" style="font-size:12px">${p.age}y · ${esc(row.from)} · ${money(row.fee)}${row.affordable ? "" : ` <span class="bad">over budget</span>`} · £${row.wage}k/wk</div></div>
-          <div class="crow-actions"><button class="btn tiny" ${full ? "disabled" : ""} data-target="${p.id}">TARGET</button></div>
-        </div>`;
-      }).join("") : `<div class="muted" style="font-size:12px;padding:8px 0">No realistic ${esc(state.targetPos)} candidates in reach right now.</div>`}</div>
-    </div>`;
-  }
-
   /* AT A GLANCE — the whole point of the decision layer being the USP: enough
    * on screen, right where a choice gets made, that a manager never HAS to
    * leave the card to go and look something up. Everything here is a
@@ -1200,8 +1382,6 @@
           <div class="muted" style="font-size:12px;margin-top:6px">${state.signPositions.length ? `The board will chase: ${state.signPositions.map((p) => `<span class="ppos ${posClass(p)}">${p}</span>`).join(" ")}` : "Pick the positions to strengthen — one player per slot."}</div>
         </div>
         ${ambitionHtml(c)}` : ""}
-
-        ${scoutTargetsHtml(c)}
 
         <div class="wizard-block">
           <div class="row" style="justify-content:space-between;align-items:baseline">
@@ -1446,8 +1626,6 @@
     bind("play-season", playSeason);
     bind("to-endseason", toEndSeason);
     bind("to-preseason", toNextSeason);
-    bind("move-sign", () => chooseMove("sign"));
-    bind("move-veto", () => chooseMove("veto"));
     bind("approach-accept", () => chooseApproach(true));
     bind("approach-decline", () => chooseApproach(false));
     bind("hub-continue", () => {
@@ -1475,23 +1653,6 @@
     for (const b of document.querySelectorAll("[data-signambition]")) b.addEventListener("click", () => {
       if (b.disabled) return;
       state.signAmbition = b.dataset.signambition;
-      render();
-    });
-    for (const b of document.querySelectorAll("[data-targetpos]")) b.addEventListener("click", () => {
-      state.targetPos = b.dataset.targetpos;
-      render();
-    });
-    for (const b of document.querySelectorAll("[data-target]")) b.addEventListener("click", () => {
-      if (b.disabled) return;
-      const c = club();
-      c.targets = c.targets || [];
-      const id = Number(b.dataset.target);
-      if (c.targets.length < TARGET_CAP && !c.targets.includes(id)) c.targets.push(id);
-      render();
-    });
-    for (const b of document.querySelectorAll("[data-untarget]")) b.addEventListener("click", () => {
-      const c = club();
-      c.targets = (c.targets || []).filter((id) => id !== Number(b.dataset.untarget));
       render();
     });
     for (const b of document.querySelectorAll("[data-wlist]")) b.addEventListener("click", () => {
@@ -1523,6 +1684,14 @@
       render();
     });
     bind("confirm-transfers", confirmTransfers);
+    bind("proposals-confirm", confirmProposals);
+    for (const b of document.querySelectorAll("[data-deal]")) {
+      b.addEventListener("click", () => toggleProposal(Number(b.dataset.deal)));
+    }
+    bind("moves-confirm", confirmMoves);
+    for (const b of document.querySelectorAll("[data-move]")) {
+      b.addEventListener("click", () => toggleMove(Number(b.dataset.move)));
+    }
     for (const b of document.querySelectorAll("#stage [data-club]")) {
       b.addEventListener("click", () => openClub(Number(b.dataset.club)));
     }
@@ -1548,6 +1717,20 @@
     for (const el of document.querySelectorAll("#stage [data-player]")) {
       el.addEventListener("click", (e) => { e.stopPropagation(); openPlayer(Number(el.dataset.player)); });
     }
+  }
+
+  /* A list the manager is looking at can now live in either of two places:
+   * the lower tab strip (#tab-body) in normal play, or inside the
+   * pre-season hub (#stage) during the window. renderTab() only ever
+   * rebuilds the former, so every control that called it directly went
+   * dead the moment the same list was being viewed through the hub — the
+   * squad sort buttons did nothing, and listing a player from his profile
+   * updated the engine without the card ever turning red. Both looked
+   * exactly like a broken button. Anything that changes what a squad list
+   * should now show goes through here instead. */
+  function refreshLists() {
+    if (state.stage === "preseason-hub") render();
+    else renderTab();
   }
 
   /* ------------------------ TIER 3: CLUB AND WORLD ------------------------ */
@@ -1654,6 +1837,68 @@
           ${p.season.injured > 0 ? ` · <span class="inj">out ${Math.round(p.season.injured * 100)}%</span>` : durabilityTag(p)}</div>
       </div>
       ${tag}
+    </div>`;
+  }
+
+  /* ------------------------------ THE RADAR --------------------------------
+   * The same six numbers as the bars beside it, as a shape. The bars answer
+   * "how good is he at X"; the shape answers "what KIND of footballer is
+   * this" — which is what you actually want when deciding whether he fits,
+   * and the question a column of near-identical bar lengths is worst at.
+   *
+   * THE SCALE IS THE WHOLE TRICK. Plotted raw on 0-99 every senior
+   * professional is a rounded blob in the middle: real squads live in a
+   * band of roughly 45-90, so a 46 and an 85 — a genuinely enormous
+   * difference — sit barely 40% of the radius apart while the inner half of
+   * the chart stays permanently empty. The radial axis therefore starts at
+   * RADAR_FLOOR rather than zero, spending the whole chart on the range
+   * players are actually in and turning that same pair into most of the
+   * radius. Nothing is invented or exaggerated: these are the same values
+   * printed on the bars, on a zoomed axis — which is exactly why the floor
+   * is printed underneath rather than hidden. */
+  const RADAR_FLOOR = 38;
+  const RADAR_AXES = ["DEF", "PHY", "SPD", "ATT", "AER", "MEN"];
+  function radarHtml(stats) {
+    if (!stats || stats.length < 3) return "";
+    const n = stats.length;
+    const cx = 100, cy = 96, R = 62;
+    // Floored a little above zero so a genuinely poor axis is still a
+    // visible point rather than vanishing into the centre and pinching the
+    // whole shape shut.
+    const rOf = (v) => R * clamp((v - RADAR_FLOOR) / (99 - RADAR_FLOOR), 0.08, 1);
+    const pt = (i, r) => {
+      const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
+      return [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
+    };
+    const poly = (fn) => stats.map((s, i) => pt(i, fn(s, i)).map((v) => Math.round(v * 10) / 10).join(",")).join(" ");
+    const spokes = stats.map((_, i) => {
+      const [x, y] = pt(i, R);
+      return `<line class="spoke" x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`;
+    }).join("");
+    const dots = stats.map((s, i) => {
+      const [x, y] = pt(i, rOf(s.value));
+      return `<circle class="dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6"/>`;
+    }).join("");
+    const labels = stats.map((s, i) => {
+      const [x, y] = pt(i, R + 16);
+      const at = Math.abs(x - cx) < 6 ? "middle" : x > cx ? "start" : "end";
+      const dy = Math.abs(x - cx) < 6 ? (y > cy ? 10 : -4) : 3;
+      // A keeper's first axis is Goalkeeping, not Defending — see radarAxes.
+      const code = i === 0 && /^Goal/.test(s.label) ? "GK" : (RADAR_AXES[i] || s.label.slice(0, 3).toUpperCase());
+      return `<text class="axlabel" x="${x.toFixed(1)}" y="${(y + dy).toFixed(1)}" text-anchor="${at}">${esc(code)}</text>
+              <text class="axval" x="${x.toFixed(1)}" y="${(y + dy + 11).toFixed(1)}" text-anchor="${at}">${Math.round(s.value)}</text>`;
+    }).join("");
+    return `<div class="radar-wrap">
+      <svg class="radar" viewBox="0 0 200 200" role="img" aria-label="Attribute radar">
+        <polygon class="grid" points="${poly(() => R)}"/>
+        <polygon class="grid" points="${poly(() => R * 0.66)}"/>
+        <polygon class="grid" points="${poly(() => R * 0.33)}"/>
+        ${spokes}
+        <polygon class="shape" points="${poly((s) => rOf(s.value))}"/>
+        ${dots}
+        ${labels}
+      </svg>
+      <div class="radar-note">Same numbers as the bars — the axis starts at ${RADAR_FLOOR}, so the shape shows the differences.</div>
     </div>`;
   }
 
@@ -2147,10 +2392,10 @@
       b.addEventListener("click", () => openSlotChooser(Number(b.dataset.slot)));
     }
     for (const b of document.querySelectorAll("[data-squadsort]")) {
-      b.addEventListener("click", () => { state.squadSort = b.dataset.squadsort; renderTab(); });
+      b.addEventListener("click", () => { state.squadSort = b.dataset.squadsort; refreshLists(); });
     }
     for (const b of document.querySelectorAll("[data-yfocus]")) {
-      b.addEventListener("click", () => { MG.youth.ensure(c).focus = b.dataset.yfocus; renderTab(); });
+      b.addEventListener("click", () => { MG.youth.ensure(c).focus = b.dataset.yfocus; refreshLists(); });
     }
     for (const b of document.querySelectorAll("[data-promote]")) {
       b.addEventListener("click", () => {
@@ -2163,13 +2408,16 @@
       b.addEventListener("click", () => {
         const p = MG.youth.release(c, Number(b.dataset.release));
         if (p) state.world.report(`ACADEMY — ${p.name} is released by the club.`, "youth", c.id);
-        renderTab();
+        refreshLists();
       });
     }
     for (const b of document.querySelectorAll("[data-league]")) {
       b.addEventListener("click", () => openLeague(b.dataset.league));
     }
-    for (const el of document.querySelectorAll("[data-player]")) {
+    /* Scoped to the tab body on purpose: wireStage already binds every
+     * "#stage [data-player]", so a document-wide selector here bound the
+     * hub's player cards a second time and openPlayer fired twice per tap. */
+    for (const el of document.querySelectorAll("#tab-body [data-player]")) {
       el.addEventListener("click", (e) => { e.stopPropagation(); openPlayer(Number(el.dataset.player)); });
     }
     const auto = $("auto-pick");
@@ -2388,6 +2636,7 @@
           <div class="muted" style="font-size:11px;margin-bottom:6px">Read straight off his attributes — not a separate rating.</div>
           ${stats.map((s) => `<div class="attr-bar"><span class="muted">${esc(s.label)}</span>
             <div class="bar"><i style="width:${clamp(s.value, 0, 99)}%"></i></div><b>${Math.round(s.value)}</b></div>`).join("")}
+          ${radarHtml(stats)}
         </div>
         <div class="profile-side">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
@@ -2437,13 +2686,13 @@
     const backBtn = $("profile-back");
     if (backBtn) backBtn.addEventListener("click", closeModal);
     const lb = $("profile-list");
-    if (lb) lb.addEventListener("click", () => { toggleList(c, player.id); closeModal(); renderTab(); });
+    if (lb) lb.addEventListener("click", () => { toggleList(c, player.id); closeModal(); refreshLists(); });
     const mb = $("profile-mentor");
-    if (mb) mb.addEventListener("click", () => { toggleMentor(c, player.id); closeModal(); renderTab(); });
+    if (mb) mb.addEventListener("click", () => { toggleMentor(c, player.id); closeModal(); refreshLists(); });
     const eb = $("profile-extend");
-    if (eb) eb.addEventListener("click", () => { toggleContractReq(c, player.id, "extend"); closeModal(); renderTab(); });
+    if (eb) eb.addEventListener("click", () => { toggleContractReq(c, player.id, "extend"); closeModal(); refreshLists(); });
     const rb = $("profile-release");
-    if (rb) rb.addEventListener("click", () => { toggleContractReq(c, player.id, "release"); closeModal(); renderTab(); });
+    if (rb) rb.addEventListener("click", () => { toggleContractReq(c, player.id, "release"); closeModal(); refreshLists(); });
   }
 
   /* ---------------------------- CAREER ENDINGS ---------------------------- */

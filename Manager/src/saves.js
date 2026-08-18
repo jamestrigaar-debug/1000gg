@@ -83,7 +83,8 @@
   const WORLD_FIELDS = [
     "seed", "year", "season", "clubs", "managers", "freeManagers", "news",
     "history", "playerClubId", "playerMovements", "playerMatches",
-    "agentRosters", "_partialLeague", "_earlySnapshot", "_lastEuroQualification",
+    "agentRosters", "clubTransferLog",
+    "_partialLeague", "_earlySnapshot", "_lastEuroQualification",
   ];
 
   function packWorld(world) {
@@ -137,14 +138,33 @@
   }
 
   /* ------------------------------ the record -------------------------------
-   * uiState only carries the handful of fields a fresh page load actually
-   * needs to put the manager back where he was — his own record (found by id
-   * in the reloaded world, not re-serialized separately, for the same
-   * shared-reference reason as freeManagers above), which club, which tab,
-   * and the season-by-season career table the Career screen reads. Anything
-   * else in ui.js's `state` (open modals, in-progress decision cards, sort
-   * order) is exactly as disposable across a refresh as it always was — the
-   * save exists to protect the CAREER, not to freeze mid-click. */
+   * uiState carries what a fresh page load needs to put the manager back
+   * where he was: his own record (found by id in the reloaded world, not
+   * re-serialized separately, for the same shared-reference reason as
+   * freeManagers above), which club, which tab, the season-by-season career
+   * table, WHERE IN THE SEASON he had got to, and the plain-data results of
+   * the season just gone that the screens between a final whistle and the
+   * next pre-season are drawn from.
+   *
+   * That last part is not decoration. Landing every resume on "start the
+   * next season" silently skipped the entire post-season — the board's
+   * review, the SIGN/VETO on transfers the board had made, and both
+   * end-of-season decision windows — for anyone who closed the tab after a
+   * season ended. The pending transfers were still sitting unresolved in
+   * world.playerMovements; the manager simply never got asked, which is the
+   * exact "the game moved on without you" failure the decision engine is
+   * supposed to make impossible. ui.js maps the stored stage onto a safe
+   * resume point (see RESUME_STAGE there).
+   *
+   * Only plain data is stored. lastReport is deliberately absent — it lives
+   * on club.board.report, which is already saved with the club, so ui.js
+   * reads it back from there rather than keeping a second copy that could
+   * drift. lastWindow is absent too: it holds live player references whose
+   * identity JSON cannot preserve, and every screen that shows it already
+   * treats it as optional. In-progress decision cards are still disposable
+   * — their contexts hold live object graphs, so a resume re-enters the
+   * window and draws fresh cards rather than pretending to restore a
+   * half-answered one. */
   function pack(world, uiState) {
     return {
       schema: SCHEMA_VERSION,
@@ -155,6 +175,15 @@
         clubId: uiState.clubId,
         career: uiState.career || [],
         tab: uiState.tab || "squad",
+        stage: uiState.stage || null,
+        hubTab: uiState.hubTab || "overview",
+        lastRow: uiState.lastRow || null,
+        lastBrief: uiState.lastBrief || null,
+        lastCup: uiState.lastCup != null ? uiState.lastCup : null,
+        lastTopScorer: uiState.lastTopScorer || null,
+        lastMoveSummary: uiState.lastMoveSummary || null,
+        lastApproach: uiState.lastApproach || null,
+        sackReason: uiState.sackReason || null,
       },
     };
   }
@@ -164,13 +193,23 @@
     const world = unpackWorld(record.world);
     if (!world.clubs.length) return null;
     const manager = record.ui.managerId != null ? world.managerIndex[record.ui.managerId] : null;
+    const u = record.ui;
     return {
       world,
       uiState: {
         manager,
-        clubId: record.ui.clubId,
-        career: record.ui.career || [],
-        tab: record.ui.tab || "squad",
+        clubId: u.clubId,
+        career: u.career || [],
+        tab: u.tab || "squad",
+        stage: u.stage || null,
+        hubTab: u.hubTab || "overview",
+        lastRow: u.lastRow || null,
+        lastBrief: u.lastBrief || null,
+        lastCup: u.lastCup != null ? u.lastCup : null,
+        lastTopScorer: u.lastTopScorer || null,
+        lastMoveSummary: u.lastMoveSummary || null,
+        lastApproach: u.lastApproach || null,
+        sackReason: u.sackReason || null,
       },
     };
   }

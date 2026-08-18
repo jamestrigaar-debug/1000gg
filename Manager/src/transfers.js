@@ -1109,6 +1109,14 @@
    *  but aimed at a single player the manager has listed. Returns a result the
    *  UI can put straight into the log, success or refusal. */
   function sellListed(world, club, playerId) {
+    const offer = findSaleOffer(world, club, playerId);
+    if (!offer.ok) return offer;
+    return commitSale(world, club, offer);
+  }
+
+  /** Who would buy a listed player, and for how much — nothing committed.
+   *  The pre-season window shows this as an offer to accept or reject. */
+  function findSaleOffer(world, club, playerId) {
     const player = club.squad.find((p) => p.id === playerId);
     if (!player) return { ok: false, reason: "he is no longer at the club" };
     if (player.loan) return { ok: false, player, reason: "he is only here on loan" };
@@ -1123,7 +1131,14 @@
         && (!MG.network || MG.network.canRecruit(c, club)))
       .sort((a, b) => b.finances.transferBudget - a.finances.transferBudget)[0];
     if (!buyer) return { ok: false, player, reason: "no club in your reach bid for him" };
+    return { ok: true, player, buyer, fee };
+  }
 
+  /** Accept an offer findSaleOffer produced. */
+  function commitSale(world, club, offer) {
+    const { player, buyer, fee } = offer;
+    if (!club.squad.some((p) => p.id === player.id)) return { ok: false, player, reason: "he has already left" };
+    if (club.squad.length <= MIN_SQUAD) return { ok: false, player, reason: "the squad is already too thin to sell" };
     club.squad = club.squad.filter((p) => p.id !== player.id);
     club.finances.balance = round1(club.finances.balance + fee);
     club.finances.received = round1(club.finances.received + fee);
@@ -1176,8 +1191,21 @@
     return out;
   }
 
-  /** Sign the best player the club can afford in a given mould. */
+  /** Sign the best player the club can afford in a given mould. Kept as
+   *  find-then-commit in one call, because a decision card's fx() has to
+   *  report an outcome the instant it runs. The pre-season window uses the
+   *  two halves separately — see findSigning/commitSigning below — so the
+   *  manager sees exactly who the board found BEFORE any money moves. */
   function findAndSign(world, club, opts) {
+    const cand = findSigning(world, club, opts);
+    if (!cand) return null;
+    return commitSigning(world, club, cand);
+  }
+
+  /** The search half: who the board would go for, at what price, with the
+   *  agent friction already applied — but nothing committed. Returns null
+   *  if there is nobody, or if a rival got there first. */
+  function findSigning(world, club, opts) {
     const rng = world.rng;
     const o = opts || {};
     const index = indexPlayers(world);
@@ -1214,6 +1242,8 @@
       // immediately flagged as the squad's obvious veteran to offload —
       // buying and reselling the same man in the same summer).
       if (o.quality === "star" && player.age > 32) continue;
+      // Already proposed to this manager earlier in the same window.
+      if (o.exclude && o.exclude.has(player.id)) continue;
       const fee = askingPrice({ player, club: seller }, club, new Set());
       if (fee > budget) continue;
       const wage = MG.players.expectedWage(player, club.leagueId);
@@ -1246,14 +1276,27 @@
       if (bestFee > budget) return null;
     }
 
-    const { player, seller, wage } = best;
+    return { player: best.player, seller: best.seller, fee: bestFee, wage: best.wage, from: best.seller.name };
+  }
+
+  /** The commit half: actually do the deal the search above proposed. */
+  function commitSigning(world, club, cand) {
+    const rng = world.rng;
+    const { player, seller, wage } = cand;
+    const fee = cand.fee;
+    // The world moves between a proposal being made and the manager saying
+    // yes to it — the pre-season window shows a card per signing, and a
+    // rival can have taken him, or his club can have been stripped bare, in
+    // between. Re-checked here rather than trusting the stale proposal.
+    if (player.retired || player.clubId !== seller.id || player.loan) return null;
+    if (seller.squad.length <= MIN_SQUAD) return null;
     seller.squad = seller.squad.filter((p) => p.id !== player.id);
-    seller.finances.balance = round1(seller.finances.balance + bestFee);
-    seller.finances.received = round1(seller.finances.received + bestFee);
+    seller.finances.balance = round1(seller.finances.balance + fee);
+    seller.finances.received = round1(seller.finances.received + fee);
     club.squad.push(player);
-    club.finances.balance = round1(club.finances.balance - bestFee);
-    club.finances.spent = round1(club.finances.spent + bestFee);
-    club.finances.transferBudget = round1(Math.max(0, club.finances.transferBudget - bestFee));
+    club.finances.balance = round1(club.finances.balance - fee);
+    club.finances.spent = round1(club.finances.spent + fee);
+    club.finances.transferBudget = round1(Math.max(0, club.finances.transferBudget - fee));
     player.clubId = club.id;
     player.contract = { years: rng.int(3, 5), wage: round1(wage * rng.between(1.0, 1.2)) };
     MG.players.recordMove(player, club.name, world.season);
@@ -1263,7 +1306,43 @@
     // he was bought to raise.
     player.season.injured = 0;
     MG.clubs.refreshRatings(club);
-    return { player, fee: bestFee, from: seller.name };
+    MG.clubs.refreshRatings(seller);
+    return { player, fee, from: seller.name };
+  }
+
+  /* ------------------------- THE TRANSFER RECORD ---------------------------
+   * A structured record of what actually moved, kept alongside the prose in
+   * world.news because a summary screen needs fields, not sentences worth
+   * of text to parse back apart. Only the managed club's business is
+   * recorded — the rest of the world's dealing is already summarised from
+   * the news feed by biggestTransfers below, and 221 clubs' worth of rows
+   * is not something any screen wants. */
+  function noteTransfer(world, rec) {
+    if (!world.clubTransferLog) world.clubTransferLog = [];
+    world.clubTransferLog.push(Object.assign({ season: world.season }, rec));
+    // A career's worth of windows is worth keeping, but not unboundedly.
+    if (world.clubTransferLog.length > 400) world.clubTransferLog.splice(0, world.clubTransferLog.length - 400);
+  }
+
+  /** The managed club's ins and outs for one season (default: this one). */
+  function clubTransfers(world, season) {
+    const s = season != null ? season : world.season;
+    return (world.clubTransferLog || []).filter((r) => r.season === s);
+  }
+
+  /** The biggest deals anywhere in the world this season. runWindow already
+   *  files a news entry carrying a numeric fee for anything sizeable, so the
+   *  headline business is a sort away rather than needing its own ledger. */
+  function biggestTransfers(world, limit) {
+    const deals = world.news.filter((n) => n.type === "transfer" && typeof n.fee === "number");
+    if (!deals.length) return [];
+    /* The most recent window, not world.season — advanceSeason rolls the
+     * calendar before any of the screens that show this are drawn, so
+     * asking for "this season" reliably came back empty and the headline
+     * business silently never appeared. */
+    let latest = 0;
+    for (const n of deals) if (n.season > latest) latest = n.season;
+    return deals.filter((n) => n.season === latest).sort((a, b) => b.fee - a.fee).slice(0, limit || 3);
   }
 
   /* ---------------------- SPECIFIC TARGET SHORTLIST -------------------------
@@ -1514,8 +1593,9 @@
   function fmtFee(f) { return f >= 10 ? `£${Math.round(f)}m` : `£${round1(f)}m`; }
 
   MG.transfers = {
-    MIN_SQUAD, findAndSign, scoutTargets, sellOne, sellListed, boardListings, market, runLoans, returnLoans, willJoin, executeManagerRequests, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
+    MIN_SQUAD, findAndSign, findSigning, commitSigning, findSaleOffer, commitSale, scoutTargets, sellOne, sellListed, boardListings, market, runLoans, returnLoans, willJoin, executeManagerRequests, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
     askingPrice, targetScore, clubNeeds, runWindow, signFreeAgents, topUpSquads, youthIntake,
     FREE_AGENT_SHORT_THRESHOLD, minimumShape, recordMovement, reverseMovement,
+    noteTransfer, clubTransfers, biggestTransfers,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

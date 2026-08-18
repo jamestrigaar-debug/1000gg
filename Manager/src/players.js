@@ -336,15 +336,21 @@
    * promotion reached through a code path with no world in scope) cannot
    * always supply one, and the profile just leaves the year blank there
    * rather than guessing. */
-  function recordMove(player, clubName, season) {
+  function recordMove(player, clubName, season, opts) {
     player.career.clubs.push(clubName);
     if (!player.career.history) player.career.history = [];
     player.career.history.push({ club: clubName, season: season != null ? season : null, age: player.age });
-    // The one flag every arrival passes through, whatever brought him in —
-    // see sellOne's guard in transfers.js for what it is for: stopping the
-    // board's own automated "who do we cash in on" picks from landing on a
-    // man who was signed earlier in this exact same summer.
-    if (season != null) player._arrivedSeason = season;
+    /* The one flag every arrival passes through, whatever brought him in —
+     * see sellOne's guard in transfers.js for what it is for: stopping the
+     * board's own automated "who do we cash in on" picks from landing on a
+     * man who was signed earlier in this exact same summer.
+     *
+     * Building the world is NOT an arrival, and saying it was broke exactly
+     * that guard in season one: every player in every starting squad was
+     * stamped as having just arrived, so sellOne could never find anybody to
+     * sell and all three "cash in on him" decision cards silently did
+     * nothing for the whole first season. World creation passes initial. */
+    if (season != null && !(opts && opts.initial)) player._arrivedSeason = season;
   }
 
   /** Convert a record from src/data.js into a live player. */
