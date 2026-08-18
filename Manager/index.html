@@ -446,6 +446,23 @@
   .crow-body { flex: 1; min-width: 0; }
   .crow-body .nm { font-weight: 700; }
   .crow-actions { display: flex; gap: 6px; }
+  /* Transfer direction marker — green in, red out. Used on the window's
+     deal list and on the before/after-season summary. */
+  .tdir { flex: 0 0 14px; width: 14px; text-align: center; font-size: 16px; font-weight: 800; line-height: 1; }
+  .tdir.in { color: var(--accent); }
+  .tdir.out { color: var(--bad); }
+
+  /* Player-profile radar. Sits under the attribute bars, in the space the
+     taller right-hand column leaves empty. Scales with the column rather
+     than a fixed pixel size, since two thirds of players are on a phone. */
+  .radar-wrap { margin-top: 16px; }
+  .radar { display: block; width: 100%; max-width: 250px; margin: 0 auto; overflow: visible; }
+  .radar .grid, .radar .spoke { fill: none; stroke: var(--line); stroke-width: 1; }
+  .radar .shape { fill: rgba(0, 208, 108, .20); stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+  .radar .dot { fill: var(--accent); }
+  .radar .axlabel { fill: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .04em; }
+  .radar .axval { fill: var(--txt); font-size: 11px; font-weight: 800; }
+  .radar-note { color: var(--muted); font-size: 10.5px; text-align: center; margin-top: 2px; }
 
   /* ---------- Legacy ---------- */
   .legacy-title { font-family: Impact, "Arial Black", sans-serif; text-transform: uppercase;
