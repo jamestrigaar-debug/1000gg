@@ -465,10 +465,14 @@
       </div></div>
       <p class="sub">Draft a manager from the DNA of the greats — then take whatever job will have you</p>
       <div class="goal">🎯 SURVIVE YOUR BOARDROOM</div>
+      <div class="row" id="continue-row" style="justify-content:center;display:none;margin-bottom:10px">
+        <button class="btn primary big" id="continue-career">CONTINUE CAREER</button>
+      </div>
       <div class="row" style="justify-content:center">
         <input type="text" id="seed-input" placeholder="world seed" aria-label="World seed" style="width:180px">
         <button class="btn primary big" id="begin">START A CAREER</button>
       </div>
+      <p class="muted" id="continue-hint" style="margin-top:6px;font-size:12px;display:none">Starting a new career replaces the saved one — there's no going back to it after.</p>
       <p class="muted" style="margin-top:10px;font-size:12px">Same seed, same world — 221 clubs, ten divisions, all simulated around you.</p>
 
       <div class="features">
@@ -558,17 +562,22 @@
     <div class="tier-label">The log</div>
     <div id="logfeed"></div>
 
-    <!-- Squad, contracts and the world — preference tools the board acts on -->
-    <div class="tier-label">Squad, contracts &amp; the world</div>
-    <div class="tabs">
-      <button class="tab on" data-tab="squad">SQUAD</button>
-      <button class="tab" data-tab="tactics">TACTICS</button>
-      <button class="tab" data-tab="youth">YOUTH</button>
-      <button class="tab" data-tab="table">TABLE</button>
-      <button class="tab" data-tab="career">CAREER</button>
-      <button class="tab" data-tab="world">WORLD</button>
+    <!-- Squad, contracts and the world — preference tools the board acts on.
+         Hidden during the pre-season hub (see ui.js's render()), which shows
+         squad/tactics/contracts directly in the Decisions panel above so
+         there is nothing to scroll past to reach them. -->
+    <div id="lower-tabs">
+      <div class="tier-label">Squad, contracts &amp; the world</div>
+      <div class="tabs">
+        <button class="tab on" data-tab="squad">SQUAD</button>
+        <button class="tab" data-tab="tactics">TACTICS</button>
+        <button class="tab" data-tab="youth">YOUTH</button>
+        <button class="tab" data-tab="table">TABLE</button>
+        <button class="tab" data-tab="career">CAREER</button>
+        <button class="tab" data-tab="world">WORLD</button>
+      </div>
+      <div id="tab-body" class="table-scroll"></div>
     </div>
-    <div id="tab-body" class="table-scroll"></div>
   </section>
 
   <!-- ------------------------------- LEGACY ------------------------------ -->
@@ -613,6 +622,7 @@
 <script src="src/transfers.js"></script>
 <script src="src/ai.js"></script>
 <script src="src/world.js"></script>
+<script src="src/saves.js"></script>
 <script src="src/draft.js"></script>
 <script src="src/decisions.js"></script>
 <script src="src/endings.js"></script>
