@@ -1,4 +1,4 @@
-# Football Manager DNA — Alpha
+# Football Manager DNA — Beta (v0.9.0)
 
 A lightweight, single-player, browser-based football management game. It is a
 **separate game from 1000goals**, living in its own directory with its own
@@ -32,10 +32,10 @@ numbers toward the real column.
 | goals per game | 2.7 | 2.75 |
 | home wins | 41% | 44% |
 | draws | 25% | 24% |
-| away wins | 33% | 32% |
-| 0-0 | 8.9% | 7.5% |
-| 1-1 | 11.5% | 11% |
-| champion points | 86 | 88 |
+| away wins | 34% | 32% |
+| 0-0 | 9.6% | 7.5% |
+| 1-1 | 11.1% | 11% |
+| champion points | 92 | 88 |
 | bottom points | 23 | 26 |
 
 What the engine does, and why:

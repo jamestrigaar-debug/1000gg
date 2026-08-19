@@ -202,6 +202,18 @@
   .tab { background: var(--card); border: 1px solid var(--line); color: var(--muted); padding: 8px 14px;
     font: inherit; font-size: 12px; font-weight: 700; letter-spacing: 1px; border-radius: 8px; cursor: pointer; }
   .tab.on { color: var(--txt); border-color: var(--accent); background: var(--card2); }
+  /* League-table zones. The play-off band matters most: those places are a
+     real four-team play-off every season (competitions.js), and the table
+     never used to say so. */
+  .zone-auto { box-shadow: inset 3px 0 0 var(--accent); }
+  .zone-po   { box-shadow: inset 3px 0 0 var(--gold); }
+  .zone-rel  { box-shadow: inset 3px 0 0 var(--bad); }
+  .zone-eur  { box-shadow: inset 3px 0 0 var(--accent2); }
+  .zkey { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+  .zkey.zone-auto { background: var(--accent); }
+  .zkey.zone-po   { background: var(--gold); }
+  .zkey.zone-rel  { background: var(--bad); }
+  .zkey.zone-eur  { background: var(--accent2); }
   /* The log is a feed, not prose: tighter leading and a slightly condensed face
      fit roughly twice as many lines on a screen without shrinking the text to
      the point of being unreadable. */
@@ -372,6 +384,7 @@
   .sortbar .muted { margin-right: 2px; }
   .log-entry.contract { border-left-color: var(--accent2); }
   .log-entry.season { border-left-color: var(--gold); background: var(--card2); }
+  .log-entry.ending { border-left-color: var(--gold); background: var(--card2); font-weight: 700; }
   .log-entry.match { border-left-color: var(--accent2); }
   .log-entry.loan { border-left-color: var(--rare); }
 
@@ -476,7 +489,7 @@
   <section id="screen-welcome" class="screen active">
     <div class="hero">
       <div class="dna-frame"><div class="dna-banner">
-        <div class="dna-tags"><span class="retro-badge">Simulation Sports</span><span class="beta-badge">Alpha</span></div>
+        <div class="dna-tags"><span class="retro-badge">Simulation Sports</span><span class="beta-badge">BETA</span></div>
         <h1>Football DNA Simulator ⚽</h1>
         <div class="dna-sub"><span class="dna-line"></span><span class="dna-badge">MANAGER</span><span class="dna-line"></span></div>
       </div></div>
@@ -512,6 +525,7 @@
 
       <div class="welcome-footer">
         <a class="footer-link" href="../">← 1000goals — the player career game</a>
+        <p class="muted" id="build-stamp" style="margin-top:10px;font-size:11px"></p>
       </div>
     </div>
   </section>
@@ -586,13 +600,14 @@
     <div id="lower-tabs">
       <div class="tier-label">Squad, contracts &amp; the world</div>
       <div class="tabs">
-        <button class="tab on" data-tab="squad">SQUAD</button>
+        <button class="tab" data-tab="squad">SQUAD</button>
         <button class="tab" data-tab="tactics">TACTICS</button>
         <button class="tab" data-tab="youth">YOUTH</button>
         <button class="tab" data-tab="table">TABLE</button>
         <button class="tab" data-tab="career">CAREER</button>
         <button class="tab" data-tab="world">WORLD</button>
       </div>
+      <div class="muted" id="tab-hint" style="font-size:11px;margin:-6px 0 8px"></div>
       <div id="tab-body" class="table-scroll"></div>
     </div>
   </section>
@@ -619,6 +634,7 @@
 
 <!-- Shared read-only database from 1000goals. Never written to by this game. -->
 <script src="../src/data.js"></script>
+<script src="src/version.js"></script>
 <script src="src/rng.js"></script>
 <script src="src/names.js"></script>
 <script src="src/data_intl.js"></script>
