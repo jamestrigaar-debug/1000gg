@@ -1,5 +1,145 @@
 # Football DNA Simulator — Manager
 
+## v0.9.9 · beta — the elite band stops faking it
+
+Beta feedback, and it was the right complaint: for players rated 89 and
+above the game inflated **Aerial** and **Defending** — the two axes an
+elite attacker has no business scoring on — when creativity and balance
+are what should carry elite quality, and were not being used for it at
+all. Mohamed Salah read 81 at defending. Raphinha read 91.
+
+### 1. Quality goes where quality belongs
+
+Three separate mechanisms were all pushing the same way, and all three
+are fixed.
+
+**The elite lift was sprayed, not aimed.** Every axis got the same flat
+bonus for being good, so a 94-rated forward collected +6.2 on his
+Defending purely for being Erling Haaland. It is now shared out by how
+much a position actually plays through each axis, and normalised — the
+*total* lift a player receives is unchanged, only its destination moves.
+A winger's spends itself on speed, attacking and mental; a centre half's
+on defending, aerial and physical.
+
+**The Defending axis was mostly just the badge.** It counted between 39%
+and 60% of a player's overall as defensive ability before reading a
+single defensive attribute, on a scale that ran only from 1.0 down to
+0.65 — so a great forward was automatically three-quarters as good a
+defender as a great centre half. The spread now runs down to 0.22.
+Out-of-position defending has to be earned from strength, heading and
+fitness; it can no longer be inherited.
+
+**Creativity and balance now carry the elite band.** Creativity's quality
+slope was deliberately light to avoid double-counting with the flat lift,
+and balance had no quality term at all. With the lift no longer spraying,
+that headroom moves where it belongs. Both are position-neutral, which is
+what makes them a truthful place to say "he is simply better than you" —
+a great centre half really is a better passer than an average one.
+
+What it looks like now:
+
+| | Defending before | after |
+|---|---|---|
+| Haaland (FW) | 83 | **61** |
+| Salah (WG) | 81 | **61** |
+| Bellingham (AM) | 88 | **68** |
+| Pedri (CM) | 89 | **77** |
+| Raphinha (CM) | 91 | **80** |
+| van Dijk (CB) | 96 | **96** |
+| Rodri (DM) | 94 | **93** |
+
+The defenders held. The attackers stopped pretending. And creativity now
+discriminates the way it was always supposed to: Salah 85 and Haaland 82
+against Courtois 58.
+
+### 2. Haaland is the best player in the world, at 96
+
+The source database tops out at 94, with everything from 88 upward
+bunched into six points — which is why the very top of the game read
+flat. The elite band is now stretched above a knee at 88, reaching the
+fifteen genuinely elite players in a world of 5,745 and leaving everyone
+else exactly where they were.
+
+The knee is high on purpose. Club strength reads `overall` directly, so
+this is not a cosmetic scale — an earlier cut with the knee at 82 caught
+most of a big club's first eleven rather than its stars, inflated the top
+sides wholesale and blew the league apart: champions on 93 points, bottom
+club on 17, outside tolerance. The realism benchmark caught it. At 88,
+champion points land on 88.3 against a real-world target of 88 — closer
+than before any of this work.
+
+### 3. Footedness, corrected for 185 players
+
+The database records two feet but does not always get the dominant one
+right — Cole Palmer, Alejandro Balde and Federico Dimarco all read
+right-footed. That is not cosmetic: creativity and the Attacking axis
+both read the strong foot. 129 of the 185 are in the current squads; the
+rest have moved on and are simply skipped. Nobody is added to a squad he
+is not in, and a player already recorded correctly is untouched.
+
+Generated players who happen to share a real player's name keep their own
+feet — the world contains an 18-year-old and a 23-year-old both called
+Salem Al-Dawsari alongside the real one, and they are different people.
+
+### 4. The academy is the board's job now
+
+The youth system is run entirely by the club, for every team including
+yours. The staff promote anyone ready for the senior squad and release
+anyone who reaches 21 without getting there — and they tell you, by name,
+in the log. A boy appearing in your squad unannounced is exactly the
+"the game moved on without you" failure the log exists to prevent.
+
+The YOUTH tab reports instead of commanding: the academy's standing, the
+three prospects your coaches rate most highly, and the shape of the group
+— size, average age and rating, best ceiling, how many are near the first
+team, how many are ageing out, and the spread of grades. The per-player
+PROMOTE and RELEASE buttons are gone. Promoting the obvious candidate
+every summer was a decision only in the sense that it needed a tap.
+
+Academy coaching style is club-chosen too, derived from its facilities: a
+well-funded setup coaches the ball, a poor one produces athletes. Your
+academy has an identity you inherit rather than a blank slate.
+
+### 5. SQUAD is on the top bar
+
+Reachable from anywhere now, not only from inside the pre-season hub —
+it is the one reference surface you want mid-season. Tactics stays where
+it was, inside the decisions at the point of the season that asks for it.
+
+### Fixed
+
+- **Tapping an academy prospect did nothing.** `openPlayer` searched
+  senior squads only, so every youth-team profile has been a dead tap for
+  as long as the tab has existed. It went unnoticed because the old row
+  carried its own buttons, so nobody had reason to tap the rating.
+- **Elite goalkeepers were flagged as broken players.** The TOP RATED
+  "does he add up" column flat-averaged six axes, five of which barely
+  describe a keeper, so Donnarumma, Alisson and Courtois all read ten to
+  thirteen points under their badge. It is now weighted by position.
+  Notably this is done *without* touching the radar: refitting the
+  calibration against the weighted mean also works, and costs 2–5 points
+  off every radar in the game — deflating what you see to make an
+  internal instrument read zero is the wrong way round.
+- **The realism benchmark could never fail.** It counted metrics outside
+  tolerance, printed the number, and then hardcoded a success exit. It
+  now fails properly, which is how the elite-stretch problem above was
+  caught.
+- **NaN-hardening** in the development pipeline. `clamp()` does not
+  rescue NaN, so a bad value reaching `applyDevelopment` would have
+  permanently corrupted every attribute on that player for the rest of
+  the save. No live path could trigger it; it is guarded now regardless.
+- **The Ballon d'Or hall of fame could drop a winner.** If the latest
+  season produced no award while an earlier one did, that winner vanished
+  from PAST WINNERS — excluded by list position rather than by identity.
+
+### Under the hood
+
+`npm test` runs all four harnesses with one exit code, and `npm run lint`
+checks the manager for the class of defect that actually bites here —
+duplicate keys, fallthrough, unreachable code, botched NaN comparisons.
+Style rules are off on purpose: reformatting this codebase would bury its
+commentary under a diff nobody could read. It comes back clean.
+
 ## v0.9.8 · beta — balance & agility, a six-axis radar, and the Ballon d'Or
 
 Reported directly: the top of the game still read as "high everything" —
