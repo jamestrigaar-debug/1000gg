@@ -31,6 +31,7 @@
  *   unit({attack,midfield,defence}, seasons)   rating shifts, in points
  *   tactic(name)                  change your system
  *   youth(n)                      push minutes toward under-21s (board metric)
+ *   morale(n, filter)             move the dressing room, whole squad or a part
  *   train(attr, delta)            squad-wide attribute work
  *   facilities({training, youth}) permanent infrastructure
  *   rep(n)                        your own reputation
@@ -173,6 +174,13 @@
         world.invalidateProfile(club.id);
       },
       youth(n) { mod.youthBias += n; },
+      /* The dressing room, moved directly. form() is the club-level swing the
+       * match engine reads; this is the players themselves, and it is what
+       * carries into next season — morale settles at the end of a campaign
+       * from where it already is, so a summer that gutted the squad's mood is
+       * still felt in the autumn. `filter` narrows it to a part of the squad
+       * (the seniors, the under-21s, whoever the card is about). */
+      morale(n, filter) { MG.tactics.shiftMorale(club, n, filter || null); },
       train(attr, delta) {
         for (const p of club.squad) {
           p.attrs[attr] = clamp(Math.round((p.attrs[attr] || 55) + delta), 20, 99);
@@ -407,7 +415,7 @@
         { label: "Rule with an iron fist", detail: "Fines, curfews, no arguments.",
           fx: (api) => { api.unit({ defence: 2 }, 1); api.form(-0.5); return `Discipline is total. They are organised and slightly joyless.`; } },
         { label: "Player-led culture", detail: "Trust them and let them police themselves.",
-          fx: (api) => { api.form(2); api.injuryRisk(1.08); return `The senior players run the dressing room. Morale is excellent; the standards vary.`; } },
+          fx: (api) => { api.form(2); api.injuryRisk(1.08); api.morale(6); return `The senior players run the dressing room. Morale is excellent; the standards vary.`; } },
         { label: "Ruthless meritocracy", detail: "Nobody is guaranteed anything.",
           fx: (api) => { api.form(1); api.unit({ attack: 1 }, 1); api.confidence(-1); return `Places are earned weekly. It sharpens the good ones and unsettles the rest.`; } },
       ],
@@ -672,7 +680,7 @@
             return `The important ones sign again. The wage bill takes the strain.`;
           } },
         { label: "Let them run down and leave", detail: "Free wages, empty squad slots.",
-          fx: (api) => { api.wage(5); api.form(-1.5); return `You let the contracts run. The dressing room reads it exactly as it is meant.`; } },
+          fx: (api) => { api.wage(5); api.form(-1.5); api.morale(-7); return `You let the contracts run. The dressing room reads it exactly as it is meant.`; } },
         { label: "Renew the young ones only", detail: "Protect the assets that will grow.",
           fx: (api) => {
             for (const p of api.club.squad) if (p.contract.years <= 1 && p.age <= 24) p.contract.years = 4;
@@ -713,7 +721,7 @@
         { label: "Bang heads together behind closed doors", detail: "Deal with it internally.",
           fx: (api) => { api.form(1); api.unit({ midfield: 1 }, 1); return `An hour in a locked room. Whatever was said, they played like a team afterwards.`; } },
         { label: "Let them fight it out", detail: "Some squads need the edge.",
-          fx: (api) => { api.form(-1); api.unit({ attack: 2 }, 1); return `You let it burn. It is a nastier dressing room now, and a sharper one going forward.`; } },
+          fx: (api) => { api.form(-1); api.unit({ attack: 2 }, 1); api.morale(-5); return `You let it burn. It is a nastier dressing room now, and a sharper one going forward.`; } },
       ],
     },
     {
@@ -729,9 +737,9 @@
         { label: "Talk up the project", detail: "Sell the vision.",
           fx: (api) => { api.rep(3); api.confidence(2); api.flag("hyped", 2); return `You paint a picture of where this club is going. It plays well — and raises the bar.`; } },
         { label: "Defend the players publicly", detail: "Take the bullets for them.",
-          fx: (api) => { api.form(2); api.rep(-1); api.confidence(-1); return `You absorb every question yourself. The squad reads every word of it.`; } },
+          fx: (api) => { api.form(2); api.rep(-1); api.confidence(-1); api.morale(6); return `You absorb every question yourself. The squad reads every word of it.`; } },
         { label: "Criticise the squad's mentality", detail: "Call it out in the open.",
-          fx: (api) => { api.form(-2); api.rep(1); api.confidence(3); return `You say what you actually think. The board nod along; the dressing room does not.`; } },
+          fx: (api) => { api.form(-2); api.rep(1); api.confidence(3); api.morale(-6); return `You say what you actually think. The board nod along; the dressing room does not.`; } },
       ],
     },
     {

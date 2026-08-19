@@ -43,9 +43,9 @@
     stage: "preseason-hub",   // preseason-hub | ready | result | endseason | endseason-done | ending
     cards: [], cardIndex: 0, outcomes: [],
     recent: [], career: [], lastRow: null, lastReport: null, lastBrief: null,
-    lastCup: null, lastWindow: null, sackReason: null,
+    sackReason: null,
     endingEntry: null, endingView: null, endingOutcome: null,
-    tab: "squad", pendingSlot: null, marketPos: "",
+    tab: "squad", tabOpen: false,
     squadSort: "rating", chooserSort: "rating",
     signCount: 0, signPositions: [], signAmbition: "solid", transfersSeason: null, boardRecs: null,
     playerSearch: "",
@@ -164,7 +164,11 @@
    *
    * That last row is the one that matters: every post-season stage used to
    * land on "ready", quietly skipping all of it. */
-  /* The only screen that shows the reference tab strip — see render(). */
+  /* Screens that open the reference panel automatically. Everywhere else it
+   * starts closed — see render() — but the strip itself is always on screen,
+   * so squad, tactics, youth, table, career and the world stay one tap away
+   * from everywhere in the game without a 26-man list sitting under every
+   * decision. */
   const TAB_STAGES = { ready: true };
 
   const RESUME_STAGE = {
@@ -177,6 +181,7 @@
 
   function applyResumedCareer(loaded) {
     const ui = loaded.uiState;
+    if (MG.ratings && MG.ratings.resetHidden) MG.ratings.resetHidden();
     state.world = loaded.world;
     state.manager = ui.manager;
     state.clubId = ui.clubId;
@@ -194,16 +199,13 @@
     state.recent = [];
     // The season just gone, as the post-season screens need it. lastReport
     // is read back off the club rather than stored twice (it is saved with
-    // the club); lastWindow is display-only and holds live player refs, so
-    // it stays null and every screen that shows it already copes.
+    // the club).
     state.lastRow = ui.lastRow || null;
     state.lastBrief = ui.lastBrief || null;
-    state.lastCup = ui.lastCup != null ? ui.lastCup : null;
     state.lastTopScorer = ui.lastTopScorer || null;
     state.lastMoveSummary = ui.lastMoveSummary || null;
     state.lastApproach = ui.lastApproach || null;
     state.sackReason = ui.sackReason || null;
-    state.lastWindow = null;
     const resumedClub = state.world.clubById(state.clubId);
     state.lastReport = resumedClub && resumedClub.board ? (resumedClub.board.report || null) : null;
     state.lastSeenNewsId = state.world.news.length ? state.world.news[state.world.news.length - 1].id : 0;
@@ -292,6 +294,13 @@
     state.manager = state.draft.build(($("manager-name").value || "").trim() || null);
     show("screen-loading");
     setTimeout(() => {
+      /* Hidden attributes are cached by player id, and a brand-new world hands
+       * out the same ids from 1 again — so a second career started in the same
+       * tab would inherit the first one's cache entries. They are derived from
+       * a per-id seed and so would come back identical anyway, but leaving a
+       * dead world's players in the cache is exactly the leak pruneHidden
+       * exists to stop. Start clean. */
+      if (MG.ratings && MG.ratings.resetHidden) MG.ratings.resetHidden();
       state.world = MG.world.createWorld({ seed: state.seed, startYear: 2026 });
       // The manager was drafted before the world existed, so his id came from a
       // counter createWorld() has since reset and handed out again. Re-issue it
@@ -658,7 +667,6 @@
       const report = c.board.report;
       const stillHere = state.manager.clubId === c.id;
 
-      state.lastWindow = summary.managerWindow;
       state.lastApproach = summary.playerApproach;
       // Captured inside advanceSeason() BEFORE the summer transfer window
       // could remove him from the squad — see world.js's clubTopScorer. Read
@@ -667,11 +675,11 @@
       // this same close season would silently swap in the second-highest
       // scorer for a season its actual top scorer had just finished.
       state.lastTopScorer = summary.clubTopScorer;
-      state.lastCup = report ? report.metrics.cup.actual : null;
       state.lastRow = row ? {
         position: row.position, pts: row.pts, won: row.won, drawn: row.drawn, lost: row.lost,
         gf: row.gf, ga: row.ga, fieldSize: league.fieldSize,
         promoted: summary.moves.some((m) => m.club === c.name && m.type === "promoted"),
+        viaPlayoff: summary.moves.some((m) => m.club === c.name && m.type === "promoted" && m.viaPlayoff),
         relegated: summary.moves.some((m) => m.club === c.name && m.type === "relegated"),
         champion: row.position === 1,
         leagueName: MG.clubs.LEAGUES[leagueId].name,
@@ -960,7 +968,14 @@
     const target = state.endingFallback === "sacked" ? null : (state.clubId ? club() : null);
     const res = MG.endings.apply(state.world, target, state.manager, state.endingEntry.ctx, choice);
     if (res.ending) { renderLegacy(res.ending); show("screen-legacy"); return; }
-    state.endingOutcome = res.text;
+    /* The outcome of a career-defining choice has to actually land somewhere.
+     * It goes into the permanent log (so it is still there ten seasons later,
+     * next to the season it happened in) AND is held for one screen as a
+     * banner, so the manager sees the consequence of what he just chose
+     * instead of being dropped straight into the next pre-season with no
+     * acknowledgement that anything happened at all. */
+    state.endingOutcome = res.text || null;
+    if (state.endingOutcome) state.world.report(state.endingOutcome, "ending", target ? target.id : null);
     // Talked his way out of it — carry on into the next pre-season.
     if (state.endingFallback === "sacked") { renderSacked(); show("screen-sacked"); return; }
     beginPreSeason();
@@ -1033,10 +1048,12 @@
      * every render and each carrying its own click handlers. wireTab still
      * runs either way — the hub's own tactics and squad controls are bound
      * by it, since its selectors are document-wide by design. */
-    const showTabs = TAB_STAGES[state.stage];
-    $("lower-tabs").style.display = showTabs ? "" : "none";
-    if (showTabs) renderTab();
-    else { $("tab-body").innerHTML = ""; wireTab(); }
+    // A new screen always starts with the reference panel closed, so a
+    // decision is never buried under a squad list left open three screens
+    // ago. Reopening it is one tap, and it stays open until the next screen.
+    if (stageChanged) state.tabOpen = !!TAB_STAGES[state.stage];
+    if (state.tabOpen) renderTab();
+    else { $("tab-body").innerHTML = ""; renderTabStrip(); wireTab(); }
     if (scrollY != null) window.scrollTo(0, scrollY);
   }
 
@@ -1177,12 +1194,13 @@
    * returning season used to skip straight to the transfer wizard, which
    * meant this whole picture only ever appeared once per job. */
   /** The pre-season hub itself — sub-tab nav plus whichever section is
-   *  open, all inside #stage so nothing here is ever a scroll away. See
-   *  render()'s #lower-tabs toggle: the ordinary SQUAD/TACTICS tabs are
-   *  hidden while this is showing, since it already carries the same
-   *  content (hubOverviewHtml/squadHtml/tacticsHtml/contractsUpHtml are
-   *  reused verbatim, so every LIST/MENTOR/formation/slot control here is
-   *  the same live control, not a read-only summary of it). */
+   *  open, all inside #stage so nothing here is ever a scroll away.
+   *  hubOverviewHtml/squadHtml/tacticsHtml/contractsUpHtml are reused
+   *  verbatim rather than summarised, so every LIST/MENTOR/formation/slot
+   *  control here is the same live control it is anywhere else. The
+   *  reference strip below still carries table, career and the world (see
+   *  render()); this just puts the pre-season half of it where the
+   *  decisions are. */
   function preseasonHubHtml() {
     const c = club();
     const expiring = c.squad.filter((p) => !p.loan && p.contract.years <= 1).length;
@@ -1202,6 +1220,7 @@
         : state.hubTab === "contracts" ? (contractsUpHtml(c) || `<div class="panel muted" style="font-size:13px">Nobody is out of contract soon.</div>`)
           : hubOverviewHtml();
     return `
+      ${state.endingOutcome ? `<div class="panel"><div class="log-entry season">${esc(state.endingOutcome)}</div></div>` : ""}
       <div class="decision boardroom" style="margin-bottom:10px">${nav}</div>
       <div class="decision-choices" style="margin-bottom:12px">
         <button class="btn primary big" id="hub-continue">CONTINUE TO DECISIONS ▶</button>
@@ -1345,6 +1364,7 @@
         <span><span class="muted">Squad rank</span> <b>${myRank}/${ranked.length}</b> in ${esc(MG.clubs.LEAGUES[c.leagueId].name)}${above ? ` · behind ${esc(above.name)}` : ""}${below ? ` · ahead of ${esc(below.name)}` : ""}</span>
         <span><span class="muted">Board</span> <b class="${confCls}">${Math.round(c.board.confidence)}</b>/100</span>
         <span><span class="muted">To spend</span> <b>${money(c.finances.transferBudget)}</b> · wage room ${money(wageRoom)}</span>
+        ${c.finances.debt > 0 ? `<span><span class="muted">Debt</span> <b class="bad">${money(c.finances.debt)}</b></span>` : ""}
       </div>
     </div>`;
   }
@@ -1504,17 +1524,6 @@
       <button class="btn primary big" id="play-season">▶ KICK OFF</button>`;
   }
 
-  function windowReportHtml() {
-    const w = state.lastWindow;
-    if (!w || (!w.sold.length && !w.bought.length && !w.refused.length)) return "";
-    const line = (t) => `<div class="log-entry transfer">${esc(t)}</div>`;
-    return `<div class="panel"><h3 class="muted">THE BOARD'S TRANSFER REPORT</h3>
-      ${w.bought.map((b) => line(`IN — ${b.player.name} (${b.player.pos}, ${Math.round(b.player.overall)}) from ${b.from} for ${money(b.fee)}.`)).join("")}
-      ${w.sold.map((b) => line(`OUT — ${b.player.name} to ${b.to} for ${money(b.fee)}.`)).join("")}
-      ${w.refused.map((b) => `<div class="log-entry sack">NO DEAL — ${esc(b.player.name)}: ${esc(b.reason)}.</div>`).join("")}
-    </div>`;
-  }
-
   /* End of season, before the next window opens — exactly when a manager
    * actually thinks about who is running down. Missing this used to mean
    * finding out a squad player left for nothing three windows later, buried
@@ -1555,7 +1564,7 @@
     const tone = row.champion || row.promoted ? "great" : row.relegated ? "awful"
       : r && r.total >= 0.15 ? "good" : r && r.total <= -0.3 ? "bad" : "ok";
     const headline = row.champion ? `🏆 CHAMPIONS. ${c.name} win the ${row.leagueName}.`
-      : row.promoted ? `📈 PROMOTED. ${c.name} go up.`
+      : row.promoted ? `📈 PROMOTED. ${c.name} go up${row.viaPlayoff ? " through the play-offs" : ""}.`
         : row.relegated ? `📉 RELEGATED. ${c.name} go down.`
           : `${c.name} finish ${ordinal(row.position)} in the ${row.leagueName}.`;
 
@@ -1631,6 +1640,7 @@
     bind("hub-continue", () => {
       const c = club();
       if (!c.focus) c.focus = "league";
+      state.endingOutcome = null;   // read once, on the screen it belongs to
       runPhase("PRE1");
     });
     for (const b of document.querySelectorAll("[data-hubtab]")) {
@@ -1734,8 +1744,20 @@
   }
 
   /* ------------------------ TIER 3: CLUB AND WORLD ------------------------ */
+  /* The strip on its own — drawn on every screen, whether or not the panel
+   * under it is open. */
+  function renderTabStrip() {
+    for (const b of document.querySelectorAll(".tab")) {
+      b.classList.toggle("on", state.tabOpen && b.dataset.tab === state.tab);
+    }
+    const hint = $("tab-hint");
+    if (hint) hint.textContent = state.tabOpen
+      ? "Tap the open tab again to close it."
+      : "Tap to open — squad, tactics, youth, table, career, the world.";
+  }
+
   function renderTab() {
-    for (const b of document.querySelectorAll(".tab")) b.classList.toggle("on", b.dataset.tab === state.tab);
+    renderTabStrip();
     const el = $("tab-body");
     const views = { squad: squadHtml, tactics: tacticsHtml, youth: youthHtml, table: tableHtml, career: careerHtml, world: worldHtml };
     el.innerHTML = (views[state.tab] || squadHtml)();
@@ -2114,17 +2136,35 @@
     const rows = MG.tactics.backupsFor(c);
     const score = MG.tactics.depthScore(c);
     const cls = score >= 70 ? "accent" : score >= 45 ? "gold" : "bad";
+    /* The fatigue factor world.js computed from last season's minutes and
+     * pressing intensity. It is already applied — it moves club form by up to
+     * two points across a campaign — but until now it was applied invisibly,
+     * so "squad depth is worth paying for" was a claim the manager had no way
+     * of checking. Shown as freshness, because that is the direction a reader
+     * expects a bigger number to be better in. */
+    const fatigue = c.modifiers && c.modifiers.fatigue;
+    const fresh = fatigue != null ? Math.round(fatigue * 100) : null;
+    // Measured across a simulated world the factor runs 0.92–1.00, median
+    // 0.988 — so the bands are cut at 99 and 96, not at round numbers that
+    // would put every club in the same colour.
+    const fcls = fresh == null ? "muted" : fresh >= 99 ? "accent" : fresh >= 96 ? "gold" : "bad";
+    const fnote = fresh == null ? "" : fresh >= 99 ? "rotated well — they finished the season fresh"
+      : fresh >= 96 ? "some wear on the first eleven by the run-in"
+        : "you leant on the same eleven all year, and it cost you points";
     return `<div class="panel">
-      <h3 class="muted">COVER · squad depth <b class="${cls}">${score}</b>/100</h3>
+      <h3 class="muted">COVER · squad depth <b class="${cls}">${score}</b>/100${fresh != null ? ` · freshness <b class="${fcls}">${fresh}</b>%` : ""}</h3>
       <div class="muted" style="font-size:12px;margin-bottom:8px">Who comes in if the starter cannot play, and how far the side
-      drops when he does. Thin cover in one position is what a long season finds out.</div>
+      drops when he does. Thin cover in one position is what a long season finds out.${fnote ? ` <b class="${fcls}">Last season: ${esc(fnote)}.</b>` : ""}</div>
       <div class="depth-grid">${rows.map((r) => {
         const d = r.dropOff;
-        const dc = d == null ? "bad" : d <= 3 ? "accent" : d <= 8 ? "gold" : "bad";
+        const dc = !r.adequate ? "bad" : d == null ? "bad" : d <= 3 ? "accent" : d <= 8 ? "gold" : "bad";
+        // A named man who is nowhere near the standard of the shirt is shown
+        // as what he is: who would have to play, and that it is not cover.
         return `<div class="dcell">
           <div class="dslot"><span class="ppos ${posClass(r.slot)}">${esc(r.slot)}</span></div>
-          <div class="dname">${r.backup ? esc(r.backup.name.split(" ").slice(-1)[0]) : "<span class='bad'>none</span>"}</div>
-          <div class="${dc}" style="font-size:11px;font-weight:700">${r.backup ? `${r.rating} (${d >= 0 ? "−" : "+"}${Math.abs(d)})` : "no cover"}</div>
+          <div class="dname"${r.backup && !r.adequate ? ' style="opacity:.6"' : ""}>${r.backup ? esc(r.backup.name.split(" ").slice(-1)[0]) : "<span class='bad'>none</span>"}</div>
+          <div class="${dc}" style="font-size:11px;font-weight:700">${!r.backup ? "no cover"
+          : r.adequate ? `${r.rating} (${d >= 0 ? "−" : "+"}${Math.abs(d)})` : `${r.rating} · not cover`}</div>
         </div>`;
       }).join("")}</div>
     </div>`;
@@ -2146,10 +2186,12 @@
     return `<div class="panel">
       <h3 class="muted">THE ACADEMY · ${esc(c.name)}</h3>
       <div class="stat-grid">
+        <div class="stat-box"><div class="sb-num" style="font-size:14px">${esc(c.academyTier || "Average")}</div><div class="sb-lab">Academy</div></div>
         <div class="stat-box"><div class="sb-num">${Math.round(c.facilities.youth)}</div><div class="sb-lab">Youth setup</div></div>
         <div class="stat-box"><div class="sb-num">${Math.round(c.facilities.training)}</div><div class="sb-lab">Training</div></div>
         <div class="stat-box"><div class="sb-num gold">${t ? t.youthMinutes + "%" : "—"}</div><div class="sb-lab">Board wants</div></div>
         <div class="stat-box"><div class="sb-num">${players.length}</div><div class="sb-lab">In the academy</div></div>
+        <div class="stat-box"><div class="sb-num">${a.lastIntake ? `S${a.lastIntake}` : "—"}</div><div class="sb-lab">Last intake</div></div>
         <div class="stat-box"><div class="sb-num">${money(c.finances.balance)}</div><div class="sb-lab">Club balance</div></div>
         <div class="stat-box"><div class="sb-num" style="font-size:14px">${esc(c.board.style)}</div><div class="sb-lab">Board</div></div>
       </div>
@@ -2204,27 +2246,57 @@
     </button>`;
   }
 
+  /* Which places mean something in a given division. The English pyramid is
+   * the interesting one: two automatic promotions (one out of the National
+   * League) and then FOUR play-off places, which is a real four-team,
+   * two-legged play-off with a neutral final — see competitions.js's
+   * runPlayoff. Those places were being simulated and settled every season
+   * without the table ever saying which they were, so a club finishing 4th
+   * had no way to know from this screen that its season was not over. */
+  function leagueZones(leagueId, fieldSize) {
+    const pyramid = MG.clubs.ENGLISH_PYRAMID || [];
+    const idx = pyramid.indexOf(leagueId);
+    const cfg = MG.clubs.LEAGUES[leagueId] || {};
+    const zones = {};
+    if (idx > 0) {                       // a division to be promoted into
+      const autoUp = leagueId === "NationalLeague" ? 1 : 2;
+      for (let p = 1; p <= autoUp; p++) zones[p] = "zone-auto";
+      for (let p = autoUp + 1; p <= autoUp + 4; p++) zones[p] = "zone-po";
+    } else if (cfg.tier === 1) {         // top flight: Europe is the prize
+      for (let p = 1; p <= 4; p++) zones[p] = "zone-eur";
+    }
+    // Relegation only exists where this game actually simulates a division
+    // below — the English pyramid. The foreign leagues are standalone.
+    if (idx >= 0 && idx < pyramid.length - 1) {
+      const down = cfg.down || 3;
+      for (let p = fieldSize; p > fieldSize - down && p > 0; p--) zones[p] = "zone-rel";
+    }
+    return zones;
+  }
+
   function tableHtml() {
     const world = state.world, c = club();
     const last = world.history[world.history.length - 1];
     const res = last && last.leagues[c.leagueId];
     if (!res) return `<div class="panel muted">No table yet — play your first season.</div>`;
+    const zones = leagueZones(c.leagueId, res.table.length);
+    const used = new Set(Object.values(zones));
+    const key = [
+      used.has("zone-eur") ? `<span class="zkey zone-eur"></span>Europe` : "",
+      used.has("zone-auto") ? `<span class="zkey zone-auto"></span>Promoted` : "",
+      used.has("zone-po") ? `<span class="zkey zone-po"></span>Play-offs` : "",
+      used.has("zone-rel") ? `<span class="zkey zone-rel"></span>Relegated` : "",
+    ].filter(Boolean).join(" &nbsp; ");
     return `<div class="panel"><h3 class="muted">${esc(res.leagueName)}</h3>
       <table><thead><tr><th>#</th><th>Club</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th><th>Manager</th></tr></thead>
       <tbody>${res.table.map((r) => {
         const cl = world.clubById(r.clubId), mgr = world.managerById(cl.managerId);
-        return `<tr class="${r.clubId === c.id ? "you" : ""}"><td>${r.position}</td><td>${esc(r.name)}</td>
+        return `<tr class="${r.clubId === c.id ? "you" : ""}"><td class="${zones[r.position] || ""}">${r.position}</td><td>${esc(r.name)}</td>
           <td>${r.played}</td><td>${r.won}</td><td>${r.drawn}</td><td>${r.lost}</td><td>${r.gd}</td><td><b>${r.pts}</b></td>
           <td class="muted">${esc(mgr ? mgr.name : "—")}</td></tr>`;
-      }).join("")}</tbody></table></div>`;
-  }
-
-  function logHtml() {
-    const world = state.world;
-    const mine = world.newsFor(state.clubId, 40);
-    return `<div class="panel"><h3 class="muted">CLUB LOG</h3>
-      ${mine.length ? mine.map((n) => `<div class="log-entry ${esc(n.type)}"><span class="muted">${n.year}</span> ${esc(n.text)}</div>`).join("")
-        : `<div class="muted">Nothing has happened at this club yet.</div>`}</div>`;
+      }).join("")}</tbody></table>
+      ${key ? `<div class="muted" style="font-size:11px;margin-top:6px">${key}</div>` : ""}
+    </div>`;
   }
 
   function worldHtml() {
@@ -2371,9 +2443,15 @@
     const chasing = plan.priorities.length
       ? plan.priorities.map((p) => `<span class="ppos ${posClass(p)}">${esc(p)}</span>`).join(" ")
       : `<span class="muted">nothing obvious</span>`;
+    /* The positions their window actually failed to fill (ai.js records them
+     * on the plan as `unmet`). This is the single most useful thing a good
+     * scouting department can tell you about a rival — not what they wanted,
+     * but where they came up short and will still be weak in October. */
+    const unmet = (plan.unmet || []).filter((p) => !plan.signed.some((s) => s.pos === p));
     return `<div class="board-note" style="margin-bottom:8px">
       <b class="accent">Summer intent</b> — <b>${esc(posture.label)}</b>. ${esc(posture.blurb)}
       <div style="margin-top:4px">Chasing: ${chasing}${plan.signed.length ? ` · <span class="muted">${plan.signed.length} signed so far</span>` : ""}</div>
+      ${unmet.length ? `<div style="margin-top:4px"><span class="bad">Came up short at</span> ${unmet.map((p) => `<span class="ppos ${posClass(p)}">${esc(p)}</span>`).join(" ")} <span class="muted">— still a hole they have to play through.</span></div>` : ""}
     </div>`;
   }
 
@@ -2624,7 +2702,14 @@
     const listed = (c.transferList || []).includes(player.id);
     const mentored = (c.mentoring || []).includes(player.id);
     const contractReq = (c.contractRequests || {})[player.id];
-    const agent = MG.agents ? MG.agents.agentFor(player) : null;
+    /* agentOf, not agentFor: agentFor is the deterministic "who would
+     * represent a player of this standing" read, and it ignores the roster a
+     * notable player has actually been signed to. Showing that instead of the
+     * real representation made the whole roster system invisible — the agent
+     * who genuinely drives his moves, and the cut he takes out of them, is
+     * the one worth naming. */
+    const rep = MG.agents ? MG.agents.agentOf(state.world, player, "player") : null;
+    const agent = rep ? rep.agent : null;
     const mine = player.clubId === c.id;
     const pc = posClass(player.pos);
     const intl = player.intl;
@@ -2651,7 +2736,7 @@
             <span class="trait-chip">${esc(player.mentality)}</span>
             ${player.homegrown ? '<span class="trait-chip">Homegrown</span>' : ""}
             ${intl && intl.caps ? `<span class="trait-chip gold">${esc(intl.nation)} · ${intl.caps} caps${intl.goals ? ` · ${intl.goals} gls` : ""}</span>` : ""}
-            ${agent ? `<span class="trait-chip" title="${esc(agent.blurb)}">${esc(agent.name)} · ${esc(agent.tier)}</span>` : ""}
+            ${agent ? `<span class="trait-chip${rep.rostered ? " gold" : ""}" title="${esc(agent.blurb)}${rep.rostered ? " — has signed him as a client" : ""}">${esc(agent.name)} · ${esc(agent.tier)} · ${rep.cutPct}%</span>` : ""}
             ${mentored ? '<span class="trait-chip" style="color:var(--accent);border-color:var(--accent)">Mentored</span>' : ""}
             ${listed ? '<span class="trait-chip" style="color:var(--bad);border-color:var(--bad)">Transfer listed</span>' : ""}
             ${player.season.injured > 0 ? `<span class="trait-chip" style="color:var(--bad);border-color:var(--bad)">Out ${Math.round(player.season.injured * 100)}%</span>` : ""}
@@ -2703,6 +2788,7 @@
       <div class="panel">
         <div class="result-banner awful">${esc(m.name)} dismissed by ${esc(last.club)} after ${state.career.length} season${state.career.length === 1 ? "" : "s"}.</div>
         ${state.sackReason ? `<div class="log-entry sack">${esc(state.sackReason)}</div>` : ""}
+        ${state.endingOutcome ? `<div class="log-entry season">${esc(state.endingOutcome)}</div>` : ""}
         <div class="stat-grid" style="margin-top:12px">
           <div class="stat-box"><div class="sb-num">${m.record.seasons}</div><div class="sb-lab">Seasons</div></div>
           <div class="stat-box"><div class="sb-num">${m.reputation}</div><div class="sb-lab">Reputation</div></div>
@@ -2762,7 +2848,14 @@
     $("sacked-restart").addEventListener("click", () => show("screen-welcome"));
     $("legacy-restart").addEventListener("click", () => show("screen-welcome"));
     for (const b of document.querySelectorAll(".tab")) {
-      b.addEventListener("click", () => { state.tab = b.dataset.tab; renderTab(); });
+      b.addEventListener("click", () => {
+        // Tapping the tab that is already open closes the panel — the way
+        // back to a short page without hunting for a separate close button.
+        if (state.tabOpen && state.tab === b.dataset.tab) state.tabOpen = false;
+        else { state.tab = b.dataset.tab; state.tabOpen = true; }
+        if (state.tabOpen) renderTab();
+        else { $("tab-body").innerHTML = ""; renderTabStrip(); wireTab(); }
+      });
     }
     $("notif-bell").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -2777,6 +2870,12 @@
       if (state.notifOpen && !e.target.closest(".notif-wrap")) { state.notifOpen = false; renderNotifications(); }
     });
     $("seed-input").value = `mg-${Math.random().toString(36).slice(2, 8)}`;
+
+    // Which build this is, on the page rather than only in the source — the
+    // first thing worth knowing about any report that comes back.
+    if (MG.build && $("build-stamp")) {
+      $("build-stamp").textContent = `${MG.build.NAME} · v${MG.build.label()}`;
+    }
 
     // A save from a previous visit — offered, never auto-loaded, so
     // "START A CAREER" always still means exactly that.

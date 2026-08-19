@@ -470,7 +470,7 @@
   }
 
   /* ------------------------------ THE WINDOW -------------------------------
-   * A market, not a queue.
+   * A not a queue.
    *
    * The window used to be a single richest-first walk: each club in turn took
    * the best player it could afford at the asking price and moved on. Nobody
@@ -1050,69 +1050,11 @@
     return news;
   }
 
-  /* ----------------------------- YOUTH INTAKE ------------------------------
-   * Every club produces players every year. How many and how good depends on
-   * the club's youth facilities and on whether its manager cares — which is
-   * what makes an academy a strategy rather than a stat. */
-  function youthIntake(world) {
-    const rng = world.rng;
-    const news = [];
-    for (const club of world.clubs) {
-      const manager = world.managerById(club.managerId);
-      const youthRating = club.facilities.youth * (manager ? 1 + (manager.attrs.development - 60) / 300 : 1);
-      const count = clamp(Math.round(1 + youthRating / 45 + rng.gauss() * 0.6), 1, 4);
-      for (let i = 0; i < count; i++) {
-        const pos = rng.pick(MG.players.POSITION_KEYS);
-        const age = rng.int(16, 18);
-        // A graduate starts well below first-team level; the interesting number
-        // is his potential, and only good academies produce a real one. The
-        // floor keeps him within reach of the division he was born into.
-        const level = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
-        const target = Math.max(30 + youthRating * 0.32, level - 18) + rng.gauss() * 4;
-        const p = MG.players.generate(rng, {
-          league: club.leagueId, pos, age, target, spread: 3, homegrown: true,
-          nationality: MG.names.nationForLeague(rng, club.leagueId),
-        });
-        /* The wonderkid roll, weighted by the academy — and anchored to the
-         * club's own level rather than to fixed numbers. A fixed ceiling of
-         * 48-69 for the common case meant every academy in the world, Manchester
-         * City's included, produced players who topped out below the level of
-         * the division they were born into: over twenty seasons the entire
-         * player population decayed toward the ceiling of its own youth intake. */
-        const eliteRoll = rng.next();
-        const ceiling = eliteRoll > 0.985 - youthRating / 2500 ? level + rng.int(6, 16)
-          : eliteRoll > 0.88 ? level + rng.int(-4, 6)
-            : level - rng.int(4, 20);
-        p.potential = clamp(Math.max(p.overall + 3, ceiling), p.overall, 96);
-        p.contract = { years: rng.int(2, 4), wage: MG.players.expectedWage(p, club.leagueId) };
-        p.clubId = club.id;
-        MG.players.recordMove(p, club.name, world.season);
-        club.squad.push(p);
-        if (club.id === world.playerClubId) {
-          news.push({ type: "youth", text: `ACADEMY — ${p.name} (${p.pos}, ${p.age}) steps up from the youth team${p.potential >= 86 ? " — the coaches think he can play at the very top" : ` (potential ${Math.round(p.potential)})`}.`, clubId: club.id });
-        } else if (p.potential >= 86) {
-          news.push({ type: "youth", text: `${club.name}'s academy produces ${p.name} (${p.pos}, ${p.age}) — the coaches think he can play at the very top.`, clubId: club.id });
-        }
-      }
-    }
-    return news;
-  }
-
   /* ------------------- DIRECTED DEALS (the decision layer) -----------------
    * The window above is the AI acting on its own. These two are what a DECISION
    * calls when the player says "sign a striker" or "cash in on him" — the same
    * market, the same prices, but a single deal made deliberately rather than a
    * whole window simulated. */
-
-  /** Find a plausible buyer for one specific player and complete the sale now.
-   *  The same reach-gated, level-appropriate buyer search the summer window uses,
-   *  but aimed at a single player the manager has listed. Returns a result the
-   *  UI can put straight into the log, success or refusal. */
-  function sellListed(world, club, playerId) {
-    const offer = findSaleOffer(world, club, playerId);
-    if (!offer.ok) return offer;
-    return commitSale(world, club, offer);
-  }
 
   /** Who would buy a listed player, and for how much — nothing committed.
    *  The pre-season window shows this as an offer to accept or reject. */
@@ -1345,38 +1287,6 @@
     return deals.filter((n) => n.season === latest).sort((a, b) => b.fee - a.fee).slice(0, limit || 3);
   }
 
-  /* ---------------------- SPECIFIC TARGET SHORTLIST -------------------------
-   * findAndSign above searches the same market blind — it picks a calibre
-   * ("star"/"solid"/"prospect") and the engine finds the closest fit with no
-   * say from the manager on WHO. club.targets is the other half of that
-   * feature: executeManagerRequests (below) already reads it every summer
-   * and tries each name in order, exactly like a bid on any other target —
-   * it has simply never had a UI populate it, so a manager could never
-   * actually point the board at one specific player. This is that UI's
-   * data source: a real, rankable shortlist to browse and choose from. */
-  function scoutTargets(world, club, pos, opts) {
-    const o = opts || {};
-    const limit = o.limit || 12;
-    const index = indexPlayers(world);
-    const level = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
-    const out = [];
-    for (const entry of (index[pos] || [])) {
-      const player = entry.player, seller = entry.club;
-      if (seller.id === club.id || player.retired || player.clubId !== seller.id) continue;
-      if (player.loan) continue;
-      if (MG.network && !MG.network.canRecruit(club, seller)) continue;
-      if (seller.squad.length <= MIN_SQUAD) continue;
-      // A realistic reach in both directions — a shortlist including every
-      // player in the world at the position would just be a database dump.
-      if (player.overall < level - 10 || player.overall > level + 18) continue;
-      const fee = askingPrice({ player, club: seller }, club, new Set());
-      const wage = round1(MG.players.expectedWage(player, club.leagueId) * 1.08);
-      out.push({ player, from: seller.name, fee, wage, affordable: fee <= club.finances.transferBudget });
-    }
-    out.sort((a, b) => b.player.overall - a.player.overall);
-    return out.slice(0, limit);
-  }
-
   /** Cash in on someone. `which`: "star" | "veteran" | "fringe". */
   function sellOne(world, club, which) {
     if (club.squad.length <= MIN_SQUAD) return null;
@@ -1446,38 +1356,6 @@
    * results are reported back on the end-of-season screen. The board can and
    * does refuse: a bid above what it will fund simply does not happen.
    * ====================================================================== */
-
-  /** Everyone a club could plausibly sign, with what it would cost. */
-  function market(world, club, opts) {
-    const o = opts || {};
-    const level = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
-    const budget = o.budget != null ? o.budget : club.finances.transferBudget;
-    const out = [];
-    for (const seller of world.clubs) {
-      if (seller.id === club.id) continue;
-      // Only show what the club's network can reach — the shop window is the
-      // same one the board would actually be able to buy from.
-      if (MG.network && !MG.network.canRecruit(club, seller)) continue;
-      for (const p of seller.squad) {
-        if (p.retired || p.loan) continue;
-        // Only show players who would realistically consider the move: within
-        // reach of the club's level, and not so far below it as to be pointless.
-        if (p.overall > level + 12) continue;
-        if (p.overall < level - 14) continue;
-        if (o.pos && p.pos !== o.pos) continue;
-        const fee = askingPrice({ player: p, club: seller }, club, new Set());
-        if (o.affordableOnly && fee > budget) continue;
-        out.push({
-          player: p, club: seller, fee,
-          wage: MG.players.expectedWage(p, club.leagueId),
-          listed: !!p.transferListed,
-        });
-      }
-    }
-    // Listed players first, then quality — the shop window before the rest.
-    out.sort((a, b) => (b.listed - a.listed) || (b.player.overall - a.player.overall));
-    return out.slice(0, o.limit || 60);
-  }
 
   /** Resolve everything the manager asked the board to do this summer. */
   function executeManagerRequests(world, club) {
@@ -1593,9 +1471,8 @@
   function fmtFee(f) { return f >= 10 ? `£${Math.round(f)}m` : `£${round1(f)}m`; }
 
   MG.transfers = {
-    MIN_SQUAD, findAndSign, findSigning, commitSigning, findSaleOffer, commitSale, scoutTargets, sellOne, sellListed, boardListings, market, runLoans, returnLoans, willJoin, executeManagerRequests, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
-    askingPrice, targetScore, clubNeeds, runWindow, signFreeAgents, topUpSquads, youthIntake,
-    FREE_AGENT_SHORT_THRESHOLD, minimumShape, recordMovement, reverseMovement,
+    MIN_SQUAD, findAndSign, findSigning, commitSigning, findSaleOffer, commitSale, sellOne, boardListings, runLoans, returnLoans, willJoin, executeManagerRequests, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
+    askingPrice, targetScore, clubNeeds, runWindow, signFreeAgents, topUpSquads, FREE_AGENT_SHORT_THRESHOLD, minimumShape, recordMovement, reverseMovement,
     noteTransfer, clubTransfers, biggestTransfers,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

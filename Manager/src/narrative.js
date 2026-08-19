@@ -147,10 +147,6 @@
     return "fine margins, and they fell the wrong way";
   }
 
-  function scoreLine(v) {
-    return `${v.gf}-${v.ga} ${v.home ? "at home to" : "away at"} ${v.opponent}`;
-  }
-
   /** Turn one match into a reportable sentence. */
   function matchReport(v) {
     const verb = v.gf > v.ga ? "Beat" : v.gf === v.ga ? "Drew with" : "Lost to";
@@ -240,6 +236,6 @@
 
   MG.narrative = {
     GOAL_EXPECTATION, seasonRating, rateSquad,
-    fromClub, whyLine, matchReport, keyMatches, streaks, seasonStory, scoreLine, ord,
+    fromClub, whyLine, matchReport, keyMatches, streaks, seasonStory, ord,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

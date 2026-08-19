@@ -159,9 +159,7 @@
    * Only plain data is stored. lastReport is deliberately absent — it lives
    * on club.board.report, which is already saved with the club, so ui.js
    * reads it back from there rather than keeping a second copy that could
-   * drift. lastWindow is absent too: it holds live player references whose
-   * identity JSON cannot preserve, and every screen that shows it already
-   * treats it as optional. In-progress decision cards are still disposable
+   * drift. In-progress decision cards are still disposable
    * — their contexts hold live object graphs, so a resume re-enters the
    * window and draws fresh cards rather than pretending to restore a
    * half-answered one. */
@@ -179,7 +177,6 @@
         hubTab: uiState.hubTab || "overview",
         lastRow: uiState.lastRow || null,
         lastBrief: uiState.lastBrief || null,
-        lastCup: uiState.lastCup != null ? uiState.lastCup : null,
         lastTopScorer: uiState.lastTopScorer || null,
         lastMoveSummary: uiState.lastMoveSummary || null,
         lastApproach: uiState.lastApproach || null,
@@ -205,7 +202,6 @@
         hubTab: u.hubTab || "overview",
         lastRow: u.lastRow || null,
         lastBrief: u.lastBrief || null,
-        lastCup: u.lastCup != null ? u.lastCup : null,
         lastTopScorer: u.lastTopScorer || null,
         lastMoveSummary: u.lastMoveSummary || null,
         lastApproach: u.lastApproach || null,

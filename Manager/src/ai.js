@@ -81,7 +81,6 @@
       sell: 1.0, signings: 0, spend: 1.0, ageBias: 0, patience: 7,
     },
   };
-  const POSTURE_KEYS = Object.keys(POSTURES);
 
   /* --------------------------- CYCLE 1: ASSESS ----------------------------- */
 
@@ -308,22 +307,9 @@
     return news;
   }
 
-  /** A short, human sentence describing what a club is doing this summer —
-   *  written for the scouting screen, where reading a rival's intent is
-   *  exactly the kind of thing a scouting department is for. */
-  function describePlan(club) {
-    const plan = club.plan;
-    if (!plan) return null;
-    const posture = POSTURES[plan.posture] || POSTURES.steady;
-    const wants = plan.priorities.length
-      ? ` Chasing ${plan.priorities.map((p) => (MG.players.POSITIONS[p] || {}).name || p).join(", ").toLowerCase()}.`
-      : " No obvious gaps to fill.";
-    return `${posture.label}. ${posture.blurb}${wants}`;
-  }
-
   MG.ai = {
-    POSTURES, POSTURE_KEYS, readPosture, planSummer, planWorld,
+    POSTURES, readPosture, planSummer, planWorld,
     targetBias, sellAppetite, spendAppetite, signingTarget, noteSigning,
-    reviewWindow, describePlan,
+    reviewWindow,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

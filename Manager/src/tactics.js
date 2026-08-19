@@ -365,40 +365,97 @@
    * compute the XI and then call in here, which computed exactly the same XI a
    * second time. Callers that already have it pass it through; callers that do
    * not still get the old behaviour. */
+  /* The assignment has to be made ACROSS the whole bench at once, not shirt by
+   * shirt down the team sheet. Walking the slots in formation order and giving
+   * each one the best player still unused spent the good reserves on whichever
+   * shirts happened to come first and left the rest with whoever was still
+   * standing — measured on a champion squad it put the reserve goalkeeper at
+   * centre-forward and a defensive midfielder on the wing, and reported the
+   * side as having no depth at all. By season three 120 of 221 clubs scored a
+   * flat zero, which is not a squad problem, it is an ordering artefact.
+   *
+   * Instead: score every (spare player, shirt) pair, take them best-first, and
+   * lock in each pairing whose player and shirt are both still free. A reserve
+   * keeper's best pair by a mile is the goalkeeping shirt, so that is where he
+   * lands and he is never in contention for the forward line. Greedy on a
+   * sorted pair list is not a guaranteed optimum, but on eleven shirts it is
+   * within a point or two of one and it is deterministic, which matters more
+   * here than the last point of precision. */
   function backupsFor(club, knownXI) {
     const formationKey = club.formation || "4-4-2";
     const formation = FORMATIONS[formationKey] || FORMATIONS["4-4-2"];
     const xi = knownXI || effectiveXI(club);
     const xiIds = new Set(xi.map((p) => p && p.id));
     const rest = club.squad.filter((p) => !xiIds.has(p.id));
-    const used = new Set();
-    return formation.slots.map((slot, i) => {
-      let best = null, bestVal = -1;
-      for (const p of rest) {
-        if (used.has(p.id)) continue;
-        const val = effectiveOverall(p, slot);
-        if (val > bestVal) { best = p; bestVal = val; }
-      }
-      if (best) used.add(best.id);
+    const slots = formation.slots;
+
+    /* Flat arrays rather than an array of {slot, player, value} objects: this
+     * runs inside xiRatings, which runs inside refreshRatings, which the world
+     * calls thousands of times a season — eleven shirts against a dozen spares
+     * is a hundred-odd pairs each time, and a hundred-odd short-lived objects
+     * each time is work for the collector that buys nothing. Two arrays and an
+     * index sort do the same job with two allocations. */
+    const nSlots = slots.length, nRest = rest.length;
+    const vals = new Float64Array(nSlots * nRest);
+    for (let i = 0; i < nSlots; i++) {
+      for (let j = 0; j < nRest; j++) vals[i * nRest + j] = effectiveOverall(rest[j], slots[i]);
+    }
+    const order = new Array(nSlots * nRest);
+    for (let k = 0; k < order.length; k++) order[k] = k;
+    // Ties broken on player id, then shirt, so the same squad always reads the
+    // same way however the squad array happens to be ordered.
+    order.sort((a, b) => vals[b] - vals[a]
+      || rest[a % nRest].id - rest[b % nRest].id
+      || (a / nRest | 0) - (b / nRest | 0));
+    const takenSlot = new Array(nSlots).fill(-1);
+    const usedPlayer = new Uint8Array(nRest);
+    let filled = 0;
+    for (let k = 0; k < order.length && filled < nSlots && filled < nRest; k++) {
+      const idx = order[k], i = (idx / nRest) | 0, j = idx % nRest;
+      if (takenSlot[i] >= 0 || usedPlayer[j]) continue;
+      takenSlot[i] = j;
+      usedPlayer[j] = 1;
+      filled++;
+    }
+
+    return slots.map((slot, i) => {
+      const j = takenSlot[i];
+      const hit = j >= 0 ? { p: rest[j], val: vals[i * nRest + j] } : null;
       const starter = xi[i];
+      const dropOff = starter && hit ? Math.round(effectiveOverall(starter, slot) - hit.val) : null;
       return {
-        slot, index: i, starter, backup: best,
-        rating: best ? Math.round(bestVal) : 0,
+        slot, index: i, starter, backup: hit ? hit.p : null,
+        rating: hit ? Math.round(hit.val) : 0,
         // How far the side drops if the starter is unavailable.
-        dropOff: starter && best ? Math.round(effectiveOverall(starter, slot) - bestVal) : null,
+        dropOff,
+        /* Someone would have to wear the shirt, and the row still names him —
+         * but a man who is thirty points worse in that position is a hole the
+         * team sheet is hiding, not an understudy. Counted as uncovered by
+         * depthScore, and flagged as such on the screen, so a squad with a
+         * reserve goalkeeper nominally "covering" centre-half does not read
+         * as a squad with eleven backups. */
+        adequate: !!hit && (dropOff == null || dropOff < NO_COVER_DROP),
       };
     });
   }
+  const NO_COVER_DROP = 30;
 
-  /** One number for how well covered a squad is, 0-100. */
+  /** One number for how well covered a squad is, 0-100.
+   *
+   *  Calibrated against a simulated world once the assignment above was fixed:
+   *  the average drop-off across a division runs about 8-16 points, so the
+   *  penalty is 3.5 a point rather than 5 — at 5 an ordinary, properly stocked
+   *  squad still bottomed out at zero and the number told you nothing. A drop
+   *  of zero is a perfect 100; a squad averaging a 25-point cliff behind its
+   *  first eleven is at 12 and deserves to be. An uncovered shirt costs 8 on
+   *  top, because no cover at all is worse than bad cover. */
   function depthScore(club, knownXI) {
     const rows = backupsFor(club, knownXI);
-    const covered = rows.filter((r) => r.backup);
+    const covered = rows.filter((r) => r.adequate);
     if (!covered.length) return 0;
     const avgDrop = covered.reduce((t, r) => t + (r.dropOff == null ? 12 : r.dropOff), 0) / covered.length;
     const missing = rows.length - covered.length;
-    // No drop-off at all is a perfect 100; a twenty-point cliff is nothing.
-    return clamp(Math.round(100 - avgDrop * 5 - missing * 8), 0, 100);
+    return clamp(Math.round(100 - avgDrop * 3.5 - missing * 8), 0, 100);
   }
 
   /* ---------------------------- TACTICAL SYNERGY ---------------------------

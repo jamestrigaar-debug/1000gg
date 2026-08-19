@@ -326,7 +326,6 @@
 
       for (const c of relegated) {
         c.leagueId = lowerId;
-        c.band = null;
         c.history.relegations++;
         MG.clubs.adjustReputation(c, -3);
         moves.push({ type: "relegated", club: c.name, from: upperId, to: lowerId });

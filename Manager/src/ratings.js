@@ -76,11 +76,29 @@
    * a table that never changes. The pairs, their weight sum and their count are
    * all constant per slot, so they are computed once here instead. Same
    * arithmetic, same results — just not rebuilt three million times. */
+  /* The same argument applies one level down, to attrValue. Every one of those
+   * millions of calls re-ran the same three string comparisons ("is this key
+   * height? weight? mentalityRating?") to work out which of four readings it
+   * wanted — for a key that, like the weights themselves, is fixed the moment
+   * the table is built. So the decision is made once, here, and each key gets
+   * the one accessor it will ever need. attrValue stays exported behaviour for
+   * anything that reads a single attribute by name; the hot loop no longer
+   * goes through it. */
+  const ATTR_GETTER = {
+    height: (p) => heightScore(p.attrs.height),
+    weight: (p) => clamp((p.attrs.weight - 60) * (99 / 40), 5, 99),
+    mentalityRating: (p) => p.mentalityRating || 55,
+  };
+  function getterFor(key) {
+    return ATTR_GETTER[key] || ((p) => (p.attrs[key] != null ? p.attrs[key] : 55));
+  }
+
   const ROLE_WEIGHT_LIST = {};
   for (const [slot, weights] of Object.entries(ROLE_WEIGHTS)) {
     const keys = Object.keys(weights);
     ROLE_WEIGHT_LIST[slot] = {
       keys,
+      gets: keys.map(getterFor),
       vals: keys.map((k) => weights[k]),
       weightSum: keys.reduce((t, k) => t + weights[k], 0),
       n: keys.length,
@@ -97,10 +115,10 @@
   function roleRating(player, slot) {
     const table = ROLE_WEIGHT_LIST[slot];
     if (!table) return player.overall;
-    const { keys, vals, weightSum, n } = table;
+    const { gets, vals, weightSum, n } = table;
     let weighted = 0, plain = 0;
     for (let i = 0; i < n; i++) {
-      const v = attrValue(player, keys[i]);
+      const v = gets[i](player);
       weighted += v * vals[i];
       plain += v;
     }

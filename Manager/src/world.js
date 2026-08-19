@@ -235,34 +235,6 @@
     return key ? D.PLAYER_DATABASE_2026[key] : null;
   }
 
-  /* Least-squares fit of squad-derived quality against the tuned team rating,
-   * over the clubs where both exist. Returns { slope, intercept, toPlayer }. */
-  function fitPlayerScale(clubs) {
-    const pts = clubs.map((c) => {
-      const r = MG.players.squadRatings(c.squad);
-      return { x: (r.attack + r.midfield + r.defence) / 3, y: c.baseline.avg };
-    });
-    const n = pts.length;
-    if (n < 4) return defaultScale();
-    const mx = pts.reduce((t, p) => t + p.x, 0) / n;
-    const my = pts.reduce((t, p) => t + p.y, 0) / n;
-    let num = 0, den = 0;
-    for (const p of pts) { num += (p.x - mx) * (p.y - my); den += (p.x - mx) * (p.x - mx); }
-    const slope = den ? num / den : 0;
-    if (!(slope > 0.2)) return defaultScale();
-    const intercept = my - slope * mx;
-    return {
-      slope: round1(slope), intercept: round1(intercept),
-      /** team-strength -> the player overall a squad of that level averages */
-      toPlayer(teamRating) { return clamp((teamRating - intercept) / slope, 28, 92); },
-    };
-  }
-  function defaultScale() {
-    // Fallback if the real squads ever disappear from the database: a straight
-    // mapping that keeps the two scales in the same ballpark.
-    return { slope: 1.6, intercept: -46, toPlayer(t) { return clamp((t + 46) / 1.6, 28, 92); } };
-  }
-
   /** A full squad for a club with no real data, built to the club's level. */
   function generateSquad(rng, club) {
     const level = club.level;
@@ -967,12 +939,11 @@
     const freeNews = MG.transfers.signFreeAgents(world, freeAgents) || [];
     const fillerNews = MG.transfers.topUpSquads(world) || [];
     /* The academy year: train, promote or release, then take a new intake.
-     * This is now the ONLY source of academy graduates — transfers.youthIntake
-     * used to run alongside it, quietly adding a second batch of teenagers
-     * straight into every senior squad on top of the academy's own intake and
-     * promotions. Two youth pipelines firing every summer was a real part of
-     * the squad-overhaul problem: a club could gain new academy graduates from
-     * BOTH systems in the same window without either mentioning the other. */
+     * This is the ONLY source of academy graduates. A second, older intake
+     * used to run alongside it, quietly adding a batch of teenagers straight
+     * into every senior squad on top of the academy's own promotions — two
+     * youth pipelines firing every summer, neither mentioning the other, and
+     * a real part of the squad-overhaul problem. That one is gone. */
     const academyNews = MG.youth ? MG.youth.runSeason(world) : [];
     const youthNews = [];
     // Last job of the summer: the blocked prospects go out to find games.
@@ -1292,5 +1263,5 @@
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
   }
 
-  MG.world = { createWorld, REAL_MANAGERS, appointManager, removeManager, hireFor, fitPlayerScale, ordinal, attachApi };
+  MG.world = { createWorld, REAL_MANAGERS, appointManager, removeManager, hireFor, ordinal, attachApi };
 })(typeof globalThis !== "undefined" ? globalThis : this);

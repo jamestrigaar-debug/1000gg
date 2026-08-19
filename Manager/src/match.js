@@ -160,11 +160,15 @@
       style: manager ? manager.tactic : club.tacticalStyle,
       // The shape, so the engine can read one formation against the other.
       formation: club.formation || "4-4-2",
-      // How well the squad is covered behind the eleven, 0-100. Depth pays off
-      // across a season of injuries and fatigue rather than in any one match.
-      // The XI is picked once above and handed on, rather than each of these
-      // helpers picking the same side again from scratch.
-      depth: MG.tactics ? MG.tactics.depthScore(club, xi) : 50,
+      /* There is deliberately no `depth` here. Squad depth is real and it is
+       * paid for — but not inside a single match, where nothing in this engine
+       * models a starter going off and a reserve coming on. It lands in two
+       * places that DO run at the right timescale: world.js's fatigue pass,
+       * where a side that leant on eleven men all year arrives at the run-in
+       * worn out and loses form for it, and players.js's squadRatings, which
+       * blends the tail of the squad into the club's rating in the first
+       * place. A depth number computed here and read by nothing was a third
+       * copy of that idea that never reached the pitch. */
       // Playstyle, shape, training and the manager himself, read together —
       // see tactics.js. 1.0 is neutral; the match engine applies it straight
       // to this side's xG.

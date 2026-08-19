@@ -270,7 +270,6 @@
         unit: { attack: 0, midfield: 0, defence: 0 },   // rating shifts, in points
         unitSeasons: 0,     // how many more seasons the unit shifts survive
         youthBias: 0,       // pushes minutes toward under-21s
-        wageStrain: 0,      // extra wage cost agreed in a decision
       },
       flags: {},            // narrative flags with a season countdown
     };
@@ -895,7 +894,6 @@
      * training regime you set takes a season to show up" rather than a
      * broken promise. */
     m.youthBias = 0;
-    m.wageStrain = 0;
     if (m.unitSeasons > 0) {
       m.unitSeasons--;
       if (m.unitSeasons <= 0) m.unit = { attack: 0, midfield: 0, defence: 0 };
