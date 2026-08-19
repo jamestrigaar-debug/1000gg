@@ -17,7 +17,7 @@
 const path = require("path");
 globalThis.window = globalThis;
 require(path.join(__dirname, "..", "..", "src", "data.js"));
-for (const f of ["rng", "names", "data_intl", "data_foreign", "players", "ratings", "international", "tactics", "clubs", "network", "scouting",
+for (const f of ["rng", "names", "data_intl", "data_foreign", "data_cards", "players", "ratings", "international", "tactics", "clubs", "network", "scouting",
   "managers", "match", "narrative", "youth", "competitions", "agents", "transfers", "ai", "world", "draft", "decisions", "endings"]) {
   require(path.join(__dirname, "..", "src", `${f}.js`));
 }
