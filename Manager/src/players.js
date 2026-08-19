@@ -213,8 +213,13 @@
    * Relative shape is preserved throughout: a slow centre-half stays slow,
    * because both terms move him from where he already is rather than snapping
    * him onto an average. */
-  const GAIN_WEIGHTS    = { heading: 1.0, fitness: 0.9, strength: 1.0, leftFoot: 1.2, rightFoot: 1.2, speed: 0.7 };
-  const DECLINE_WEIGHTS = { heading: 0.9, fitness: 1.3, strength: 0.8, leftFoot: 0.5, rightFoot: 0.5, speed: 2.0 };
+  /* Creativity gains readily and decays barely at all — it is the last thing
+   * to leave a footballer, which is why thirty-four-year-old playmakers still
+   * have a career after the legs have gone. Both tables MUST cover every key
+   * in HOUSE: applyDevelopment reads w[k] straight, so a missing entry would
+   * silently turn the attribute into NaN for every player in the world. */
+  const GAIN_WEIGHTS    = { heading: 1.0, fitness: 0.9, strength: 1.0, leftFoot: 1.2, rightFoot: 1.2, speed: 0.7, creativity: 1.1 };
+  const DECLINE_WEIGHTS = { heading: 0.9, fitness: 1.3, strength: 0.8, leftFoot: 0.5, rightFoot: 0.5, speed: 2.0, creativity: 0.35 };
   const CONVERGE = 0.30;   // share of any residual gap closed per season
 
   /** Apply one season's change in overall to the player, attributes included. */
@@ -403,7 +408,7 @@
       age: 24,
       overall: 60,
       potential: 60,
-      attrs: { heading: 60, fitness: 60, strength: 60, leftFoot: 60, rightFoot: 60, speed: 60, height: 180, weight: 76 },
+      attrs: { heading: 60, fitness: 60, strength: 60, leftFoot: 60, rightFoot: 60, speed: 60, creativity: 60, height: 180, weight: 76 },
       mentality: "Balanced",
       mentalityRating: 55,
       clubId: null,
@@ -459,9 +464,12 @@
       attrs: {
         heading: raw.heading, fitness: raw.fitness, strength: raw.strength,
         leftFoot: raw.leftFoot, rightFoot: raw.rightFoot, speed: raw.speed,
+        creativity: deriveCreativity(raw.pos, raw.overall, raw.leftFoot, raw.rightFoot,
+          footballIntelligence(raw.mentalityRating, raw.overall)),
         height: raw.height, weight: raw.weight,
       },
-      mentality: raw.mentality, mentalityRating: raw.mentalityRating,
+      mentality: raw.mentality,
+      mentalityRating: footballIntelligence(raw.mentalityRating, raw.overall),
       contract: { years: rng.int(1, 5), wage: 0 },
     });
     p.career.seasons = estimateCareerSeasons(p.age);
@@ -551,33 +559,74 @@
   const HOUSE = {
     heading:   [1.090, -14.5], fitness: [0.914,  8.1], strength: [0.901,  2.0],
     leftFoot:  [0.394,  31.9], rightFoot: [0.683, 23.1], speed: [0.864, 9.1],
+    creativity: [0.900,  1.5],
   };
-  /* WHAT THE SIX ATTRIBUTES AVERAGE TO, BY POSITION, at a given overall.
+
+  /* ------------------------------ CREATIVITY -------------------------------
+   * A seventh attribute, and the one the source data was crying out for.
    *
-   * The six stats the game carries — heading, fitness, strength, both feet,
-   * speed — do not describe every position equally. Nothing in them covers
-   * shot-stopping, so a goalkeeper's mean sits far below his rating; nothing
-   * covers positional reading, so a centre half's does too. A winger, whose
-   * game IS pace and feet, reads almost exactly at his rating.
+   * The shipped database has no vision, passing or flair field. What it does
+   * have is BOTH FEET — and two good feet is the single most reliable public
+   * signal that a footballer has options: he can go either way, receive on
+   * either side, pick a pass he is not square to. The population's median weak
+   * foot is 55 and its 99th percentile is 75, so a genuinely two-footed player
+   * is rare enough to mean something.
    *
-   * Fitted per position across the 6,700 players in the shared database, and
-   * the spread is not small: at a rating of 94 a keeper's six attributes
-   * average 16 below him, a centre half 12, and a winger 5. Read against one
-   * global line — which is what the QA panel did — every keeper and centre
-   * half in the world looked broken and every attacker looked clean, so the
-   * readout could not do the one job it exists for. Against his own
-   * position's line the number means what it should: how far this player is
-   * from what his position normally looks like at his level. */
-  const POSITION_ATTR_MEAN = {
-    GK: [0.610, 20.8], CB: [0.658, 19.7], FB: [0.877,  4.9], DM: [0.749, 15.8],
-    CM: [0.920,  3.4], WG: [0.971, -2.8], FW: [0.920,  1.7], AM: [0.919,  1.4],
-  };
-  /** The mean of the six attributes a typical `pos` rated `ovr` carries. */
-  function expectedAttrMean(pos, ovr) {
-    const m = POSITION_ATTR_MEAN[pos];
-    return m ? m[0] * ovr + m[1] : ovr;
+   * That was being read exactly backwards. The Attacking axis averaged the two
+   * feet, so Lautaro Martínez — right foot 91, left 65, which is the profile of
+   * an elite one-footed finisher — read as a 78 attacker, worse than players
+   * he is plainly better than. Being one-footed made him look like a worse
+   * striker instead of a different kind of striker.
+   *
+   * So the two feet now split into two different questions. His STRONG foot
+   * decides how good a finisher he is (Attacking). The WEAK one, with his
+   * football intelligence and his own level behind it, decides how creative he
+   * is — a separate axis he can be low on without it costing him anywhere
+   * else. Martínez comes out an elite finisher who is not a playmaker, which
+   * is exactly what he is.
+   *
+   * Position matters because the roles genuinely differ: an attacking
+   * midfielder is picked for this, a centre half is not. And a player's own
+   * level counts, because seeing the pass is most of what separates a very
+   * good player from a great one. */
+  const CREATIVE_POS = { AM: 9, WG: 6, CM: 5, FW: 2, DM: 1, FB: 1, CB: -4, GK: -8 };
+  function deriveCreativity(pos, overall, leftFoot, rightFoot, mentalityRating) {
+    const weak = Math.min(leftFoot || 50, rightFoot || 50);
+    return clamp(Math.round(
+      38
+      + clamp(weak - 52, -20, 40) * 0.75       // both feet: options
+      + ((mentalityRating || 60) - 62) * 0.35  // football intelligence
+      /* A light touch only. The DISPLAY already carries a quality term (see
+       * ratings.eliteLift), and an earlier cut weighted this at 0.55 as well,
+       * which double-counted: Virgil van Dijk — weak foot 60, a centre half —
+       * came out reading 90 for creativity purely because he is very good at
+       * football. What this attribute is for is telling two players of the
+       * SAME quality apart, so the quality term has to be the small one. */
+      + (overall - 62) * 0.30
+      + (CREATIVE_POS[pos] || 0)
+    ), 15, 99);
   }
 
+  /* ---------------------- FOOTBALL INTELLIGENCE AT THE TOP -----------------
+   * The database's own mentalityRating rises with quality exactly as it should
+   * — it averages 62 through the bulk of the population and 82.8 across the
+   * players rated 85 and above — but the individual records are noisy, and the
+   * noise shows worst precisely where it matters. Federico Valverde at 89
+   * carried a 69 and Lautaro Martínez at 88 a 68, so two world-class players
+   * displayed a Mental score in the middle of the range while a journeyman
+   * beside them displayed a better one.
+   *
+   * A floor rather than a rewrite: the rating is left alone below 78 and for
+   * anyone already reading above the line, so the real spread the data carries
+   * survives intact and only the implausible bottom of the elite band moves.
+   * At 88 the floor is 73, at 94 it is 84 — under the band's own average
+   * either way, so this is correcting an obvious wrong reading, not inventing
+   * a new one. */
+  function footballIntelligence(mentalityRating, overall) {
+    const men = mentalityRating || 60;
+    if (overall < 78) return men;
+    return Math.max(men, Math.round(55 + (overall - 78) * 1.8));
+  }
   /** What the population says an attribute looks like at a given overall. */
   function houseTarget(k, ovr) { const h = HOUSE[k]; return h ? h[0] * ovr + h[1] : ovr; }
   const MAP = {
@@ -645,14 +694,16 @@
   function fromForeign(rng, raw, league) {
     const pos = foreignPos(raw.pos);
     const age = clamp(raw.age != null ? raw.age : guessAgeFromRating(rng, raw.ovr), 15, 42);
-    const mentalityRating = rollMentalityRating(rng, raw.ovr);
+    const mentalityRating = footballIntelligence(rollMentalityRating(rng, raw.ovr), raw.ovr);
+    const attrs = mapForeignAttrs(rng, raw, pos);
+    attrs.creativity = deriveCreativity(pos, raw.ovr, attrs.leftFoot, attrs.rightFoot, mentalityRating);
     const p = makePlayer({
       name: raw.name,
       nationality: MG.names.knownNationality(raw.name) || raw.nationality || MG.names.nationForLeague(rng, league),
       pos,
       age,
       overall: raw.ovr,
-      attrs: mapForeignAttrs(rng, raw, pos),
+      attrs,
       mentality: rollMentalityTrait(rng, mentalityRating),
       mentalityRating,
       contract: { years: rng.int(1, 5), wage: 0 },
@@ -732,20 +783,24 @@
     const tall = pos === "CB" || pos === "GK" || pos === "FW";
     const quick = pos === "WG" || pos === "FB" || pos === "FW";
     const around = (base, spread) => clamp(Math.round(base + rng.gauss() * spread), 25, 99);
-    const mentalityRating = rollMentalityRating(rng, overall);
+    const mentalityRating = footballIntelligence(rollMentalityRating(rng, overall), overall);
+    const genAttrs = {
+      heading: around(overall + (tall ? 6 : -6), 6),
+      fitness: around(overall, 6),
+      strength: around(overall + (pos === "CB" || pos === "FW" ? 5 : -3), 6),
+      leftFoot: around(overall - 10, 12),
+      rightFoot: around(overall - 2, 10),
+      speed: around(overall + (quick ? 7 : pos === "GK" || pos === "CB" ? -8 : 0), 7),
+      height: pos === "GK" ? rng.int(185, 199) : tall ? rng.int(182, 196) : rng.int(168, 186),
+      weight: rng.int(66, 92),
+    };
+    // Derived from the feet he just rolled, exactly as an imported player's is
+    // derived from the feet the database gave him — one rule for everybody.
+    genAttrs.creativity = deriveCreativity(pos, overall, genAttrs.leftFoot, genAttrs.rightFoot, mentalityRating);
     const p = makePlayer({
       name: MG.names.personName(rng, nationality),
       nationality, pos, age, overall,
-      attrs: {
-        heading: around(overall + (tall ? 6 : -6), 6),
-        fitness: around(overall, 6),
-        strength: around(overall + (pos === "CB" || pos === "FW" ? 5 : -3), 6),
-        leftFoot: around(overall - 10, 12),
-        rightFoot: around(overall - 2, 10),
-        speed: around(overall + (quick ? 7 : pos === "GK" || pos === "CB" ? -8 : 0), 7),
-        height: pos === "GK" ? rng.int(185, 199) : tall ? rng.int(182, 196) : rng.int(168, 186),
-        weight: rng.int(66, 92),
-      },
+      attrs: genAttrs,
       mentality: rollMentalityTrait(rng, mentalityRating),
       mentalityRating,
       contract: { years: rng.int(1, 4), wage: 0 },
@@ -842,7 +897,7 @@
 
   MG.players = {
     POSITIONS, POSITION_KEYS, SQUAD_TARGET,
-    firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta, applyDevelopment, houseTarget, expectedAttrMean,
+    firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta, applyDevelopment, houseTarget, deriveCreativity, footballIntelligence,
     AGE_CURVE, ageCurve, MENTALITY_TRAITS, rollMentalityRating, rollMentalityTrait,
     marketValue, expectedWage, ageValueFactor, LEAGUE_WAGE_FACTOR,
     makePlayer, fromDatabase, fromForeign, generate, resetIds, setNextId, rollInjury, availability, durability, recordMove,

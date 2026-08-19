@@ -220,44 +220,124 @@
   }
 
   /* ------------------------------ THE RADAR --------------------------------
-   * Six axes, top and then clockwise: Defending, Physical, Speed, Attacking,
-   * Aerial, Mental — chosen so that three players who all rate 78 look like
-   * three different footballers.
+   * SEVEN axes, top and then clockwise: Defending, Physical, Speed, Attacking,
+   * Creativity, Aerial, Mental — chosen so that three players who all rate 78
+   * look like three different footballers.
    *
-   *   DEFENDING   DEF-ATR (GK-ATR for a keeper) — unchanged, see
-   *               defenceAttribute below
+   *   DEFENDING   DEF-ATR (GK-ATR for a keeper) — see defenceAttribute below
    *   PHYSICAL    strength and fitness — the database's own conditioning
    *               attributes, not height, which has its own job on Aerial
-   *   SPEED       raw speed, on its own — stamina's job moved to Physical, so
-   *               this axis is no longer two things pretending to be one
-   *   ATTACKING   the average of both feet — the technical read the report
-   *               asks for. Not position-weighted: an earlier version
-   *               discounted this for defenders and midfielders (the DEF-ATR
-   *               idea run in reverse) and it went too far, reading a
-   *               genuinely composed centre-half's distribution as barely
-   *               better than a goalkeeper's. Reverted.
+   *   SPEED       raw speed, on its own, and never adjusted — see below
+   *   ATTACKING   his STRONG foot, with the weak one behind it
+   *   CREATIVITY  the new seventh attribute — see players.deriveCreativity
    *   AERIAL      heading with height and strength behind it
-   *   MENTAL      the mentality rating on its own axis
+   *   MENTAL      football intelligence
+   *
+   * TWO CHANGES, BOTH REPORTED FROM PLAY.
+   *
+   * 1. ATTACKING WAS THE AVERAGE OF BOTH FEET, which reads a one-footed player
+   *    as a worse footballer rather than a different one. Lautaro Martínez —
+   *    right foot 91, left 65, the profile of an elite finisher — came out at
+   *    78, below players he is plainly better than, and his 88 badge looked
+   *    unearned as a result. A striker finishes with his good foot. Attacking
+   *    is now his strong foot with the weak one behind it, and what the weak
+   *    foot really tells you moved to its own axis, where being one-footed
+   *    costs him nothing he has not actually got.
+   *
+   * 2. THE AXES DID NOT ADD UP TO THE BADGE, and the error was worst at the
+   *    top, which is where anyone looks. The six raw attributes describe a
+   *    winger's game almost completely and a goalkeeper's barely at all, so a
+   *    90-rated keeper's profile read in the mid-seventies and a 90-rated
+   *    winger's read at 88 — the same badge, two completely different-looking
+   *    players, and the reason "they have 90 rating but are clearly not 90
+   *    rated players".
+   *
+   *    Each position now carries its own calibration, fitted across the 6,700
+   *    players in the shared database so that the seven axes AVERAGE to the
+   *    overall the player actually holds. It is a presentation correction and
+   *    nothing else — no rating the match engine reads is touched — but it is
+   *    what makes a profile justify its badge, and it means the shape of the
+   *    radar is now pure information about the player rather than mostly
+   *    information about what position he plays.
    */
-  function stretch(v) {
-    /* Contrast-stretch AROUND THE POPULATION'S OWN CENTRE (measured across
-     * every attribute in the game, ~55-58) rather than up from a low floor.
-     * The previous version anchored at 34 with a 1.7x slope: its break-even
-     * point — the raw value that displays unchanged — worked out at 82.6,
-     * so almost every ordinary attribute (the population sits at 55 on
-     * average) displayed BELOW its true value, and mentality in particular
-     * (which averages nearer 45 for a generated player) read as barely
-     * there. Anchoring on the centre instead means a typical attribute shows
-     * roughly itself; the amplification only shows up as real spread moves
-     * away from that centre in either direction, which is what stops one
-     * elite attribute (paciest wingers, a maxed heading score) pinning the
-     * whole top end of the dial to 99 the way the old anchor did. */
-    const CENTRE = 56, SLOPE = 1.15;
-    return clamp(Math.round(CENTRE + (v - CENTRE) * SLOPE), 2, 99);
+  /* TWO STAGES, and they do different jobs.
+   *
+   * AXIS_CAL puts each axis on the same scale as a rating, by matching its
+   * distribution across the whole population to the distribution of `overall`
+   * — same mean, same spread. So an axis reading 90 means "as far above
+   * average at this as a 90-rated player is at football", which is what anyone
+   * reading it assumes. It is deliberately GLOBAL, not per position, because
+   * the positional differences are real information: a forward genuinely
+   * cannot defend and a centre half genuinely is not creative, and flattening
+   * those out would leave every radar the same shape.
+   *
+   * Moment matching rather than regression, because regressing `overall` on an
+   * axis flattens any axis that predicts it weakly — fitted that way mentality
+   * came out with a slope of 0.6, which would have squashed every player's
+   * Mental toward the middle of the dial and thrown away the one attribute
+   * that genuinely varies independently of quality.
+   *
+   * POS_OFFSET is the small residual left over: the shift that makes the seven
+   * axes together average to the badge for each position. It comes out inside
+   * ±1.5 everywhere, which is the useful confirmation that stage one was doing
+   * the real work and this is only tidying up after it. */
+  const AXIS_CAL = {
+    def: [1.140,  -0.2], phy: [1.010,  0.3], att: [1.001,   3.7],
+    cre: [0.945,  25.7], aer: [1.171, -2.2], men: [1.429, -26.4],
+  };
+  const POS_OFFSET = {
+    GK: 2.8, CB: -1.4, FB: -1.2, DM: 0.6, CM: -0.3, AM: 0.9, WG: 0.7, FW: -1.8,
+  };
+
+  /* A SOFT CEILING, because the calibration has slopes greater than one and a
+   * hard clamp at 99 would spend them pinning the whole top of the game to the
+   * same number. An early cut had Haaland on 99 Physical, 99 Attacking, 99
+   * Mental and 98 Aerial — a perfectly calibrated average and a radar shaped
+   * like a heptagon, which tells you nothing about him at all. The knee bends
+   * everything above 86 into the last thirteen points asymptotically, so an
+   * outstanding attribute still reads as outstanding, a freakish one still
+   * beats it, and nothing ever quite touches the ceiling. */
+  const AXIS_KNEE = 86, AXIS_CEIL = 99;
+  function soften(v) {
+    if (v <= AXIS_KNEE) return v;
+    return AXIS_KNEE + (AXIS_CEIL - AXIS_KNEE) * (1 - Math.exp(-(v - AXIS_KNEE) / (AXIS_CEIL - AXIS_KNEE)));
   }
+  /* AND A QUALITY TERM, which is the last piece and the one the whole exercise
+   * was reported for. Even with every axis correctly scaled, a 94-rated
+   * player's seven axes averaged 89 and an 88-rated player's averaged 83 —
+   * because the attributes the database carries genuinely under-describe the
+   * best players. What separates a very good footballer from a great one is
+   * mostly the things no attribute list holds: the first touch under pressure,
+   * the run he makes without the ball, the pass he sees a beat earlier. It is
+   * real, it is why `overall` is not simply the mean of the columns, and left
+   * uncorrected it is exactly the complaint that started this — "they have 90
+   * rating but are clearly not 90 rated players".
+   *
+   * Zero below 70 and rising from there, so it touches only the band where the
+   * shortfall actually exists. Presentation only: nothing the match engine
+   * reads goes anywhere near this. */
+  const ELITE_FROM = 70, ELITE_RATE = 0.26;
+  function eliteLift(overall) {
+    return Math.max(0, (overall || 60) - ELITE_FROM) * ELITE_RATE;
+  }
+  /* CREATIVITY IS EXEMPT FROM THE LIFT, and it has to be. Every other axis
+   * gets the quality term because the attributes genuinely under-describe a
+   * great player at that thing. Creativity is the axis that exists to tell two
+   * players of the SAME quality apart — so adding a term that rises with
+   * quality defeats it by construction. With the lift applied, Virgil van Dijk
+   * and Alisson Becker both read in the nineties for creativity purely on
+   * account of being very good footballers, which is the exact reading the
+   * attribute was added to stop. */
+  function calibrate(key, pos, v, overall) {
+    const c = AXIS_CAL[key] || [1, 0];
+    const lift = key === "cre" ? 0 : eliteLift(overall);
+    return clamp(Math.round(soften(v * c[0] + c[1] + (POS_OFFSET[pos] || 0) + lift)), 2, 99);
+  }
+
   function radarAxes(player) {
     const a = player.attrs || {};
     const men = player.mentalityRating || 55;
+    const pos = player.pos;
     /* Aerial used to average heading and strength (both 0-99) against a
      * height term that was scaled 0-60 before being blended in — Erling
      * Haaland (heading 88, strength 94, 195cm) read as an Aerial ability in
@@ -267,24 +347,25 @@
      * the same 0-99 footing as everything else, so a genuinely elite header
      * of the ball now reads as one. */
     const heightPts = heightScore(a.height);
+    const lf = a.leftFoot || 50, rf = a.rightFoot || 50;
+    const strong = Math.max(lf, rf), weak = Math.min(lf, rf);
     return [
-      { label: player.pos === "GK" ? "Goalkeeping" : "Defending", value: stretch(defenceAttribute(player)) },
-      { label: "Physical", value: stretch((a.strength || 50) * 0.5 + (a.fitness || 50) * 0.5) },
-      /* SPEED IS NOT STRETCHED. Every other axis on this radar is a blend of
-       * two or more attributes, so the number it shows corresponds to nothing
-       * the player can look up elsewhere and a contrast stretch costs nothing.
-       * Speed is the exception: it is a straight copy of one raw attribute
-       * that is ALSO printed, unstretched, in the raw-attribute grid further
-       * down the same profile. Stretched, the bar read 80 while the grid two
-       * inches below read SPD 77 — the same word, the same player, two
-       * numbers. That is exactly the "second scale for actual speed" this
-       * project has already removed once (see players.js's foreign mapping,
-       * where PAC is copied verbatim for precisely this reason) and the brief
+      { label: pos === "GK" ? "Goalkeeping" : "Defending", value: calibrate("def", pos, defenceAttribute(player), player.overall) },
+      { label: "Physical", value: calibrate("phy", pos, (a.strength || 50) * 0.5 + (a.fitness || 50) * 0.5, player.overall) },
+      /* SPEED IS NEVER ADJUSTED. Every other axis here is a blend, so the
+       * number it shows corresponds to nothing the player can look up
+       * elsewhere and a correction costs nothing. Speed is the exception: it
+       * is a straight copy of one raw attribute that is ALSO printed in the
+       * raw-attribute grid further down the same profile. Adjusted, the bar
+       * would read 84 while the grid two inches below read SPD 82 — the same
+       * word, the same player, two numbers. That is exactly the "second scale
+       * for actual speed" this project has already removed once and the brief
        * asks never to reopen. One attribute, one number. */
       { label: "Speed", value: clamp(Math.round(a.speed || 50), 2, 99) },
-      { label: "Attacking", value: stretch(((a.leftFoot || 50) + (a.rightFoot || 50)) / 2) },
-      { label: "Aerial", value: stretch((a.heading || 50) * 0.7 + (a.strength || 50) * 0.1 + heightPts * 0.2) },
-      { label: "Mental", value: stretch(men) },
+      { label: "Attacking", value: calibrate("att", pos, strong * 0.78 + weak * 0.22, player.overall) },
+      { label: "Creativity", value: calibrate("cre", pos, a.creativity != null ? a.creativity : (weak * 0.6 + men * 0.4), player.overall) },
+      { label: "Aerial", value: calibrate("aer", pos, (a.heading || 50) * 0.7 + (a.strength || 50) * 0.1 + heightPts * 0.2, player.overall) },
+      { label: "Mental", value: calibrate("men", pos, men, player.overall) },
     ];
   }
 

@@ -86,6 +86,7 @@
   const ATTR_ROWS = [
     { k: "heading", label: "HDR" }, { k: "fitness", label: "FIT" }, { k: "strength", label: "STR" },
     { k: "leftFoot", label: "LF" }, { k: "rightFoot", label: "RF" }, { k: "speed", label: "SPD" },
+    { k: "creativity", label: "CRE" },
     { k: "height", label: "HGT", suffix: "cm" }, { k: "weight", label: "WGT", suffix: "kg" },
   ];
   function attrGrid(p) {
@@ -1894,7 +1895,7 @@
    * printed on the bars, on a zoomed axis — which is exactly why the floor
    * is printed underneath rather than hidden. */
   const RADAR_FLOOR = 38;
-  const RADAR_AXES = ["DEF", "PHY", "SPD", "ATT", "AER", "MEN"];
+  const RADAR_AXES = ["DEF", "PHY", "SPD", "ATT", "CRE", "AER", "MEN"];
   function radarHtml(stats) {
     if (!stats || stats.length < 3) return "";
     const n = stats.length;
@@ -2392,14 +2393,13 @@
       const pc = posClass(p.pos);
       const attrs = MG.ratings.radarAxes(p);
       const mean = Math.round(attrs.reduce((t, a) => t + a.value, 0) / attrs.length);
-      /* Measured against what his POSITION normally reads at his rating, not
-       * against the rating itself — see players.expectedAttrMean. The six
-       * attributes cover a winger's game almost completely and a goalkeeper's
-       * barely at all, so a raw badge-minus-mean number was always going to
-       * put every keeper in the world in the red and tell us nothing. This is
-       * a residual: zero is exactly typical, and anything in double figures
-       * is a player whose stat pool genuinely does not match his badge. */
-      const gap = mean - Math.round(MG.players.expectedAttrMean(p.pos, p.overall));
+      /* Straight against the badge. The seven axes carry a per-position
+       * calibration (see ratings.AXIS_CAL) fitted so that they AVERAGE to the
+       * overall the player holds — so this number is once again the plain
+       * question it should always have been: does his profile add up to his
+       * rating? Zero is a well-formed player; double figures is one whose
+       * stat pool and badge are describing different footballers. */
+      const gap = mean - Math.round(p.overall);
       const gcls = Math.abs(gap) >= 10 ? "bad" : Math.abs(gap) >= 6 ? "gold" : "accent";
       return `<div class="crow" data-player="${p.id}" style="cursor:pointer">
         <div class="muted" style="width:22px;font-size:11px;text-align:right">${i + 1}</div>
@@ -2415,8 +2415,8 @@
     return `<div class="panel">
       <h3 class="muted">TOP RATED PLAYERS</h3>
       <div class="muted" style="font-size:12px;margin-bottom:8px">The best in the world, by position. <b>attr</b> is the mean of his six
-      attributes; the number beside it is how far that sits from what his POSITION normally reads at his rating. Zero is typical — a keeper's
-      six stats always average well below his badge and a winger's almost match it. Double figures means his stat pool does not match his badge.</div>
+      seven axes and the number beside it is how far that sits from his rating. The axes are calibrated per position so they should average to the
+      badge — zero is a well-formed player, double figures means his stat pool and his rating are describing different footballers.</div>
       ${nav}
       ${rows || `<div class="muted" style="font-size:12px">Nobody at that position.</div>`}
     </div>`;

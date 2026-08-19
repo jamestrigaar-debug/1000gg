@@ -185,10 +185,34 @@
     };
   }
 
+  /* CARRYING AN OLD SAVE FORWARD. Creativity was added as a seventh attribute
+   * after this schema shipped, so a career started before it has players with
+   * no `creativity` on them at all. Derived here on the way in from exactly
+   * the same inputs a new player's is derived from, so a save opened after the
+   * update reads identically to one started after it — rather than every squad
+   * in it quietly falling back to a placeholder for the rest of the career.
+   *
+   * Cheap and idempotent: it only touches players that are actually missing
+   * the field, so re-loading the same save does no work the second time. */
+  function backfillAttributes(world) {
+    if (!MG.players || !MG.players.deriveCreativity) return;
+    const fix = (p) => {
+      if (!p || !p.attrs || p.attrs.creativity != null) return;
+      p.mentalityRating = MG.players.footballIntelligence(p.mentalityRating, p.overall);
+      p.attrs.creativity = MG.players.deriveCreativity(
+        p.pos, p.overall, p.attrs.leftFoot, p.attrs.rightFoot, p.mentalityRating);
+    };
+    for (const club of world.clubs) {
+      for (const p of club.squad) fix(p);
+      if (club.academy && club.academy.players) for (const p of club.academy.players) fix(p);
+    }
+  }
+
   function unpack(record) {
     if (!record || record.schema !== SCHEMA_VERSION) return null;
     const world = unpackWorld(record.world);
     if (!world.clubs.length) return null;
+    backfillAttributes(world);
     const manager = record.ui.managerId != null ? world.managerIndex[record.ui.managerId] : null;
     const u = record.ui;
     return {
@@ -197,7 +221,7 @@
         manager,
         clubId: u.clubId,
         career: u.career || [],
-        tab: u.tab || "squad",
+        tab: u.tab || "table",
         stage: u.stage || null,
         hubTab: u.hubTab || "overview",
         lastRow: u.lastRow || null,
