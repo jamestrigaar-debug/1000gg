@@ -1,5 +1,244 @@
 # Football DNA Simulator — Manager
 
+## v0.9.1 · beta — the difficulty pass
+
+The game was too easy, and profiling the build showed it was not because any one
+number was too generous. It was because **almost every advantage compounded and
+almost nothing pushed back.** Ten changes, in the order they were made. None of
+them adds a screen or changes how a season is played.
+
+### What the profiling found
+
+Measured over twelve simulated seasons across all 221 clubs:
+
+| finding | before |
+|---|---|
+| Premier League manager reputation, median | **74 → 50** over 12 seasons |
+| best manager in the world | **96 → 85** |
+| median PL club balance | **£60m → £192m** |
+| decision choices granting permanent facility upgrades | **18 give, 0 cost** |
+| choices granting multi-season rating boosts | **34 give, 1 cost** |
+| choices granting manager reputation | **25 give, 4 cost** |
+| base chance a player accepts a transfer | **0.88**, capped 0.97 |
+| manager sack rate | **11.7% a season**, PL **13.8%** |
+
+Two of those were the whole problem. The world's coaching got *worse* every year
+while yours got better — and manager reputation is 40% of the quality term the
+match engine reads, so a human climbing to 99 against a league median of 53 was
+carrying an edge into every fixture that grew as he succeeded. Meanwhile the
+levers that reset each season were balanced, and the levers that *compounded*
+were one-way gifts.
+
+### 1. The world's coaching no longer erodes
+
+Manager reputation was dragged toward the club's own standing at 0.12 of the gap,
+so an elite coach at anything but a giant shed nearly two points a season however
+well he did — and nothing anywhere ever created a new elite name, because every
+rookie appointment is seeded *below* its club. Halved, floored on achievement
+(a title, a promotion, a European trophy now pay permanently), and big clubs
+hire the best available instead of missing on their target as often as a
+mid-table one.
+
+**The best managers in the world at season 12: was 85, 83, 80, 77, 72. Now 99,
+98, 94, 92, 86.**
+
+### 2. Reputation is compressed before it reaches the pitch
+
+Above 70 the slope halves. It is *fame*, and past the top of the profession more
+of it stops translating into results — the gap between the best coach alive and a
+very good one is not the same as the gap between a very good one and a
+journeyman. This is the cap on the player's own runaway, and it is invisible.
+
+Climbing is also damped above 82, so ordinary competence no longer carries you to
+99 inside a decade. Trophies still do.
+
+### 3. The compounding decision levers now cost something
+
+Sixteen card outcomes re-priced. Not "made worse" — the greedy path now has a
+bill, and the bill lands on a different axis so the choice stays a choice:
+
+- Free permanent facility upgrades now cost money, form, morale, wages or board
+  confidence. Promoting an academy director from within costs the first-team
+  staff a man (`{ youth: 3, training: -2 }`).
+- "Keep the system, drill it deeper" was a free three-point boost for two
+  seasons. Now one season — and see change 8 for why standing still is no longer
+  free at all.
+- Manager reputation gained from any card is now damped on the same curve as
+  reputation earned from results, in the API rather than card by card, so every
+  card written from now on inherits it. Losses are deliberately **not** damped.
+
+### 4. The board's brief ratchets on your reputation
+
+`setSeasonTargets` read the squad and the club's momentum and had no idea who was
+in the dugout. A career of overachievement was met with the same soft target
+every year. A decorated manager is now handed a harder brief at the same club —
+and a rookie at a big club is genuinely given slack, which is the same rule
+running the other way. **This is the term that makes success self-punishing.**
+
+### 5. The transfer market can say no
+
+Base acceptance 0.88 → 0.62, so the modifiers actually carry the decision. Being
+first choice where he is, is now a reason to stay. At the same time a big club's
+*name* pulls much harder (`/180` → `/105`): the point is not that the market is
+uniformly stingy, it is that **who is asking** decides it. A giant still gets its
+man; a club your own size frequently does not — and you are usually the smaller
+club. Both callers already handled refusal, so a tighter market shows up as NO
+DEAL lines in the log rather than an empty window.
+
+### 6. Tactical familiarity decay — the mechanic that was not there
+
+This was scoped previously and never built; there was no code anywhere that
+remembered your tactic. Now there is.
+
+A system is (playstyle, formation). Every club in the world carries a count of
+consecutive seasons on the same one, and it ramps over five seasons into how
+thoroughly the division has worked it out. Changing either resets the clock — at
+the cost of the settling-in penalty the tactical cards already charge. That
+trade is the decision the whole mechanic exists to create.
+
+Three details that matter:
+
+- **Zero-sum.** Charged absolutely at first, it deflated the whole league — AI
+  clubs rarely change shape, so within six seasons every side carried the full
+  penalty and both-teams-scored fell to 43.7% against a real 50%. What decides a
+  match is whether *yours* is the more readable of the two, not whether yours is
+  readable at all.
+- **Aged at kick-off**, not in pre-season prep, so a summer switch buys back the
+  surprise for the campaign you changed for — and in a shared helper, because
+  `beginSeason` returns early when no human is managing, which would have frozen
+  the clock for every headless world and applied the mechanic to the player and
+  nobody else.
+- **Rivals refresh too.** AI clubs that have been stale and struggling for years
+  now change shape, so a human who rotates does not collect a free edge over a
+  league that never responds.
+- An adaptable coach disguises a system for longer, using the attribute the
+  match engine already reads.
+
+Visible as one line in the pre-season brief, one on the TACTICS panel, and one on
+any rival's club page — a side that has played the same way for years is a side
+*you* can prepare for too.
+
+### 7. Money stays a constraint
+
+Operating costs are now progressive with revenue (a bigger club really does run a
+bigger non-playing operation), and clubs bank just over half a season's turnover
+instead of 1.2 seasons. What the surplus *buys* is also capped per season —
+unbounded, it spread Premier League training grounds from 46 to 86 in six
+seasons, and facilities drive how fast every player develops.
+
+**Median PL balance at season 12: was £192m. Now £96m.** Total club balance
+across the world fell from £13.5bn to £8.8bn.
+
+### 8. The job is more precarious
+
+Sack floors raised across all four board styles. Two bad seasons back to back is
+now a sacking in its own right whatever the confidence number reads — confidence
+is a slow average, and a manager who missed twice could sit safe on goodwill
+banked in year one. Confidence gravity is asymmetric: goodwill decays fast,
+trouble does not evaporate. And board patience scales with club size — a giant
+gives you one season and then judges you on it, a small club can wait three.
+
+**PL turnover 13.8% → 16.7% a season.** Still deliberately below real-world
+churn, because you only manage one club at a time and a season is the unit of
+play.
+
+### 9. Success is expensive to keep together
+
+Renewals cost expected wage plus a flat 0–15%, so a squad could win a title and
+re-sign itself at the same price. A regular in a side that just overachieved now
+renews at up to about 1.7× the going rate, gated on minutes so it squeezes the
+men who actually won you something. The board's wage budget does not rise to
+meet it. Measured, 9–13 of 20 PL clubs sit over budget in the seasons after a
+good one — which means selling somebody.
+
+### 10. The league reacts to you
+
+Every AI club planned its summer in a vacuum; nothing in the world knew a human
+was competing with it. Clubs that finished within three places of you now spend
+harder, sign one more player, and point recruitment at the positions where
+*your* side is better than theirs. Visible on the scouting screen: "They have you
+in their sights."
+
+### 11. Your best players get poached because you did well
+
+The existing "a bigger club is sniffing around" card only fired when you were
+broke — a forced sale. The new one fires because you **succeeded**, and there is
+no free way out: sell and reinvest, refuse publicly (board confidence and the
+dressing room both pay), or match the offer and blow up your wage structure. The
+refusal is the expensive option, which is the right way round.
+
+This needed a new context field. `star` is the highest-rated player at the club,
+which for an ageing squad is a 36-year-old nobody is bidding for — Brighton's
+best player is Danny Welbeck at 36. Cards about the **dressing room** want
+`star`; cards about the **market** want `prize`, the best player young enough to
+have one.
+
+---
+
+### Two bugs found on the way
+
+**The retirement age ceiling could be cancelled.** `age >= 41 ? 1` sat at the top
+of the chain and the "ageing legend" multiplier below then took that certainty
+down to 0.55 — so a player still above his club's level had a 45% chance of
+surviving *every season, forever*. Pepe Reina reached 44 at Como on one seed. The
+ceiling is now applied last, where nothing can discount it.
+
+**Free agents could be signed past playing age.** The retirement pass runs
+earlier in the season than free-agent signing does, so a player who became
+available at the top of the age curve had already had his roll and would age into
+the next season before another could reach him. Clubs now won't sign a free agent
+over 37 — a clear margin below the certain-retirement age, so the gap cannot
+reopen.
+
+Both were pre-existing and only surfaced because the balance changes shifted
+which players ended up where.
+
+### One test harness improvement
+
+`tests/decisions.js` always picked the *first* club in a division, which in the
+Premier League is one of the giants — so any card written for smaller clubs read
+as having an unsatisfiable trigger when it fired perfectly well in a real world.
+A scripted situation can now say what size of club it is about.
+
+---
+
+### Where the simulation sits now
+
+Every difficulty change was measured against `tests/realism.js` after it landed,
+and two of them had to be re-tuned when they pushed a metric out of tolerance —
+the notes above say which.
+
+| metric | before this pass | now | real |
+|---|---|---|---|
+| champion points | 83.2 | **84.2** | 88 |
+| bottom points | 18.7 | **25.2** | 26 |
+| title-race spread | 65 | **59** | 62 |
+| both teams scored | 45.0% | **45.0%** | 50% |
+| goals per game | 2.7 | **2.7** | 2.75 |
+
+All nine metrics within tolerance. `audit.js` clean over 12 seasons,
+`decisions.js` 69/69 cards, `run_world.js` clean across six seeds, plus a
+scripted seven-season browser run at 390×844 with no console or page errors.
+
+A season costs 780ms for a full 221-club world — 6.5% more than v0.9.0 for ten
+new mechanics, and still faster than the 818ms this build started from.
+
+### What to watch during playtesting
+
+Two numbers tell you whether the compounding is really fixed: **your manager
+reputation by season**, and **how often a card asks you to give something up
+permanently.** If reputation is still climbing six a year past 85, or you can
+still get through a career without a card ever costing you, something above is
+not biting.
+
+One thing I did not touch and you should look at: **the lower divisions issue
+102 points deductions over six seasons** (780 points) for financial breaches,
+all outside the Premier League. That is pre-existing calibration, not something
+this pass introduced, and it may be distorting promotion and relegation below the
+top flight.
+
+---
+
 ## v0.9.0 · beta
 
 First build tagged as beta. Everything the game is meant to do in this release
