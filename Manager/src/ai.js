@@ -112,6 +112,102 @@
     return POSTURES.steady;
   }
 
+  /* ======================= DELIBERATION ====================================
+   * Three things a club now works out for itself before and during the market,
+   * in place of reading a rating off a player and calling it judgement.
+   *
+   *   THE SHAPE IT PLAYS.  A 4-3-3 manager starts three central midfielders
+   *   and a 4-4-2 manager starts two. Squad need was measured against one
+   *   fixed table of "how many of each position a squad should carry", so
+   *   every club in the world wanted the same squad regardless of how it set
+   *   up. Now the formation decides, which is why two clubs of identical
+   *   strength now shop differently.
+   *
+   *   WHAT A SIGNING ACTUALLY ADDS.  See marginalValue. This is the real
+   *   change: the AI used to score a target on his rating against the current
+   *   starters' average, which says a fourth good centre half is nearly as
+   *   valuable as a first one. He is worth nothing. A player is worth what he
+   *   adds to the eleven that actually takes the field.
+   *
+   *   WHAT IT FAILED TO FIX LAST TIME.  A club that has gone two summers
+   *   without solving the same position stops shopping the same way for it.
+   * ====================================================================== */
+
+  /** How many of each position this club's formation actually starts. */
+  function slotCounts(club) {
+    const F = MG.tactics && MG.tactics.FORMATIONS;
+    const shape = F && F[club.formation || "4-4-2"];
+    const counts = {};
+    if (!shape) return counts;
+    for (const pos of shape.slots) counts[pos] = (counts[pos] || 0) + 1;
+    return counts;
+  }
+
+  /** The mean rating of the best `n` players a club has at `pos`, optionally
+   *  with one extra body thrown in. This is the starting line at that
+   *  position, which is the only thing a signing can improve. */
+  function lineStrength(club, pos, n, extra) {
+    const vals = [];
+    for (const p of club.squad) if (p.pos === pos && !p.loan) vals.push(p.overall);
+    if (extra) vals.push(extra.overall);
+    if (!vals.length) return 30;
+    vals.sort((a, b) => b - a);
+    let total = 0;
+    for (let i = 0; i < n; i++) total += vals[i] != null ? vals[i] : 30;
+    return total / n;
+  }
+
+  /* What this player is worth to THIS club, in rating points added to the side
+   * it actually fields. Zero for a good player at a position the club is
+   * already strong and deep in, which is the judgement the old heuristic could
+   * not make — and the reason AI squads used to accumulate five centre halves
+   * and no winger. Scaled by how much the position feeds the three unit
+   * ratings the match engine reads, so a centre half and a forward are
+   * compared on the same axis. */
+  const KEEPER_WEIGHT = 1.15;
+  function marginalValue(club, player) {
+    const def = MG.players.POSITIONS[player.pos];
+    if (!def) return 0;
+    const starts = Math.max(1, slotCounts(club)[player.pos] || def.starters);
+    const gain = lineStrength(club, player.pos, starts, player) - lineStrength(club, player.pos, starts);
+    if (gain <= 0) return 0;
+    const w = player.pos === "GK"
+      ? KEEPER_WEIGHT
+      : def.unit.attack + def.unit.midfield + def.unit.defence;
+    return gain * w;
+  }
+
+  /* A position whose starters are ageing with nobody coming through is a
+   * problem NEXT summer, and a club that only ever reacts to the hole once it
+   * opens is a club whose squad falls off a cliff every few seasons. Real
+   * recruitment is mostly succession. */
+  function successionRisk(club, pos) {
+    const starters = [];
+    let heir = false;
+    for (const p of club.squad) {
+      if (p.pos !== pos || p.loan) continue;
+      starters.push(p);
+      if (p.age <= 23) heir = true;
+    }
+    if (!starters.length) return 0;
+    starters.sort((a, b) => b.overall - a.overall);
+    const def = MG.players.POSITIONS[pos];
+    const n = Math.max(1, slotCounts(club)[pos] || def.starters);
+    const top = starters.slice(0, n);
+    const meanAge = top.reduce((t, p) => t + p.age, 0) / top.length;
+    if (meanAge < 29) return 0;
+    // Worst case: a whole ageing line with no successor anywhere behind it.
+    return clamp((meanAge - 29) * 0.5, 0, 1.6) * (heir ? 0.4 : 1);
+  }
+
+  /** Positions this club has now failed to fix in consecutive summers. */
+  function repeatedFailures(club) {
+    const log = club.planLog || [];
+    const counts = {};
+    for (const entry of log) for (const pos of entry.unmet || []) counts[pos] = (counts[pos] || 0) + 1;
+    return counts;
+  }
+
   /** Cycle 1. Returns the plan, and stores it on the club. */
   function planSummer(world, club, opts) {
     const posture = readPosture(world, club);
@@ -127,8 +223,24 @@
      * STARTING position, a rebuilding one cares about bodies and youth, and a
      * firefighting one is barely shopping at all. */
     const level = club.level != null ? club.level : 55;
+    const slots = slotCounts(club);
+    const failures = repeatedFailures(club);
     const ranked = needs.map((n) => {
       let weight = n.urgency;
+      /* THE SHAPE THE MANAGER ACTUALLY PLAYS. A position his formation does
+       * not start is worth covering and no more; one it starts three of is
+       * where a thin squad hurts every week. Without this every club in the
+       * world wanted the same squad whatever it set up as. */
+      const starts = slots[n.pos] || 0;
+      weight *= 0.55 + starts * 0.35;
+      // Succession: an ageing line with nobody behind it is next year's hole.
+      weight += successionRisk(club, n.pos);
+      /* And the position it has already failed to fix. A club that went into
+       * last season short at centre half and did nothing about it again is not
+       * being unlucky, it is being outbid — so it stops treating the problem
+       * as ordinary and starts treating it as the summer's business. */
+      const missed = failures[n.pos] || 0;
+      if (missed) weight += missed * 0.8;
       if (posture.key === "push") weight += Math.max(0, level - n.currentQuality) * 0.10;
       if (posture.key === "rebuild" || posture.key === "consolidate") weight += n.short * 0.6;
       if (posture.key === "firefight") weight -= 0.5;
@@ -138,15 +250,28 @@
       if (rivalPush && o.playerQuality && o.playerQuality[n.pos] != null) {
         weight += Math.max(0, o.playerQuality[n.pos] - n.currentQuality) * 0.13 * rivalPush;
       }
-      return { pos: n.pos, short: n.short, currentQuality: n.currentQuality, weight };
+      return { pos: n.pos, short: n.short, currentQuality: n.currentQuality, weight,
+        age: successionRisk(club, n.pos), missed };
     }).sort((a, b) => b.weight - a.weight);
 
-    const priorities = ranked.filter((n) => n.short > 0 || n.currentQuality < level - 2).slice(0, 3);
+    /* A position now earns a place on the list for being an ageing line with
+     * no successor, or for having beaten the club two summers running — not
+     * only for being thin or weak today. Those are the two reasons a real
+     * recruitment department goes into a market it does not strictly need to
+     * be in, and they are what stop a squad quietly ageing into a collapse. */
+    const priorities = ranked
+      .filter((n) => n.short > 0 || n.currentQuality < level - 2 || n.age > 0.5 || n.missed > 0)
+      .slice(0, 3);
 
     const manager = world.managerById(club.managerId);
     const policy = MG.managers.recruitmentPolicy(manager);
     // A rival in the hunt finds one more signing and a little more money.
     const wanted = clamp(Math.round(2 + policy.churn + posture.signings + (rivalPush >= 0.5 ? 1 : 0)), 0, 7);
+    /* Escalation. Failing at the same position twice buys the club a bigger
+     * chequebook and a lower bar for it, because the alternative — shopping
+     * exactly the same way a third time — is how a club stays broken for a
+     * decade. Capped so it is a change of gear, not a blank cheque. */
+    const stuck = Math.min(2, Math.max(0, ...priorities.map((p) => p.missed || 0)));
 
     const plan = {
       season: world.season,
@@ -156,13 +281,14 @@
       priorities: priorities.map((p) => p.pos),
       priorityDetail: priorities,
       wanted,
-      spend: posture.spend * (1 + rivalPush * 0.18),
+      spend: posture.spend * (1 + rivalPush * 0.18) * (1 + stuck * 0.14),
+      stuck,
       // Non-null when this club is treating the managed side as a direct rival;
       // read by the scouting screen so the manager can see it coming.
       rivalGap,
       sell: posture.sell,
       ageBias: posture.ageBias,
-      patience: posture.patience,
+      patience: posture.patience + stuck * 1.5,
       // Filled in by cycle 3.
       signed: [], unmet: [], fallbacks: [],
     };
@@ -320,14 +446,36 @@
        * is genuinely short there — missing bodies, or a hole deep enough to
        * cost real points. Anything less than that is an imperfect squad, which
        * is the normal condition of every football club and not an emergency. */
+      /* SHORT OF THE SHAPE IT PLAYS, not short of a generic 26-man table.
+       * `clubNeeds().short` counts bodies against a fixed per-position quota
+       * that adds up to more players than any squad actually carries, so most
+       * clubs read as short SOMEWHERE permanently — which made "unmet" true
+       * about 60% of the time and left 91% of the world carrying a supposedly
+       * unsolved position. A signal that fires almost always is not a signal,
+       * and the escalation reading it would have been a permanent across-the-
+       * board handout rather than an adaptation. Measured against the eleven
+       * the manager actually picks, it means something again. */
+      const slots = slotCounts(club);
       const signedPos = new Set(plan.signed.map((s) => s.pos));
       const unmet = plan.priorities.filter((pos) => {
         if (signedPos.has(pos)) return false;                 // cycle 2 delivered
         const n = byPos[pos];
         if (!n) return false;
-        return n.short > 0 || n.currentQuality < level - 10;
+        const want = slots[pos] || 0;
+        let have = 0;
+        for (const p of club.squad) if (p.pos === pos && !p.loan) have++;
+        return (want > 0 && have < want) || n.currentQuality < level - 10;
       });
       plan.unmet = unmet.slice();
+      /* THE CLUB'S MEMORY. Cycle 3 has always worked out what this summer
+       * failed to fix; nothing ever carried that into the next one, so a club
+       * could go a decade shopping for the same centre half in exactly the
+       * same way and never once change its approach. Three summers is enough
+       * to tell a run of bad luck from a problem the club is not equipped to
+       * solve — planSummer reads it back as escalation. */
+      if (!club.planLog) club.planLog = [];
+      club.planLog.push({ season: world.season, posture: plan.posture, unmet: unmet.slice() });
+      if (club.planLog.length > 3) club.planLog.shift();
       if (!unmet.length) continue;
 
       // At most two rescues a summer. A club that needs more than that has a
@@ -361,7 +509,14 @@
          * level a club will now look, but the floor stays close enough that
          * the man who comes in is a squad player rather than a passenger. */
         const bar = level - clamp(plan.patience, 4, 9);
-        const idx = pool.findIndex((p) => p.pos === pos && p.overall >= bar && p.overall <= need.currentQuality + 10);
+        /* Capped against the club's own level as well as the position's, for
+         * the same reason transfers.js's free-agent pass is: `currentQuality`
+         * is measured off the players a club already has, so one good player
+         * at a small club raised its ceiling for the next one and the squad
+         * ratcheted upward a signing at a time. This is the third and last
+         * door into a squad that was missing that check. */
+        const reach = Math.min(need.currentQuality + 10, level + 8);
+        const idx = pool.findIndex((p) => p.pos === pos && p.overall >= bar && p.overall <= reach);
         if (idx === -1) continue;
         const p = pool.splice(idx, 1)[0];
         // The parent array is what signFreeAgents reads next, so he has to
@@ -385,6 +540,6 @@
   MG.ai = {
     POSTURES, readPosture, planSummer, planWorld,
     targetBias, sellAppetite, spendAppetite, signingTarget, noteSigning,
-    reviewWindow,
+    reviewWindow, marginalValue, slotCounts, successionRisk,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

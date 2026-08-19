@@ -302,13 +302,26 @@
    * originally keyed by the four Premier League prestige bands from
    * src/data.js (Elite/Europe/Mid/Lower), which no club object ever carries,
    * so every wage in the world fell through to the default and Manchester City
-   * ran a £9m wage bill on £570m of revenue. */
+   * ran a £9m wage bill on £570m of revenue.
+   *
+   * The first-tier factors were cut ~17% (PL 3.0 → 2.5, and the four other top
+   * divisions with it) because a full squad priced at the going rate for every
+   * player came out at about 76% of its club's revenue, against a real figure
+   * of 55-65%. These are WEEKLY wages and they are weekly-scaled: Haaland
+   * lands on £524k a week against a real £525k, Salah on £403k against £350k.
+   * The English lower divisions were already close and are untouched — their
+   * half of the problem was revenue, not wages (see clubs.js). */
   const LEAGUE_WAGE_FACTOR = {
-    PL: 3.0,
-    LaLiga: 2.0, SerieA: 1.7, Bundesliga: 1.8,
-    Saudi: 1.6, MLS: 0.7,
+    PL: 2.5,
+    LaLiga: 1.7, SerieA: 1.45, Bundesliga: 1.5,
+    Saudi: 1.4, MLS: 0.6,
     Championship: 1.6, League1: 0.8, League2: 0.5, NationalLeague: 0.35,
   };
+
+  /* Where the wage curve stops being exponential, and how steeply it climbs
+   * after it. See expectedWage. */
+  const WAGE_KNEE = 84;
+  const WAGE_KNEE_SLOPE = 0.55;
 
   function ageValueFactor(age) {
     if (age <= 20) return 1.30;
@@ -344,7 +357,29 @@
      * what a wage budget is spent on. A shallower curve had entire Premier
      * League squads costing £30m a year against £550m of revenue, which made
      * the board's financial metric impossible to fail. */
-    const base = 1.9 * Math.exp((player.overall - 50) / 8.4);
+    /* THE CURVE HAS TO BEND AT THE TOP, because an exponential does not stop
+     * and a wage bill does. Left running it had drifted a long way from the
+     * calibration described above: a 90-rated player was asking £674k a week
+     * against the £350k this comment specifies, and a 96-rated one £1.4m —
+     * roughly three times the largest wage in the real game.
+     *
+     * Two things broke because of it. A club could not re-sign its own best
+     * player, because his number exceeded the share of the wage budget any
+     * board will commit to one man: Haaland walked out of Manchester City and
+     * Alisson out of Liverpool on free transfers, neither club having
+     * declined. And once the renewal logic was fixed so that clubs DID keep
+     * them, the elite ran straight into insolvency instead — City carrying
+     * £521m of wages against £535m of revenue, a ratio of 97% against a real
+     * one nearer 58%.
+     *
+     * The knee restores the documented calibration exactly (90 → £350k, 96 →
+     * £528k) and leaves everything below 78 — the great majority of the
+     * population, and all of the lower divisions the board's finance metric
+     * was tuned against — completely untouched. */
+    const eff = player.overall <= WAGE_KNEE
+      ? player.overall
+      : WAGE_KNEE + (player.overall - WAGE_KNEE) * WAGE_KNEE_SLOPE;
+    const base = 1.9 * Math.exp((eff - 50) / 8.4);
     const ageAdj = player.age <= 21 ? 0.55 : player.age <= 24 ? 0.85 : player.age >= 33 ? 0.9 : 1;
     // The floor is a part-time National League wage, not a professional one —
     // at 0.5 it was higher than the entire division could afford.
@@ -517,6 +552,32 @@
     heading:   [1.090, -14.5], fitness: [0.914,  8.1], strength: [0.901,  2.0],
     leftFoot:  [0.394,  31.9], rightFoot: [0.683, 23.1], speed: [0.864, 9.1],
   };
+  /* WHAT THE SIX ATTRIBUTES AVERAGE TO, BY POSITION, at a given overall.
+   *
+   * The six stats the game carries — heading, fitness, strength, both feet,
+   * speed — do not describe every position equally. Nothing in them covers
+   * shot-stopping, so a goalkeeper's mean sits far below his rating; nothing
+   * covers positional reading, so a centre half's does too. A winger, whose
+   * game IS pace and feet, reads almost exactly at his rating.
+   *
+   * Fitted per position across the 6,700 players in the shared database, and
+   * the spread is not small: at a rating of 94 a keeper's six attributes
+   * average 16 below him, a centre half 12, and a winger 5. Read against one
+   * global line — which is what the QA panel did — every keeper and centre
+   * half in the world looked broken and every attacker looked clean, so the
+   * readout could not do the one job it exists for. Against his own
+   * position's line the number means what it should: how far this player is
+   * from what his position normally looks like at his level. */
+  const POSITION_ATTR_MEAN = {
+    GK: [0.610, 20.8], CB: [0.658, 19.7], FB: [0.877,  4.9], DM: [0.749, 15.8],
+    CM: [0.920,  3.4], WG: [0.971, -2.8], FW: [0.920,  1.7], AM: [0.919,  1.4],
+  };
+  /** The mean of the six attributes a typical `pos` rated `ovr` carries. */
+  function expectedAttrMean(pos, ovr) {
+    const m = POSITION_ATTR_MEAN[pos];
+    return m ? m[0] * ovr + m[1] : ovr;
+  }
+
   /** What the population says an attribute looks like at a given overall. */
   function houseTarget(k, ovr) { const h = HOUSE[k]; return h ? h[0] * ovr + h[1] : ovr; }
   const MAP = {
@@ -631,14 +692,40 @@
     return rng.pick(pool);
   }
 
-  /** A generated player of roughly `target` quality. */
+  /* ------------------------ TARGET IS A PEAK, NOT A NOW --------------------
+   * `target` is the quality this player reaches AT HIS PEAK, and a player who
+   * has not got there yet is generated below it with the room to grow into it.
+   *
+   * It used to be applied flat, whatever his age, which is where the world's
+   * runaway inflation came from: every squad-filler slot that happened to roll
+   * a teenager produced an eighteen-year-old already rated at his club's level
+   * — Real Madrid's depth chart manufacturing an 85-rated 18-year-old with a
+   * potential of 91 — who then spent eight seasons developing on top of that.
+   * Measured over twelve seasons, thirty-seven of the world's top fifty were
+   * generated players rated 93-96, against a real database whose best is 94.
+   * The knock-on was the transfer market: an inflated supply of world-class
+   * players is what let mid-table clubs shop at the top of it.
+   *
+   * The discount is per position, off the same AGE_CURVE the development model
+   * uses, so a winger (mature at 23) is generated much closer to his peak than
+   * a goalkeeper (27) of the same age — which is the real shape of it.
+   *
+   * `rawTarget` opts out for a caller whose target is already an age-specific
+   * rating rather than a peak: the youth academy sizes its intake as fifteen-
+   * to seventeen-year-olds directly (youth.js), and discounting that twice
+   * would produce prospects rated in the thirties. */
+  const YOUTH_SHORTFALL = 1.7;      // rating points a year short of maturity
+
+  /** A generated player who peaks at roughly `target` quality. */
   function generate(rng, opts) {
     const league = opts.league || "Championship";
     const pos = opts.pos || rng.pick(POSITION_KEYS);
     const nationality = opts.nationality || MG.names.nationForLeague(rng, league);
     const nationBonus = (MG.names.NATIONS[nationality] || {}).strength || 0;
     const age = opts.age != null ? opts.age : rng.int(18, 33);
-    const overall = clamp(Math.round((opts.target || 60) + rng.gauss() * (opts.spread || 4) + nationBonus), 30, 94);
+    const peak = clamp(Math.round((opts.target || 60) + rng.gauss() * (opts.spread || 4) + nationBonus), 30, 94);
+    const yearsShort = opts.rawTarget ? 0 : Math.max(0, ageCurve(pos).grow - age);
+    const overall = clamp(Math.round(peak - yearsShort * YOUTH_SHORTFALL), 30, 94);
 
     // Physical attributes track the position: centre-halves are tall and
     // strong, wingers are quick, goalkeepers are neither.
@@ -664,7 +751,14 @@
       contract: { years: rng.int(1, 4), wage: 0 },
       homegrown: !!opts.homegrown,
     });
-    p.potential = opts.potential != null ? opts.potential : rollPotential(rng, p.overall, p.age);
+    /* The other half of the discount: a player generated short of his peak has
+     * to be given the headroom to reach it, or the world simply gets worse
+     * every season instead of better. rollPotential still runs on top, so the
+     * occasional wonderkid clears his intended peak — that is where a
+     * generated world is supposed to get its new stars from, rather than from
+     * every teenager arriving finished. */
+    p.potential = opts.potential != null ? opts.potential
+      : clamp(Math.max(yearsShort ? peak : 0, rollPotential(rng, p.overall, p.age)), p.overall, 96);
     p.contract.wage = expectedWage(p, league);
     p.value = marketValue(p);
     return p;
@@ -748,7 +842,7 @@
 
   MG.players = {
     POSITIONS, POSITION_KEYS, SQUAD_TARGET,
-    firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta, applyDevelopment, houseTarget,
+    firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta, applyDevelopment, houseTarget, expectedAttrMean,
     AGE_CURVE, ageCurve, MENTALITY_TRAITS, rollMentalityRating, rollMentalityTrait,
     marketValue, expectedWage, ageValueFactor, LEAGUE_WAGE_FACTOR,
     makePlayer, fromDatabase, fromForeign, generate, resetIds, setNextId, rollInjury, availability, durability, recordMove,

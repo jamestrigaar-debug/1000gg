@@ -44,18 +44,41 @@
    *
    * Money is in £m per season. `tv` is the flat distribution, `merit` the extra
    * paid out on a sliding scale by finishing position. matchdayMax/commercialMax
-   * are what a club with a reputation of 100 in that division would earn. */
+   * are what a club with a reputation of 100 in that division would earn.
+   *
+   * The Premier League's commercialMax carries a deliberate lift (300 → 330).
+   * It is raised to the power of the club's reputation, so essentially all of
+   * it lands on the giants and none of it on the bottom half — which is where
+   * the shortfall was. Their squads are the only ones in the world made
+   * entirely of very expensive players, and with wages fixed the top of the
+   * division was running at 90%+ of revenue against a real figure nearer 58%
+   * and going quietly insolvent every season.
+   *
+   * EVERY DIVISION BELOW IT WAS UNDERSTATED, and badly — which is what put a
+   * negative wage room on nearly every club in the game, the single most
+   * visible thing wrong with the build. A Championship club was earning £16m
+   * against a real £30-40m while paying a wage bill of £25m, so the board's
+   * sanctioned budget came out BELOW the cost of the squad the club already
+   * owned. Reported from a save as "every team has a massive negative wage",
+   * and it read worst exactly where a new manager starts, because that is the
+   * part of the pyramid that was furthest out.
+   *
+   * Championship, League One, League Two, the National League, MLS and the
+   * Saudi league are all raised to something like their real income. Clubs
+   * over their wage budget fell from 69% of the world to 9-18% — a minority,
+   * which is correct: an over-committed club is a real thing and it is what
+   * makes selling pressure mean anything. */
   const LEAGUES = {
     PL:             { name: "Premier League",  country: "England", tier: 1, prestige: 1.00, relegatesTo: "Championship", down: 3,
-                      tv: 90,  merit: 45,  matchdayMax: 120, commercialMax: 300, repBase: 62 },
+                      tv: 90,  merit: 45,  matchdayMax: 120, commercialMax: 330, repBase: 62 },
     Championship:   { name: "Championship",    country: "England", tier: 2, prestige: 0.62, promotesTo: "PL", relegatesTo: "League1", up: 3, down: 3,
-                      tv: 10,  merit: 4,   matchdayMax: 25,  commercialMax: 30,  repBase: 32 },
+                      tv: 22,  merit: 8,   matchdayMax: 40,  commercialMax: 45,  repBase: 32 },
     League1:        { name: "League One",      country: "England", tier: 3, prestige: 0.40, promotesTo: "Championship", relegatesTo: "League2", up: 3, down: 3,
-                      tv: 2.5, merit: 1,   matchdayMax: 7,   commercialMax: 6,   repBase: 20 },
+                      tv: 5,   merit: 2,   matchdayMax: 12,  commercialMax: 10,  repBase: 20 },
     League2:        { name: "League Two",      country: "England", tier: 4, prestige: 0.28, promotesTo: "League1", relegatesTo: "NationalLeague", up: 3, down: 2,
-                      tv: 1.6, merit: 0.6, matchdayMax: 4,   commercialMax: 3,   repBase: 13 },
+                      tv: 3,   merit: 1.2, matchdayMax: 7,   commercialMax: 5,   repBase: 13 },
     NationalLeague: { name: "National League", country: "England", tier: 5, prestige: 0.18, promotesTo: "League2", up: 2,
-                      tv: 0.8, merit: 0.3, matchdayMax: 2.5, commercialMax: 1.5, repBase: 7 },
+                      tv: 1.4, merit: 0.5, matchdayMax: 4,   commercialMax: 2.5, repBase: 7 },
     LaLiga:         { name: "La Liga",         country: "Spain",   tier: 1, prestige: 0.92,
                       tv: 40,  merit: 25,  matchdayMax: 70,  commercialMax: 260, repBase: 55 },
     SerieA:         { name: "Serie A",         country: "Italy",   tier: 1, prestige: 0.88,
@@ -63,9 +86,9 @@
     Bundesliga:     { name: "Bundesliga",      country: "Germany", tier: 1, prestige: 0.88,
                       tv: 38,  merit: 20,  matchdayMax: 60,  commercialMax: 200, repBase: 52 },
     Saudi:          { name: "Saudi Pro League",country: "Saudi Arabia", tier: 1, prestige: 0.55,
-                      tv: 8,   merit: 4,   matchdayMax: 12,  commercialMax: 60,  repBase: 30 },
+                      tv: 18,  merit: 8,   matchdayMax: 18,  commercialMax: 75,  repBase: 30 },
     MLS:            { name: "MLS",             country: "USA",     tier: 1, prestige: 0.50,
-                      tv: 9,   merit: 3,   matchdayMax: 25,  commercialMax: 45,  repBase: 26 },
+                      tv: 22,  merit: 7,   matchdayMax: 35,  commercialMax: 55,  repBase: 26 },
   };
   const LEAGUE_KEYS = Object.keys(LEAGUES);
   /** The four prestige bands src/data.js uses for Premier League clubs. */
@@ -367,7 +390,22 @@
     const style = BOARD_STYLES[club.board.style];
     const owner = OWNER_TYPES[club.owner] || OWNER_TYPES.normal;
     const f = club.finances;
-    const projected = computeRevenue(club, club.lastPosition, 20, 0);
+    /* LAST SEASON'S POSITION ONLY COUNTS IF IT WAS IN THIS DIVISION. It was
+     * being fed in regardless, so a promoted club was budgeted as though it
+     * had finished second in the league it has just come UP into: Bristol
+     * City, £19m of actual revenue, handed a £98m wage budget and the largest
+     * wage room in the Premier League — which is precisely the kind of club
+     * that was then turning up in the market for players it had no business
+     * near. A side that has just changed division is projected from the
+     * lower third of its new one, which is where promoted clubs finish.
+     * settleFinances already guards its own use of lastPosition the same way
+     * (see the momentum term below); this was the one place that did not.
+     *
+     * A club with no history at all (season one) still projects from the
+     * neutral mid-table share computeRevenue applies to a null position —
+     * only a club that demonstrably changed division is stepped down. */
+    const changedDivision = club.lastLeagueId != null && club.lastLeagueId !== club.leagueId;
+    const projected = computeRevenue(club, changedDivision ? 15 : club.lastPosition, 20, 0);
     const backing = style.backing * (club.board.wealth / 100);
 
     /* A backed owner's first act every summer is covering part of last
@@ -386,11 +424,19 @@
 
     // Wage budget: a share of projected revenue, wider for a board that is
     // happy to gamble, tighter for one watching the pennies.
-    // Kept below (1 - OPERATING_COST_SHARE) so that a club spending to its
-    // full wage budget still breaks even. It used to top out at 0.82, which
-    // with running costs meant almost every club in the world lost money every
-    // season and 176 of 221 ended up in the red.
-    const wageShare = clamp(0.54 + backing * 0.18 - (club.board.style === "Patient" ? 0.05 : 0), 0.44, 0.74);
+    /* Raised from a 0.54 base. The old band sanctioned around 58% of revenue
+     * while a normal squad cost 76% of it, so the board was, by construction,
+     * refusing to fund the team it already had — no club could ever show a
+     * positive wage room, and every screen that prints one showed a loss.
+     * A board now backs a squad it can field, and only a genuinely
+     * over-committed club runs past the number.
+     *
+     * It is no longer kept below (1 - OPERATING_COST_SHARE): a club spending
+     * to the very top of its budget is now MEANT to lose money, which is what
+     * makes the budget a ceiling worth respecting rather than a target. The
+     * wage curve was cut by about 17% at the same time (players.js), so the
+     * two moved toward each other rather than the budget chasing the bill. */
+    const wageShare = clamp(0.68 + backing * 0.18 - (club.board.style === "Patient" ? 0.05 : 0), 0.58, 0.88);
     // Exactly 1.0 for a normal owner — unchanged from the original calibration
     // — and only lifted for a backed one, so introducing ownership does not
     // quietly shift the wage economics for the 200-odd clubs it does not apply to.
@@ -490,7 +536,7 @@
    * stadium, the training ground, the people who run the place. Without it a
    * big club's balance compounds into the billions over a long save, because
    * playing wages alone never come close to consuming the revenue. */
-  const OPERATING_COST_SHARE = 0.24;
+  const OPERATING_COST_SHARE = 0.30;
   /* And it is PROGRESSIVE. A flat 24% of revenue was enough to stop a balance
    * compounding into the billions but not enough to stop it compounding: across
    * twelve simulated seasons the median Premier League balance still tripled,
@@ -502,9 +548,17 @@
    * The curve is not arbitrary: a bigger club really does run a bigger
    * non-playing operation — more staff, a bigger stadium, an academy at every
    * age group, a global commercial arm — and those costs scale with the revenue
-   * that pays for them. At the top of the Premier League this reaches 34%; in
-   * the National League it is indistinguishable from the flat rate. */
-  const OPERATING_COST_MAX_EXTRA = 0.08;
+   * that pays for them. At the top of the Premier League this reaches 38%; in
+   * the National League it is indistinguishable from the flat rate.
+   *
+   * Raised from 0.08 alongside the wage-curve knee in players.js. That knee
+   * cut what the best squads in the world cost, and money a club no longer
+   * spends on wages does not vanish — it piles up on the balance sheet, and
+   * transfer budgets are set from the balance. The extra running cost is where
+   * that saving goes instead, which keeps the constraint the difficulty pass
+   * put there. The clamp binds above about £240m of revenue, so it is the top
+   * of the game paying it, exactly as intended. */
+  const OPERATING_COST_MAX_EXTRA = 0.14;
   function operatingShare(revenue) {
     return OPERATING_COST_SHARE + Math.min(OPERATING_COST_MAX_EXTRA, Math.max(0, revenue) / 3000);
   }

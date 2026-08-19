@@ -26,6 +26,24 @@
   const { clamp, round1 } = MG.util;
 
   const MIN_SQUAD = 18;
+  /* How far above its own playing level a club will look in the market. See
+   * nominate() — this is the ceiling a marquee signing sits at. */
+  const STATURE_REACH = 5;
+  /* The same idea on a free transfer, where there is no fee to price him out
+   * — wider, because a free is genuinely how a mid-sized club lands a name. */
+  const FREE_STATURE_REACH = 8;
+  /* The share of its existing wage bill a club can always find room for in a
+   * window, however far over its notional budget it already is. See runWindow. */
+  const REPLACEMENT_WAGE_SHARE = 0.10;
+  /* What spending a club's ENTIRE transfer budget on one player costs it in
+   * target score. See nominate. */
+  const FEE_WEIGHT = 30;
+  /* The share of a fee a selling club can spend again inside the same window.
+   * The rest the board keeps. See completeDeal. */
+  const SALE_REINVEST = 0.7;
+  /* How far above its own squad average a club expects its best player to be.
+   * The reference point for "is this club big enough for me" at renewal. */
+  const STAR_MARGIN = 8;
 
   /* ------------------------ AGEING AND DEVELOPMENT ------------------------ */
   function developSquads(world) {
@@ -155,9 +173,25 @@
     const level = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
     const temper = temperamentOf(player);
     let accept = 0.60;
-    // Is this club worthy of him? The dominant term, and the one that keeps
-    // the best players at the best clubs.
-    const standing = (level - player.overall) / 22;
+    /* Is this club worthy of him? The dominant term, and the one that keeps
+     * the best players at the best clubs.
+     *
+     * Measured against what a club of this size would EXPECT its best player
+     * to be, not against the mean of its whole squad. `level` is a squad
+     * average, so every star in the world sits several points above his own
+     * club's level by definition — which is what being a star means. Read
+     * raw it said the opposite: Lamine Yamal at 93 against Barcelona's 84
+     * scored as a man badly let down by his surroundings and refused to
+     * re-sign, and so did Kimmich at Bayern, Guirassy and Schlotterbeck at
+     * Dortmund, and Donnarumma at City. Fifty-nine of the hundred-and-
+     * fourteen players rated 84+ who reached free agency over eight seasons
+     * left because the model had them turning down clubs they had no reason
+     * on earth to leave.
+     *
+     * STAR_MARGIN is that expectation. Above it — a world-class player at a
+     * mid-sized club — and the pull to leave is real and does the job it was
+     * always meant to do. */
+    const standing = (level + STAR_MARGIN - player.overall) / 22;
     accept += temper === "ambitious" ? standing * 1.6 : standing * 0.8;
     // Is he playing?
     accept += (clamp(player.season ? (player.season.minutesShare || 0) : 0, 0, 1) - 0.45) * 0.55;
@@ -310,10 +344,31 @@
          * club's call alone, which is why a title-winning side could lose a
          * key player to a mid-table one on a coin flip — nothing in the model
          * preferred a good club to a bad one. */
+        /* WHERE HE STANDS AT HIS OWN CLUB, and the single worst bug in the
+         * transfer model until now. `affordable` is a club-wide gate — the
+         * wage bill against the wage budget — and an elite squad structurally
+         * sits over its budget: Manchester City £360m of wages against £294m,
+         * Liverpool £382m against £248m. So it read false at every big club,
+         * every season, and the biggest clubs in the world renewed NOBODY.
+         * Everything good walked out of contract for nothing.
+         *
+         * Measured over eight seasons that was 152 moves by players rated 84+
+         * on free transfers against THREE completed paid deals — the entire
+         * elite market was a free-agent lottery, which is what scattered
+         * world-class players into clubs that could never have bought them.
+         *
+         * A club does not let a player better than its own playing level walk
+         * for nothing. It re-signs him unless it is in real financial trouble
+         * (canExtend, which is crisis-only), and he can still price himself
+         * out through his agent or simply decide to go — both checked below.
+         * The squeeze stays where it belongs: on the squad players. */
+        const level = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
+        const standing = p.overall - level;
         let clubWants;
         if (req === "release") clubWants = false;
         else if (req === "extend") clubWants = canExtend();
-        else clubWants = wanted && affordable && rng.chance(0.8);
+        else if (standing >= -2) clubWants = canExtend();
+        else clubWants = wanted && affordable && rng.chance(clamp(0.62 + standing * 0.05, 0.3, 0.9));
         const wage = clubWants ? renewalWage(world, club, p, rng) : 0;
         // Even a wanted player can price himself out of a club that cannot
         // carry his agent's number. This is what moves a good player up the
@@ -493,10 +548,28 @@
   function targetScore(player, buyer, policy, need) {
     if (player.age < policy.minAge || player.age > policy.maxAge) return -1;
     const league = MG.clubs.LEAGUES[buyer.leagueId];
-    // No point signing someone worse than what is already in the building.
+    /* WHAT HE ACTUALLY ADDS TO THE SIDE, not what he is rated.
+     *
+     * This used to be `(player.overall - the position's current starters) * 3`,
+     * which cannot tell a first-choice signing from a fourth-choice one: a club
+     * with three excellent centre halves scored a fourth excellent centre half
+     * almost as highly as the club that had none. That is most of what made AI
+     * squads read as assembled rather than built — five players deep in one
+     * position and nothing at all in another, because nothing in the model
+     * ever asked what the team would look like afterwards.
+     *
+     * ai.marginalValue answers that properly: it rebuilds the position's
+     * starting line with the player in it, takes the improvement, and weights
+     * it by how much that position feeds the ratings the match engine reads
+     * AND by how many of them the manager's own formation puts on the pitch.
+     * A fourth centre half scores zero. A first-choice winger for a club that
+     * plays two of them scores a lot. It costs a pass over the squad per
+     * candidate, which is the sort of thing worth paying for. */
     const bar = need.currentQuality;
-    let score = (player.overall - bar) * 3;
-    if (score < -12) return -1;
+    let score = MG.ai
+      ? MG.ai.marginalValue(buyer, player) * 4.5 + (player.overall - bar) * 0.7
+      : (player.overall - bar) * 3;
+    if (player.overall < bar - 4 && score <= 0) return -1;
     const headroom = player.potential - player.overall;
     score += headroom * 2.2 * policy.potentialBias;
     if (player.age <= 23) score += 6 * policy.potentialBias;
@@ -608,7 +681,48 @@
     const yearsLeft = (player.contract && player.contract.years != null) ? player.contract.years : 2;
     if (yearsLeft <= 1) accept += 0.16;
     else if (yearsLeft >= 4) accept -= 0.14;
-    return rng.chance(clamp(accept, 0.03, 0.94));
+
+    /* ---- IS THIS CLUB BIG ENOUGH FOR HIM ----
+     * Everything above compares the two CLUBS, and nothing compared the club
+     * to the PLAYER. So a world-class forward weighed Brentford against Inter
+     * and — because the Premier League outranks Serie A, and because he was
+     * not quite a guaranteed starter at Inter — said yes. He was never asked
+     * the only question that actually decides it, which is whether the club
+     * coming for him is anywhere near his level.
+     *
+     * The gap between what he is and what the buying club plays at is the
+     * strongest single term in the function, and deliberately so: five points
+     * clear of a club is a marquee signing, ten is a puzzling one, and fifteen
+     * does not happen. The other direction is worth much less — a good club
+     * coming for a squad player is flattering, but he still has to get in the
+     * side, which the fringe/starter terms above already price. */
+    const buyerLevel = buyer.level != null ? buyer.level : MG.clubs.playerLevelFor(buyer);
+    const above = player.overall - buyerLevel;
+    const temper = temperamentOf(player);
+    accept -= clamp(above, 0, 22) * (temper === "ambitious" ? 0.075 : 0.055);
+    if (above < 0) accept += clamp(-above, 0, 10) * 0.012;
+
+    /* ---- AND WHAT KIND OF MAN HE IS ----
+     * The mentality trait every player carries was reaching contract renewals
+     * and nothing else, so the same three temperaments that decide whether he
+     * re-signs had no say at all in whether he moves. They pull in the
+     * directions the labels imply: the ambitious ones (Leader, Winner, Big
+     * Game Player, Talisman) chase the step up and refuse the step down twice
+     * as hard, the settled ones (Professional, Steady, Dependable, Team
+     * Player) take some shifting once they are somewhere, and the volatile
+     * ones (Maverick, Mercurial, Temperamental) are simply less predictable
+     * than anybody's model of them — which is the whole point of them. */
+    if (temper === "ambitious") {
+      accept += step * 0.5;                             // on top of the base step term
+      accept += (buyer.reputation - seller.reputation) / 190;
+      if (step < -0.05) accept -= 0.16;
+    } else if (temper === "settled") {
+      accept -= 0.12;
+      if (yearsLeft >= 3) accept -= 0.08;               // settled, and under contract
+    } else {
+      accept += rng.between(-0.3, 0.3);
+    }
+    return rng.chance(clamp(accept, 0.02, 0.94));
   }
 
   /* --------------------------- MOVEMENT APPROVAL ---------------------------
@@ -747,7 +861,23 @@
           club.finances.transferBudget * policy.spend * spendBias,
           Math.max(0, club.finances.balance) + club.finances.revenue * 0.2
         ),
-        wageRoom: club.finances.wageBudget - MG.clubs.wageBill(club),
+        /* ROOM TO REPLACE, NOT ONLY ROOM TO EXPAND. Straight budget-minus-bill
+         * read negative at every big club in the world — an elite squad sits
+         * structurally over its notional wage budget — so `wage > wageRoom`
+         * vetoed every candidate they looked at and the clubs that should do
+         * the biggest business in the market did none at all. Measured over
+         * eight seasons, the paid market completed THREE transfers of players
+         * rated 84+; everything else at that level moved on a free.
+         *
+         * A club already carrying a large wage bill can always find room for
+         * one more of what it is already paying for — that is what selling
+         * and expiring contracts do for it across a summer. Floored as a share
+         * of the bill it actually carries, so it scales with the club and a
+         * poor one cannot conjure room it has never had. */
+        wageRoom: Math.max(
+          club.finances.wageBudget - MG.clubs.wageBill(club),
+          MG.clubs.wageBill(club) * REPLACEMENT_WAGE_SHARE
+        ),
         signings: 0,
         maxSignings: MG.ai
           ? clamp(MG.ai.signingTarget(club, Math.round(2 + policy.churn)), 1, 6)
@@ -772,6 +902,21 @@
       const reach = MG.network ? MG.network.reachLeagues(buyer) : null;
       const ownLeague = buyer.leagueId;
 
+      /* WHAT THIS CLUB CAN REALISTICALLY GO FOR, as a property of the club
+       * rather than of the hole in its squad. The only quality ceiling used to
+       * be "fourteen points better than the position's current starters",
+       * which sounds tight and is not: it is measured against a club's WEAKEST
+       * area, so any side with an unfilled position and money in the bank was
+       * cleared to bid for anybody. That is the Haaland-to-Brentford path
+       * exactly — a mid-table club, one thin position, a good summer's budget,
+       * and nothing in the model to say the player is simply out of its league.
+       *
+       * A marquee signing is a few points above a club's own standing, not
+       * twenty. STATURE_REACH is what a club can stretch to at the very top of
+       * its ambition; the position's own need can only ever pull that number
+       * DOWN, never up. */
+      const stature = (buyer.level != null ? buyer.level : MG.clubs.playerLevelFor(buyer)) + STATURE_REACH;
+
       for (const need of needs) {
         const pool = index[need.pos] || [];
         let evaluated = 0;
@@ -783,7 +928,7 @@
          * the first affordable-quality player skips that prefix outright. The
          * skipped entries hit `continue` before any RNG draw or side effect, so
          * starting further down is behaviourally identical. */
-        const ceiling = need.currentQuality + 14;
+        const ceiling = Math.min(need.currentQuality + 14, stature);
         let lo = 0, hi = pool.length;
         while (lo < hi) {
           const mid = (lo + hi) >> 1;
@@ -819,7 +964,24 @@
            * rates the 21-year-old its rival would not look at, and a club
            * pushing for a title rates the opposite. See ai.js's targetBias. */
           const bias = MG.ai ? MG.ai.targetBias(buyer, player) : 1;
-          const score = targetScore(player, buyer, policy, need) * (1 + (acumen - 50) / 250) * bias - fee * 0.35;
+          /* WHAT THE FEE COSTS HIM, measured against what this club has to
+           * spend rather than in raw millions. It used to be `fee * 0.35`
+           * against a score denominated in rating points — so anything over
+           * about £40m scored negative, and bestScore starts at zero, which
+           * meant no AI club anywhere ever nominated an expensive player. The
+           * elite paid market did not exist: measured across eight seasons,
+           * FOUR completed transfers of players rated 84+ against 81 moves at
+           * that level on free transfers. That is the whole reason the world's
+           * best players were circulating through odd clubs — the only route
+           * open to them was the one with the loosest checks on it.
+           *
+           * As a share of the budget it is scale-free and it says the right
+           * thing in both directions: spending everything you have on one man
+           * is a real cost to a giant and to a National League club alike, and
+           * a club that cannot afford him at all has already been filtered out
+           * by the budget test above. */
+          const feeCost = (fee / Math.max(st.budget, 1)) * FEE_WEIGHT;
+          const score = targetScore(player, buyer, policy, need) * (1 + (acumen - 50) / 250) * bias - feeCost;
           if (score > bestScore) { best = entry; bestScore = score; bestFee = fee; bestWage = wage; }
         }
         if (best) {
@@ -856,6 +1018,24 @@
       st.wageRoom -= wage * 52 / 1000;
       st.signings++;
       deals++;
+
+      /* SELLING TO BUY, which is how the top of the market actually funds
+       * itself and which the window had no representation of at all: a club's
+       * budget was fixed the moment the window opened and a £70m sale in round
+       * one bought it nothing in round two. The money went to the balance
+       * sheet, where next summer's board would eventually notice it.
+       *
+       * That absence is what left the elite paid market empty. A big club's
+       * budget runs to roughly £60-90m while a world-class player's asking
+       * price runs past £120m, so no single club could ever reach one on its
+       * own — and none of them could do what a real club does, which is sell
+       * one and reinvest. Not all of it: the board keeps a share of every fee,
+       * which is the difference between trading and churning. */
+      const sellerState = states.get(seller.id);
+      if (sellerState) {
+        sellerState.budget += fee * SALE_REINVEST;
+        sellerState.wageRoom += prevContract.wage * 52 / 1000;
+      }
       listedSet.delete(player.id);
       // Written down against the plan so cycle 3 can tell what the club
       // actually got against what it set out to get.
@@ -1128,6 +1308,20 @@
     for (const club of clubs) {
       const league = MG.clubs.LEAGUES[club.leagueId];
       const bar = 30 + league.prestige * 38;
+      /* THE SAME STATURE CEILING THE PAID MARKET USES, and the reason this
+       * pass needed one at all: with no fee to pay, the only limits here were
+       * a DIVISION-wide bar and the club's existing players in that position.
+       * Both are gameable, and the second one is self-reinforcing — a small
+       * club that has picked up one good player has raised its own ceiling for
+       * the next one. Measured, that is how an 88-rated centre half joined St.
+       * Pauli (playing level 60) and an 84-rated forward joined Columbus Crew,
+       * and it was the last route by which world-class players were still
+       * turning up in places they had no business being.
+       *
+       * The reach is wider than the paid market's, deliberately: a free
+       * transfer genuinely is how a mid-sized club lands a name it could never
+       * buy. Wider, not unlimited. */
+      const stature = (club.level != null ? club.level : MG.clubs.playerLevelFor(club)) + FREE_STATURE_REACH;
       const needs = clubNeeds(club);
       for (const need of needs) {
         if (club.squad.length >= MG.players.SQUAD_TARGET) break;
@@ -1145,8 +1339,9 @@
           continue;
         }
         // ...and not the man this club declined to renew an hour ago.
+        const reach = Math.min(need.currentQuality + 8, stature);
         const idx = pool.findIndex((p) => p.pos === need.pos && p.overall >= bar - 12
-          && p.overall <= need.currentQuality + 8 && !isRejoin(world, p, club));
+          && p.overall <= reach && !isRejoin(world, p, club));
         if (idx === -1) continue;
         const p = pool.splice(idx, 1)[0];
         p._leftClubId = null; p._leftSeason = null;
@@ -1186,9 +1381,32 @@
    * players.keeperRating has no such fallback — it returns a flat 45 when a
    * squad contains no keeper at all, which quietly guts the club's defensive
    * rating for a whole season with nothing anywhere to explain it. Two, so
-   * that losing one to injury or a sale does not recreate the hole. */
-  function minimumShape(pos) {
-    return pos === "GK" ? 2 : 0;
+   * that losing one to injury or a sale does not recreate the hole.
+   *
+   * AND NOW THE SHAPE THE CLUB ACTUALLY PLAYS. Goalkeepers-only was true as
+   * far as it went — autoPick really will cover an outfield gap — but it left
+   * this function, which is what determines the composition of every squad in
+   * the world, completely blind to the formation the manager has chosen. A
+   * club playing 4-3-3 was topped up to the same generic shape as one playing
+   * 4-4-2 and then trimmed by rating alone, so its third central midfielder
+   * was as likely to be cut as its fifth centre half. Every AI squad in the
+   * game read as a collection of players rather than a team, and the manager
+   * spent every season with somebody out of position.
+   *
+   * The floor is now the starting eleven the manager has picked plus a
+   * goalkeeper's worth of cover — never fewer than the two keepers, and never
+   * a position the shape does not use. */
+  function minimumShape(pos, club) {
+    if (pos === "GK") return 2;
+    if (!club || !MG.ai) return 0;
+    return MG.ai.slotCounts(club)[pos] || 0;
+  }
+
+  /** Starters plus one cover: what a healthy squad carries at each position.
+   *  The trim protects this before it starts cutting by rating. */
+  function coverShape(pos, club) {
+    const floor = minimumShape(pos, club);
+    return floor > 0 ? floor + 1 : 0;
   }
 
   /** Nobody fields nine players: fill genuine holes with generated journeymen. */
@@ -1210,7 +1428,7 @@
       const have = {};
       for (const p of club.squad) have[p.pos] = (have[p.pos] || 0) + 1;
       for (const pos of MG.players.POSITION_KEYS) {
-        const want = minimumShape(pos);
+        const want = minimumShape(pos, club);
         let n = have[pos] || 0;
         let g = 0;
         while (n < want && g++ < 4) {
@@ -1245,8 +1463,24 @@
        * entering were the ones this function makes. */
       const floor = MG.players.SQUAD_TARGET - 4;   // 22
       while (club.squad.length < floor && guard++ < 20) {
-        const { needs } = MG.players.squadNeeds(club.squad);
-        const pos = needs.length ? needs.sort((a, b) => b.urgency - a.urgency)[0].pos : rng.pick(MG.players.POSITION_KEYS);
+        /* Where the body goes. The generic squadNeeds table decides only when
+         * the manager's own shape is already covered to starters-plus-one:
+         * a club playing three in midfield fills its third central midfielder
+         * before it fills a fourth centre half, which is the whole point of
+         * having chosen the shape. */
+        let pos = null;
+        let worst = 0;
+        for (const key of MG.players.POSITION_KEYS) {
+          const want = coverShape(key, club);
+          if (!want) continue;
+          let have = 0;
+          for (const p of club.squad) if (p.pos === key && !p.loan) have++;
+          if (want - have > worst) { worst = want - have; pos = key; }
+        }
+        if (!pos) {
+          const { needs } = MG.players.squadNeeds(club.squad);
+          pos = needs.length ? needs.sort((a, b) => b.urgency - a.urgency)[0].pos : rng.pick(MG.players.POSITION_KEYS);
+        }
         // clubStrength is on the TEAM rating scale and generate() wants the
         // PLAYER overall scale. Passing one straight into the other had a
         // National League club (strength 35) manufacturing 27-rated players
@@ -1287,7 +1521,9 @@
         const spare = [];
         for (const [pos, list] of Object.entries(byPos)) {
           list.sort((a, b) => b.overall - a.overall);
-          const protectedCount = minimumShape(pos);
+          // Starters plus a cover at every position the shape uses — the trim
+          // only ever cuts into genuine surplus after that.
+          const protectedCount = coverShape(pos, club);
           keep.push(...list.slice(0, protectedCount));
           spare.push(...list.slice(protectedCount));
         }

@@ -45,7 +45,7 @@
     recent: [], career: [], lastRow: null, lastReport: null, lastBrief: null,
     sackReason: null,
     endingEntry: null, endingView: null, endingOutcome: null,
-    tab: "squad", tabOpen: false,
+    tab: "table", tabOpen: false,
     squadSort: "rating", chooserSort: "rating",
     signCount: 0, signPositions: [], signAmbition: "solid", transfersSeason: null, boardRecs: null,
     playerSearch: "", topPos: "ALL",
@@ -164,12 +164,18 @@
    *
    * That last row is the one that matters: every post-season stage used to
    * land on "ready", quietly skipping all of it. */
-  /* Screens that open the reference panel automatically. Everywhere else it
-   * starts closed — see render() — but the strip itself is always on screen,
-   * so squad, tactics, youth, table, career and the world stay one tap away
-   * from everywhere in the game without a 26-man list sitting under every
-   * decision. */
-  const TAB_STAGES = { ready: true };
+  /* Screens that open the reference panel automatically — none, now that the
+   * strip sits ABOVE the decisions rather than below them. It used to open
+   * itself on the season-ahead screen, which was harmless at the bottom of the
+   * page and is not harmless at the top: a full league table between the
+   * header and the decision pushes the decision off the first screen, which is
+   * the one thing this layout exists to prevent.
+   *
+   * The strip itself is always on screen, so the table, your record, the world
+   * and the academy stay one tap away from everywhere in the game — and squad,
+   * tactics and contracts are in the pre-season hub, which is why they are no
+   * longer duplicated here. */
+  const TAB_STAGES = {};
 
   const RESUME_STAGE = {
     "preseason-hub": "preseason-hub", transfers: "preseason-hub", "transfer-proposals": "preseason-hub",
@@ -186,7 +192,7 @@
     state.manager = ui.manager;
     state.clubId = ui.clubId;
     state.career = ui.career || [];
-    state.tab = ui.tab || "squad";
+    state.tab = ui.tab || "table";
     state.hubTab = ui.hubTab || "overview";
     state.hubNewJob = false;
     // In-progress card state is disposable across a refresh — see the
@@ -364,7 +370,7 @@
     state.stage = "preseason-hub";
     state.hubTab = "overview";
     state.hubNewJob = true;
-    state.tab = "squad";
+    state.tab = "table";
     render();
     show("screen-career");
     autosave();   // milestone: Career Start
@@ -763,7 +769,7 @@
     state.stage = "preseason-hub";
     state.hubTab = "overview";
     state.hubNewJob = true;
-    state.tab = "squad";
+    state.tab = "table";
     render();
     autosave();   // milestone: Career Start (new club, mid-career)
   }
@@ -1762,14 +1768,14 @@
     const hint = $("tab-hint");
     if (hint) hint.textContent = state.tabOpen
       ? "Tap the open tab again to close it."
-      : "Tap to open — squad, tactics, youth, table, career, the world.";
+      : "Tap to open — the table, your record, the world, the academy.";
   }
 
   function renderTab() {
     renderTabStrip();
     const el = $("tab-body");
-    const views = { squad: squadHtml, tactics: tacticsHtml, youth: youthHtml, table: tableHtml, career: careerHtml, world: worldHtml };
-    el.innerHTML = (views[state.tab] || squadHtml)();
+    const views = { table: tableHtml, career: careerHtml, world: worldHtml, youth: youthHtml };
+    el.innerHTML = (views[state.tab] || tableHtml)();
     wireTab();
   }
 
@@ -2386,10 +2392,15 @@
       const pc = posClass(p.pos);
       const attrs = MG.ratings.radarAxes(p);
       const mean = Math.round(attrs.reduce((t, a) => t + a.value, 0) / attrs.length);
-      const gap = Math.round(p.overall) - mean;
-      // A big gap between the badge and the stat pool is the thing this list
-      // exists to make visible.
-      const gcls = Math.abs(gap) >= 15 ? "bad" : Math.abs(gap) >= 9 ? "gold" : "accent";
+      /* Measured against what his POSITION normally reads at his rating, not
+       * against the rating itself — see players.expectedAttrMean. The six
+       * attributes cover a winger's game almost completely and a goalkeeper's
+       * barely at all, so a raw badge-minus-mean number was always going to
+       * put every keeper in the world in the red and tell us nothing. This is
+       * a residual: zero is exactly typical, and anything in double figures
+       * is a player whose stat pool genuinely does not match his badge. */
+      const gap = mean - Math.round(MG.players.expectedAttrMean(p.pos, p.overall));
+      const gcls = Math.abs(gap) >= 10 ? "bad" : Math.abs(gap) >= 6 ? "gold" : "accent";
       return `<div class="crow" data-player="${p.id}" style="cursor:pointer">
         <div class="muted" style="width:22px;font-size:11px;text-align:right">${i + 1}</div>
         <div class="prating ${pc}" style="width:36px;height:36px;font-size:14px">${Math.round(p.overall)}</div>
@@ -2404,7 +2415,8 @@
     return `<div class="panel">
       <h3 class="muted">TOP RATED PLAYERS</h3>
       <div class="muted" style="font-size:12px;margin-bottom:8px">The best in the world, by position. <b>attr</b> is the mean of his six
-      attributes and the number beside it is how far his rating sits above them — a testing readout, and it should stay in single figures.</div>
+      attributes; the number beside it is how far that sits from what his POSITION normally reads at his rating. Zero is typical — a keeper's
+      six stats always average well below his badge and a winger's almost match it. Double figures means his stat pool does not match his badge.</div>
       ${nav}
       ${rows || `<div class="muted" style="font-size:12px">Nobody at that position.</div>`}
     </div>`;

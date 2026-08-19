@@ -74,7 +74,10 @@
     const target = Math.max(26 + youthRating * 0.28, level - 26) + rng.gauss() * 4;
     const p = MG.players.generate(rng, {
       league: club.leagueId, pos: rng.pick(MG.players.POSITION_KEYS), age,
-      target, spread: 3, homegrown: true,
+      // `target` above is already what a fifteen-to-seventeen-year-old is
+      // rated, not a peak — generate's own age discount would apply it twice
+      // and hand every academy a squad of thirty-rated children.
+      target, spread: 3, homegrown: true, rawTarget: true,
       nationality: MG.names.nationForLeague(rng, club.leagueId),
     });
     // The interesting number is the ceiling, and only a good academy finds one.
