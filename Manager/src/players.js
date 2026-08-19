@@ -222,6 +222,59 @@
   const DECLINE_WEIGHTS = { heading: 0.9, fitness: 1.3, strength: 0.8, leftFoot: 0.5, rightFoot: 0.5, speed: 2.0, creativity: 0.35 };
   const CONVERGE = 0.30;   // share of any residual gap closed per season
 
+  /* ---------------------------- BALANCE & AGILITY --------------------------
+   * The eighth attribute, and the one that finally lets a squad have BODY
+   * TYPES instead of every top-rated player converging on "big, strong, fast,
+   * all at once" — which was the real complaint: the source data rewards size
+   * and power on every axis at once, so a small technical player could not
+   * reach an elite badge without also being physically imposing, and the
+   * squad's whole top end read the same way.
+   *
+   * Nothing in the source measures this directly, so it is built the way the
+   * real thing works. A light, compact frame turns and recovers faster than a
+   * tall, heavy one, all else equal — SIZE COST, measured against the
+   * population's own median build (181cm/76kg, from the 6,050 outfield
+   * players in the shipped database), and it cuts both ways: shorter/lighter
+   * than that median is a genuine gift, not just the absence of a penalty.
+   *
+   * Real athleticism buys a lot of the size cost back, but ONLY through a
+   * square-root curve: going from an average athlete to a good one recovers
+   * most of what size cost him; going from good to elite recovers
+   * comparatively little more. A player elite in strength, fitness AND speed
+   * still pays some of the size tax if he is genuinely big — the real-world
+   * "immense, but never quite as nimble as the smallest man on the pitch"
+   * outcome, which is exactly what a Virgil van Dijk-shaped defender or an
+   * Erling Haaland-shaped forward should read as: very good here, not the
+   * best in the world at it, however good everything else is.
+   *
+   * RECOMPUTED, not developed on its own curve. Height and weight never
+   * change after creation, so balance is entirely a function of the three
+   * attributes that DO develop (applyDevelopment calls this fresh every
+   * season below) — storing a second, independently-drifting number for the
+   * same relationship would only let it fall out of sync with the body it
+   * describes. */
+  const BAL_HEIGHT_NEUTRAL = 181, BAL_WEIGHT_NEUTRAL = 76;   // the population's own median build
+  function deriveBalanceAgility(strength, fitness, speed, heightCm, weightKg) {
+    const h = heightCm || 181, w = weightKg || 76;
+    const heightCost = Math.max(0, h - BAL_HEIGHT_NEUTRAL) * 1.05;
+    const weightCost = Math.max(0, w - BAL_WEIGHT_NEUTRAL) * 0.85;
+    const heightGift = Math.max(0, BAL_HEIGHT_NEUTRAL - h) * 0.80;
+    const weightGift = Math.max(0, BAL_WEIGHT_NEUTRAL - w) * 0.62;
+    const sizeCost = heightCost + weightCost;
+
+    const athletic = clamp((strength || 50) * 0.28 + (fitness || 50) * 0.32 + (speed || 50) * 0.40, 0, 99);
+    // Diminishing returns: the SHARE of the size cost recovered rises with the
+    // square root of how far above a modest baseline (40) the player's
+    // athleticism sits — an ordinary athlete claws back almost none of it, an
+    // elite one claws back most of it, and the curve bends hard between the
+    // two rather than paying out in a straight line.
+    const recoveryShare = Math.sqrt(clamp((athletic - 40) / 58, 0, 1));
+    const recovered = sizeCost * recoveryShare * 0.88;
+
+    const bal = 58 + heightGift + weightGift - sizeCost + recovered + (athletic - 60) * 0.12;
+    return clamp(Math.round(bal), 15, 99);
+  }
+
   /** Apply one season's change in overall to the player, attributes included. */
   function applyDevelopment(player, delta) {
     player.overall = clamp(Math.round((player.overall + delta) * 10) / 10, 25, 96);
@@ -234,6 +287,12 @@
       const residual = houseTarget(k, player.overall) - now;
       const move = slope * delta * w[k] + residual * CONVERGE;
       player.attrs[k] = clamp(Math.round(now + move), 20, 99);
+    }
+    // Balance tracks the body it describes, not its own curve — see above.
+    if (player.attrs.balance != null) {
+      player.attrs.balance = deriveBalanceAgility(
+        player.attrs.strength, player.attrs.fitness, player.attrs.speed,
+        player.attrs.height, player.attrs.weight);
     }
     return player;
   }
@@ -408,7 +467,7 @@
       age: 24,
       overall: 60,
       potential: 60,
-      attrs: { heading: 60, fitness: 60, strength: 60, leftFoot: 60, rightFoot: 60, speed: 60, creativity: 60, height: 180, weight: 76 },
+      attrs: { heading: 60, fitness: 60, strength: 60, leftFoot: 60, rightFoot: 60, speed: 60, creativity: 60, balance: 60, height: 180, weight: 76 },
       mentality: "Balanced",
       mentalityRating: 55,
       clubId: null,
@@ -466,6 +525,7 @@
         leftFoot: raw.leftFoot, rightFoot: raw.rightFoot, speed: raw.speed,
         creativity: deriveCreativity(raw.pos, raw.overall, raw.leftFoot, raw.rightFoot,
           footballIntelligence(raw.mentalityRating, raw.overall)),
+        balance: deriveBalanceAgility(raw.strength, raw.fitness, raw.speed, raw.height, raw.weight),
         height: raw.height, weight: raw.weight,
       },
       mentality: raw.mentality,
@@ -697,6 +757,7 @@
     const mentalityRating = footballIntelligence(rollMentalityRating(rng, raw.ovr), raw.ovr);
     const attrs = mapForeignAttrs(rng, raw, pos);
     attrs.creativity = deriveCreativity(pos, raw.ovr, attrs.leftFoot, attrs.rightFoot, mentalityRating);
+    attrs.balance = deriveBalanceAgility(attrs.strength, attrs.fitness, attrs.speed, attrs.height, attrs.weight);
     const p = makePlayer({
       name: raw.name,
       nationality: MG.names.knownNationality(raw.name) || raw.nationality || MG.names.nationForLeague(rng, league),
@@ -797,6 +858,7 @@
     // Derived from the feet he just rolled, exactly as an imported player's is
     // derived from the feet the database gave him — one rule for everybody.
     genAttrs.creativity = deriveCreativity(pos, overall, genAttrs.leftFoot, genAttrs.rightFoot, mentalityRating);
+    genAttrs.balance = deriveBalanceAgility(genAttrs.strength, genAttrs.fitness, genAttrs.speed, genAttrs.height, genAttrs.weight);
     const p = makePlayer({
       name: MG.names.personName(rng, nationality),
       nationality, pos, age, overall,
@@ -897,7 +959,7 @@
 
   MG.players = {
     POSITIONS, POSITION_KEYS, SQUAD_TARGET,
-    firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta, applyDevelopment, houseTarget, deriveCreativity, footballIntelligence,
+    firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta, applyDevelopment, houseTarget, deriveCreativity, footballIntelligence, deriveBalanceAgility,
     AGE_CURVE, ageCurve, MENTALITY_TRAITS, rollMentalityRating, rollMentalityTrait,
     marketValue, expectedWage, ageValueFactor, LEAGUE_WAGE_FACTOR,
     makePlayer, fromDatabase, fromForeign, generate, resetIds, setNextId, rollInjury, availability, durability, recordMove,

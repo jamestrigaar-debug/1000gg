@@ -220,20 +220,39 @@
   }
 
   /* ------------------------------ THE RADAR --------------------------------
-   * SEVEN axes, top and then clockwise: Defending, Physical, Speed, Attacking,
-   * Creativity, Aerial, Mental — chosen so that three players who all rate 78
-   * look like three different footballers.
+   * SIX axes, top and then clockwise: Defending, Physical, Speed, Attacking,
+   * Aerial, Mental — chosen so that three players who all rate 78 look like
+   * three different footballers.
    *
    *   DEFENDING   DEF-ATR (GK-ATR for a keeper) — see defenceAttribute below
-   *   PHYSICAL    strength and fitness — the database's own conditioning
-   *               attributes, not height, which has its own job on Aerial
+   *   PHYSICAL    strength and fitness, with balance & agility now folded in
+   *               — not height, which has its own job on Aerial
    *   SPEED       raw speed, on its own, and never adjusted — see below
-   *   ATTACKING   his STRONG foot, with the weak one behind it
-   *   CREATIVITY  the new seventh attribute — see players.deriveCreativity
+   *   ATTACKING   his STRONG foot, weak foot behind it, creativity behind that
    *   AERIAL      heading with height and strength behind it
-   *   MENTAL      football intelligence
+   *   MENTAL      football intelligence, with creativity folded in
    *
-   * TWO CHANGES, BOTH REPORTED FROM PLAY.
+   * Creativity and balance & agility are real attributes (players.js) but do
+   * NOT carry a dial of their own — they were tried as two more axes and
+   * pulled back out, because a radar's whole job is to make an elite-
+   * everywhere player look like a hexagon and an elite-at-one-thing player
+   * look like a spike, and a ninth or tenth corner just rounds every shape
+   * back off. Folded into the axes that actually need them instead:
+   *
+   *   BALANCE feeds PHYSICAL. Agility and a low centre of gravity are a
+   *   physical quality, not a separate one — folding it in is what lets a
+   *   small, light, athletic player read well there without also needing to
+   *   be strong, which is half of why the top of the game used to need
+   *   "high everything" to reach a top badge.
+   *
+   *   CREATIVITY feeds ATTACKING and MENTAL. A quarter of the Attacking axis
+   *   and just over a quarter of Mental, alongside the strong foot and the
+   *   underlying mentality rating that still do most of the work on each.
+   *   The other half of "high everything": a big, powerful, heavy-footed
+   *   forward and a small, clever, two-footed one can now land on the same
+   *   overall by two genuinely different routes through the same six axes.
+   *
+   * TWO EARLIER CHANGES, BOTH STILL IN FORCE.
    *
    * 1. ATTACKING WAS THE AVERAGE OF BOTH FEET, which reads a one-footed player
    *    as a worse footballer rather than a different one. Lautaro Martínez —
@@ -241,23 +260,22 @@
    *    78, below players he is plainly better than, and his 88 badge looked
    *    unearned as a result. A striker finishes with his good foot. Attacking
    *    is now his strong foot with the weak one behind it, and what the weak
-   *    foot really tells you moved to its own axis, where being one-footed
-   *    costs him nothing he has not actually got.
+   *    foot really tells you (creativity) has its own, smaller say instead.
    *
    * 2. THE AXES DID NOT ADD UP TO THE BADGE, and the error was worst at the
-   *    top, which is where anyone looks. The six raw attributes describe a
+   *    top, which is where anyone looks. The raw attributes describe a
    *    winger's game almost completely and a goalkeeper's barely at all, so a
    *    90-rated keeper's profile read in the mid-seventies and a 90-rated
    *    winger's read at 88 — the same badge, two completely different-looking
    *    players, and the reason "they have 90 rating but are clearly not 90
    *    rated players".
    *
-   *    Each position now carries its own calibration, fitted across the 6,700
-   *    players in the shared database so that the seven axes AVERAGE to the
+   *    Each position carries its own calibration, fitted across the 6,700
+   *    players in the shared database so that the six axes AVERAGE to the
    *    overall the player actually holds. It is a presentation correction and
    *    nothing else — no rating the match engine reads is touched — but it is
    *    what makes a profile justify its badge, and it means the shape of the
-   *    radar is now pure information about the player rather than mostly
+   *    radar is pure information about the player rather than mostly
    *    information about what position he plays.
    */
   /* TWO STAGES, and they do different jobs.
@@ -277,16 +295,20 @@
    * Mental toward the middle of the dial and thrown away the one attribute
    * that genuinely varies independently of quality.
    *
-   * POS_OFFSET is the small residual left over: the shift that makes the seven
+   * POS_OFFSET is the small residual left over: the shift that makes the six
    * axes together average to the badge for each position. It comes out inside
-   * ±1.5 everywhere, which is the useful confirmation that stage one was doing
-   * the real work and this is only tidying up after it. */
+   * ±2 everywhere, which is the useful confirmation that stage one was doing
+   * the real work and this is only tidying up after it.
+   *
+   * Refitted when creativity and balance folded INTO att/phy/men rather than
+   * carrying their own axes — the raw values feeding those three keys changed
+   * shape, so the old constants no longer matched the population. */
   const AXIS_CAL = {
-    def: [1.140,  -0.2], phy: [1.010,  0.3], att: [1.001,   3.7],
-    cre: [0.945,  25.7], aer: [1.171, -2.2], men: [1.429, -26.4],
+    def: [1.140,  -0.2], phy: [1.242, -12.6], att: [1.002,   8.4],
+    aer: [1.171,  -2.2], men: [1.412, -15.8],
   };
   const POS_OFFSET = {
-    GK: 2.8, CB: -1.4, FB: -1.2, DM: 0.6, CM: -0.3, AM: 0.9, WG: 0.7, FW: -1.8,
+    GK: 0.7, CB: -1.6, FB: -1.1, DM: 1.2, CM: 0.5, AM: 1.9, WG: 1.5, FW: -1.4,
   };
 
   /* A SOFT CEILING, because the calibration has slopes greater than one and a
@@ -320,18 +342,9 @@
   function eliteLift(overall) {
     return Math.max(0, (overall || 60) - ELITE_FROM) * ELITE_RATE;
   }
-  /* CREATIVITY IS EXEMPT FROM THE LIFT, and it has to be. Every other axis
-   * gets the quality term because the attributes genuinely under-describe a
-   * great player at that thing. Creativity is the axis that exists to tell two
-   * players of the SAME quality apart — so adding a term that rises with
-   * quality defeats it by construction. With the lift applied, Virgil van Dijk
-   * and Alisson Becker both read in the nineties for creativity purely on
-   * account of being very good footballers, which is the exact reading the
-   * attribute was added to stop. */
   function calibrate(key, pos, v, overall) {
     const c = AXIS_CAL[key] || [1, 0];
-    const lift = key === "cre" ? 0 : eliteLift(overall);
-    return clamp(Math.round(soften(v * c[0] + c[1] + (POS_OFFSET[pos] || 0) + lift)), 2, 99);
+    return clamp(Math.round(soften(v * c[0] + c[1] + (POS_OFFSET[pos] || 0) + eliteLift(overall))), 2, 99);
   }
 
   function radarAxes(player) {
@@ -349,9 +362,31 @@
     const heightPts = heightScore(a.height);
     const lf = a.leftFoot || 50, rf = a.rightFoot || 50;
     const strong = Math.max(lf, rf), weak = Math.min(lf, rf);
+    const cre = a.creativity != null ? a.creativity : (weak * 0.6 + men * 0.4);
+    const bal = a.balance != null ? a.balance : 55;
+    /* SIX AXES, not seven. Creativity and balance are raw attributes now (see
+     * players.js) but they do not get a dial of their own — they were pulled
+     * back OUT of the radar and folded into the axes they actually describe,
+     * because giving every new attribute its own axis is how a radar stops
+     * meaning anything: the point of a shape with six corners is that a
+     * player who is elite everywhere reads as a hexagon and a player who
+     * is elite at ONE thing reads as a spike, and a ninth or tenth corner
+     * just flattens every shape back toward round.
+     *
+     * Folding them in also does the real job they were built for. Balance
+     * feeds Physical — agility and a low centre of gravity are physical
+     * qualities as much as raw strength is, so a small, light, athletic
+     * player no longer has to also be strong to read well there. Creativity
+     * feeds Attacking (a quarter of it, alongside the strong foot that still
+     * decides most of a finisher's rating) and Mental (just over a quarter,
+     * alongside the underlying mentality rating). Between the two of them
+     * this is what stops the top of the game reading as "high everything":
+     * a big, powerful, but heavy-footed forward and a small, clever,
+     * two-footed one can land on the same overall by two genuinely
+     * different routes through the six axes, instead of the same one. */
     return [
       { label: pos === "GK" ? "Goalkeeping" : "Defending", value: calibrate("def", pos, defenceAttribute(player), player.overall) },
-      { label: "Physical", value: calibrate("phy", pos, (a.strength || 50) * 0.5 + (a.fitness || 50) * 0.5, player.overall) },
+      { label: "Physical", value: calibrate("phy", pos, (a.strength || 50) * 0.40 + (a.fitness || 50) * 0.35 + bal * 0.25, player.overall) },
       /* SPEED IS NEVER ADJUSTED. Every other axis here is a blend, so the
        * number it shows corresponds to nothing the player can look up
        * elsewhere and a correction costs nothing. Speed is the exception: it
@@ -362,10 +397,9 @@
        * for actual speed" this project has already removed once and the brief
        * asks never to reopen. One attribute, one number. */
       { label: "Speed", value: clamp(Math.round(a.speed || 50), 2, 99) },
-      { label: "Attacking", value: calibrate("att", pos, strong * 0.78 + weak * 0.22, player.overall) },
-      { label: "Creativity", value: calibrate("cre", pos, a.creativity != null ? a.creativity : (weak * 0.6 + men * 0.4), player.overall) },
+      { label: "Attacking", value: calibrate("att", pos, strong * 0.60 + weak * 0.16 + cre * 0.24, player.overall) },
       { label: "Aerial", value: calibrate("aer", pos, (a.heading || 50) * 0.7 + (a.strength || 50) * 0.1 + heightPts * 0.2, player.overall) },
-      { label: "Mental", value: calibrate("men", pos, men, player.overall) },
+      { label: "Mental", value: calibrate("men", pos, men * 0.72 + cre * 0.28, player.overall) },
     ];
   }
 

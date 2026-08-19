@@ -197,10 +197,19 @@
   function backfillAttributes(world) {
     if (!MG.players || !MG.players.deriveCreativity) return;
     const fix = (p) => {
-      if (!p || !p.attrs || p.attrs.creativity != null) return;
-      p.mentalityRating = MG.players.footballIntelligence(p.mentalityRating, p.overall);
-      p.attrs.creativity = MG.players.deriveCreativity(
-        p.pos, p.overall, p.attrs.leftFoot, p.attrs.rightFoot, p.mentalityRating);
+      if (!p || !p.attrs) return;
+      if (p.attrs.creativity == null) {
+        p.mentalityRating = MG.players.footballIntelligence(p.mentalityRating, p.overall);
+        p.attrs.creativity = MG.players.deriveCreativity(
+          p.pos, p.overall, p.attrs.leftFoot, p.attrs.rightFoot, p.mentalityRating);
+      }
+      // Balance & agility, added the same way and for the same reason: a
+      // save from before it existed must read identically to one started
+      // after, not carry a hole in the grid for the rest of the career.
+      if (p.attrs.balance == null && MG.players.deriveBalanceAgility) {
+        p.attrs.balance = MG.players.deriveBalanceAgility(
+          p.attrs.strength, p.attrs.fitness, p.attrs.speed, p.attrs.height, p.attrs.weight);
+      }
     };
     for (const club of world.clubs) {
       for (const p of club.squad) fix(p);

@@ -86,7 +86,7 @@
   const ATTR_ROWS = [
     { k: "heading", label: "HDR" }, { k: "fitness", label: "FIT" }, { k: "strength", label: "STR" },
     { k: "leftFoot", label: "LF" }, { k: "rightFoot", label: "RF" }, { k: "speed", label: "SPD" },
-    { k: "creativity", label: "CRE" },
+    { k: "creativity", label: "CRE" }, { k: "balance", label: "BAL" },
     { k: "height", label: "HGT", suffix: "cm" }, { k: "weight", label: "WGT", suffix: "kg" },
   ];
   function attrGrid(p) {
@@ -1769,13 +1769,13 @@
     const hint = $("tab-hint");
     if (hint) hint.textContent = state.tabOpen
       ? "Tap the open tab again to close it."
-      : "Tap to open — the table, your record, the world, the academy.";
+      : "Tap to open — the table, your record, the world, the academy, the honours.";
   }
 
   function renderTab() {
     renderTabStrip();
     const el = $("tab-body");
-    const views = { table: tableHtml, career: careerHtml, world: worldHtml, youth: youthHtml };
+    const views = { table: tableHtml, career: careerHtml, world: worldHtml, youth: youthHtml, awards: awardsHtml };
     el.innerHTML = (views[state.tab] || tableHtml)();
     wireTab();
   }
@@ -1895,7 +1895,7 @@
    * printed on the bars, on a zoomed axis — which is exactly why the floor
    * is printed underneath rather than hidden. */
   const RADAR_FLOOR = 38;
-  const RADAR_AXES = ["DEF", "PHY", "SPD", "ATT", "CRE", "AER", "MEN"];
+  const RADAR_AXES = ["DEF", "PHY", "SPD", "ATT", "AER", "MEN"];
   function radarHtml(stats) {
     if (!stats || stats.length < 3) return "";
     const n = stats.length;
@@ -2393,7 +2393,7 @@
       const pc = posClass(p.pos);
       const attrs = MG.ratings.radarAxes(p);
       const mean = Math.round(attrs.reduce((t, a) => t + a.value, 0) / attrs.length);
-      /* Straight against the badge. The seven axes carry a per-position
+      /* Straight against the badge. The six axes carry a per-position
        * calibration (see ratings.AXIS_CAL) fitted so that they AVERAGE to the
        * overall the player holds — so this number is once again the plain
        * question it should always have been: does his profile add up to his
@@ -2415,10 +2415,93 @@
     return `<div class="panel">
       <h3 class="muted">TOP RATED PLAYERS</h3>
       <div class="muted" style="font-size:12px;margin-bottom:8px">The best in the world, by position. <b>attr</b> is the mean of his six
-      seven axes and the number beside it is how far that sits from his rating. The axes are calibrated per position so they should average to the
+      axes and the number beside it is how far that sits from his rating. The axes are calibrated per position so they should average to the
       badge — zero is a well-formed player, double figures means his stat pool and his rating are describing different footballers.</div>
       ${nav}
       ${rows || `<div class="muted" style="font-size:12px">Nobody at that position.</div>`}
+    </div>`;
+  }
+
+  /* ------------------------------- AWARDS ----------------------------------
+   * world.js computes a full set of end-of-season honours — the Ballon d'Or,
+   * Manager of the Year, a Golden Boot per league, the outright top scorer —
+   * every single season, and stores them on world.history. Nothing ever read
+   * them: the silverware existed, and nobody in the game could ever see it.
+   * This is the surface that finally does. */
+  function awardsHtml() {
+    const world = state.world;
+    const seasons = world.history.filter((h) => h.awards);
+    if (!seasons.length) {
+      return `<div class="panel"><h3 class="muted">AWARDS</h3>
+        <div class="muted" style="font-size:12px">Nothing decided yet — the season has to finish first.</div></div>`;
+    }
+    const latest = seasons[seasons.length - 1];
+    const bd = latest.awards.ballonDor;
+    const playerRow = (id, name, club, sub) => `<div class="crow" data-player="${id}" style="cursor:pointer">
+      <div class="crow-body"><div class="nm">${esc(name)}</div>
+      <div class="muted" style="font-size:12px">${esc(club)}${sub ? ` · ${sub}` : ""}</div></div></div>`;
+
+    const winnerBlock = bd && bd.winner
+      ? `<div class="panel gold" style="margin-bottom:10px">
+          <div class="muted" style="font-size:11px">${esc(seasonLabel(latest.year))} · BALLON D'OR</div>
+          <div style="font-size:20px;font-weight:700;margin:2px 0">${esc(bd.winner.name)}</div>
+          <div class="muted" style="font-size:12px">${esc(bd.winner.club)} · ${bd.winner.goals}g ${bd.winner.assists}a
+            ${bd.leagueChampions.includes(bd.winner.clubId) ? " · league champion" : ""}
+            ${bd.uclWinnerId === bd.winner.clubId ? " · European champion" : ""}</div>
+        </div>`
+      : `<div class="panel muted" style="font-size:12px;margin-bottom:10px">No Ballon d'Or pool this season — nobody in the four major leagues stood out.</div>`;
+
+    const shortlist = bd && bd.pool && bd.pool.length
+      ? `<div class="panel" style="margin-bottom:10px">
+          <h3 class="muted" style="font-size:12px">THE SHORTLIST</h3>
+          ${bd.pool.slice(0, 8).map((c, i) => playerRow(c.playerId, `${i + 1}. ${c.name}`, c.club,
+            `${c.goals}g ${c.assists}a${c.playerId === bd.winner.playerId ? " · WINNER" : ""}`)).join("")}
+        </div>`
+      : "";
+
+    // Every past winner, most recent first — the Hall of Fame this tracker
+    // exists to build. Read straight off world.history: nothing extra to
+    // maintain, and it grows one line a season for the length of the save.
+    const history = seasons.slice().reverse().filter((h) => h.awards.ballonDor && h.awards.ballonDor.winner);
+    const historyBlock = history.length > 1
+      ? `<div class="panel" style="margin-bottom:10px">
+          <h3 class="muted" style="font-size:12px">PAST WINNERS</h3>
+          ${history.slice(1, 16).map((h) => {
+            const w = h.awards.ballonDor.winner;
+            return `<div class="crow" data-player="${w.playerId}" style="cursor:pointer">
+              <div class="muted" style="width:52px;font-size:11px">${esc(seasonLabel(h.year))}</div>
+              <div class="crow-body"><div class="nm">${esc(w.name)}</div>
+              <div class="muted" style="font-size:12px">${esc(w.club)} · ${w.goals}g ${w.assists}a</div></div>
+            </div>`;
+          }).join("")}
+        </div>`
+      : "";
+
+    const moy = latest.awards.managerOfYear;
+    const moyBlock = moy
+      ? `<div class="panel" style="margin-bottom:10px">
+          <h3 class="muted" style="font-size:12px">MANAGER OF THE SEASON</h3>
+          <div class="crow"><div class="crow-body"><div class="nm">${esc(moy.name)}</div>
+          <div class="muted" style="font-size:12px">${esc(moy.club)} · ${esc(moy.verdict)}</div></div></div>
+        </div>`
+      : "";
+
+    const boots = latest.awards.goldenBoots || {};
+    const bootRows = Object.entries(boots)
+      .filter(([leagueId]) => MG.clubs.LEAGUES[leagueId])
+      .map(([leagueId, b]) => `<div class="crow"><div class="crow-body"><div class="nm">${esc(MG.clubs.LEAGUES[leagueId].name)}</div>
+        <div class="muted" style="font-size:12px">${esc(b.name)} (${esc(b.club)}) · ${b.goals} goals</div></div></div>`).join("");
+    const bootsBlock = bootRows
+      ? `<div class="panel"><h3 class="muted" style="font-size:12px">GOLDEN BOOTS — ${esc(seasonLabel(latest.year))}</h3>${bootRows}</div>`
+      : "";
+
+    return `<div>
+      <h3 class="muted" style="margin-bottom:8px">AWARDS</h3>
+      ${winnerBlock}
+      ${shortlist}
+      ${moyBlock}
+      ${bootsBlock}
+      ${historyBlock}
     </div>`;
   }
 

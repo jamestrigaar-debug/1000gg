@@ -409,9 +409,25 @@
         p = MG.match.teamProfile(club, world.managerById(club.managerId));
         const bonus = MG.clubs.focusBonus(club, comp);
         p.attack += bonus; p.midfield += bonus; p.defence += bonus;
+        /* teamProfile's own `form` is club.form (momentum) PLUS
+         * modifiers.form (a decision card's season-long swing) PLUS a morale
+         * term — see match.js. Momentum is the one part of that sum which
+         * changes on every match without the cache being invalidated
+         * (recordManagerResult updates it after every result deliberately
+         * without paying for a full profile rebuild), so it has to be
+         * refreshed below on every read. Isolating it here, once, at build
+         * time is what lets that refresh add fresh momentum back onto the
+         * OTHER two terms rather than replacing the whole sum with momentum
+         * alone — which is what the line below used to do. Every decision
+         * card whose effect is a form swing (ninety-plus of them) was
+         * discarded here the instant it was computed: form(n) added the
+         * points, teamProfile summed them in correctly, and this line threw
+         * the sum away and substituted momentum on its own, every single
+         * time a profile was read for a match. */
+        p._staticForm = p.form - (club.form || 0);
         world._profiles[key] = p;
       }
-      p.form = world.clubIndex[clubId].form || 0;
+      p.form = (world.clubIndex[clubId].form || 0) + (p._staticForm || 0);
       return p;
     };
     world.invalidateProfile = (clubId) => {
@@ -927,7 +943,7 @@
     const playerApproach = checkPlayerManagerApproach(world);
 
     /* ---- 7. awards ---- */
-    const awards = computeAwards(world, results, boardReports);
+    const awards = computeAwards(world, results, boardReports, euro);
 
     /* The managed club's own top scorer for the season THAT JUST FINISHED —
      * captured here, before a single retirement or transfer touches the
@@ -1306,7 +1322,7 @@
     candidates.sort((a, b) => b.score - a.score);
     return { club: candidates[0].club, manager };
   }
-  function computeAwards(world, results, boardReports) {
+  function computeAwards(world, results, boardReports, euro) {
     let topScorer = null;
     for (const club of world.clubs) {
       for (const p of club.squad) {
@@ -1344,7 +1360,73 @@
         managerOfYear = { name: manager.name, club: club.name, score: round1(score), verdict: report.verdict };
       }
     }
-    return { topScorer, goldenBoots, managerOfYear };
+    const ballonDor = computeBallonDor(world, results, euro);
+    return { topScorer, goldenBoots, managerOfYear, ballonDor };
+  }
+
+  /* ------------------------------ BALLON D'OR -------------------------------
+   * The criteria, fixed every season rather than reinvented each time:
+   *
+   *   1. A POOL of the season's top performers, drawn from the four leagues
+   *      that actually produce Ballon d'Or contenders in real life (see
+   *      EURO_LEAGUES) — goals and assists (weighted so a defender's tally
+   *      counts for more than a forward's, the same logic the real voting
+   *      panel applies) plus the player's own quality, since output alone
+   *      would hand it to a hot striker at a mid-table club over a genuinely
+   *      world-class one having a quieter statistical season.
+   *
+   *   2. TWO WINS, EACH WORTH DOUBLE. Winning your league doubles your score;
+   *      winning the Champions League doubles it again — the same player can
+   *      collect both, which is exactly how a real treble-winning season
+   *      dominates the real vote. Nothing else in the pool gets a boost:
+   *      silverware is the only thing that multiplies, everything else only
+   *      adds.
+   *
+   *   3. A PSEUDO VOTE, not a straight top-of-the-list pick. The real award
+   *      is decided by a panel of national-team captains, coaches and
+   *      journalists, not a stat sheet — which is why the "best numbers"
+   *      candidate does not always win. Drawn with rng.weighted so the
+   *      leading names usually take it and an upset can still happen, the
+   *      same shape as the giant-killing roll in match.js and for the same
+   *      reason: an award that always goes to whoever the model likes best is
+   *      not a vote, it is a leaderboard. */
+  const BALLON_DOR_LEAGUES = MG.competitions.EURO_LEAGUES;
+  const BALLON_DOR_POOL_SIZE = 25;
+  const BALLON_GOAL_WEIGHT = { FW: 1.0, WG: 1.0, AM: 1.05, CM: 1.15, DM: 1.3, FB: 1.4, CB: 1.5, GK: 1.6 };
+
+  function computeBallonDor(world, results, euro) {
+    const leagueChampions = new Set();
+    for (const leagueId of BALLON_DOR_LEAGUES) {
+      const table = results[leagueId] && results[leagueId].table;
+      if (table && table[0]) leagueChampions.add(table[0].clubId);
+    }
+    const ucl = euro && euro.UCL ? world.clubByName(euro.UCL) : null;
+
+    const candidates = [];
+    for (const club of world.clubs) {
+      if (!BALLON_DOR_LEAGUES.includes(club.leagueId)) continue;
+      for (const p of club.squad) {
+        const goals = p.season.goals || 0, assists = p.season.assists || 0;
+        if (!goals && !assists && p.overall < 84) continue;   // cheap prefilter
+        const w = BALLON_GOAL_WEIGHT[p.pos] || 1;
+        let score = (goals * 3.4 + assists * 2.0) * w + Math.max(0, p.overall - 74) * 2.4;
+        if (score <= 0) continue;
+        if (leagueChampions.has(club.id)) score *= 2;
+        if (ucl && club.id === ucl.id) score *= 2;
+        candidates.push({ playerId: p.id, name: p.name, club: club.name, clubId: club.id, pos: p.pos,
+          goals, assists, overall: Math.round(p.overall), score: round1(score) });
+      }
+    }
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => b.score - a.score);
+    const pool = candidates.slice(0, BALLON_DOR_POOL_SIZE);
+
+    // The vote. Weighted by score raised to a power so the front-runners
+    // dominate the draw without making it a certainty — a shortlist headed
+    // by a clear best score still usually goes to him, occasionally does not.
+    const items = pool.map((c) => ({ item: c, weight: Math.pow(Math.max(1, c.score), 1.9) }));
+    const winner = world.rng.weighted(items);
+    return { winner, pool, leagueChampions: [...leagueChampions], uclWinnerId: ucl ? ucl.id : null };
   }
 
   function money(m) {
