@@ -97,4 +97,9 @@ for (const [score, n] of top) {
 }
 console.log(`\n  Title-race spread (champion minus bottom): ${avg(spreads).toFixed(0)} points`);
 console.log(`\n  ${fails === 0 ? "all metrics within tolerance" : `${fails} metric(s) outside tolerance`}\n`);
-process.exitCode = 0;
+/* Exit NON-ZERO when a metric is out of tolerance. This was hardcoded to 0,
+ * which meant the benchmark printed "3 metric(s) outside tolerance" in red and
+ * then told its caller everything was fine — a regression could walk straight
+ * past it. It caught the elite-stretch blowing the title race open the moment
+ * this was fixed, which is the whole reason the file exists. */
+process.exitCode = fails === 0 ? 0 : 1;
