@@ -351,6 +351,9 @@
     manager.clubId = club.id;
     manager.tenure = 0;
     manager.joblessSeasons = 0;
+    // He is employed again; the "just left" block is spent.
+    manager._leftClubId = null;
+    manager._leftSeason = null;
     manager.history.push({ club: club.name, from: world.season, to: null, reason: null });
     MG.clubs.onManagerAppointed(club, manager);
     // The manager imposes his own football on the club.
@@ -373,6 +376,14 @@
     if (entry && entry.to == null) { entry.to = world.season; entry.reason = reason; }
     manager.clubId = null;
     manager.tenure = 0;
+    /* Who he just left, and when. A board that has this afternoon sacked its
+     * manager must not appoint the same man this evening — which is exactly
+     * what happened in a live save: Chelsea sacked a manager and then hired him
+     * straight back, because hireFor scored every free manager on merit and the
+     * best free manager available was, inevitably, the one they had just let
+     * go. Read by hireFor; cleared when he takes a job somewhere. */
+    manager._leftClubId = club.id;
+    manager._leftSeason = world.season;
     club.managerId = null;
     world.freeManagers.push(manager);
     world.invalidateProfile(club.id);
@@ -1204,7 +1215,13 @@
     const rng = world.rng;
     const candidates = [];
 
+    /* A club cannot re-appoint the man it just parted with, in the season it
+     * parted with him. Anywhere else, and any later season, he is fair game —
+     * a manager returning to an old club years on is a real and welcome story;
+     * a club un-sacking someone within the same window is not. */
+    const justLeft = (m) => m._leftClubId === club.id && m._leftSeason === world.season;
     for (const m of world.freeManagers) {
+      if (justLeft(m)) continue;
       candidates.push({ manager: m, from: null, score: MG.managers.candidateScore(m, club, rng) });
     }
     // Employed managers are only approached by clubs meaningfully bigger than
@@ -1215,6 +1232,7 @@
         if (o.approached && o.approached.has(m.id)) continue;    // already had his one approach this window
         const from = world.clubById(m.clubId);
         if (!from || from.id === club.id) continue;
+        if (justLeft(m)) continue;
         if (!MG.managers.wouldMove(m, from, club)) continue;
         if (o.approached) o.approached.add(m.id);
         candidates.push({ manager: m, from, score: MG.managers.candidateScore(m, club, rng) * 1.05 });

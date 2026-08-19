@@ -22,10 +22,10 @@
   const MG = (root.MG = root.MG || {});
 
   MG.build = {
-    VERSION: "0.9.1",
+    VERSION: "0.9.3",
     CHANNEL: "beta",
     NAME: "Football DNA Simulator — Manager",
-    /** "0.9.1 beta" — what goes on screen. */
+    /** "0.9.3 beta" — what goes on screen. */
     label() { return `${this.VERSION} ${this.CHANNEL}`; },
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

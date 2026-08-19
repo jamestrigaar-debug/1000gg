@@ -48,7 +48,7 @@
     tab: "squad", tabOpen: false,
     squadSort: "rating", chooserSort: "rating",
     signCount: 0, signPositions: [], signAmbition: "solid", transfersSeason: null, boardRecs: null,
-    playerSearch: "",
+    playerSearch: "", topPos: "ALL",
     hubTab: "overview", hubNewJob: false,
     proposals: [], proposalChoices: [], proposalOutcomes: [],
     moveCards: [], moveChoices: [], moveOutcomes: [], lastMoveSummary: null, lastApproach: null,
@@ -2316,8 +2316,14 @@
   function worldHtml() {
     const world = state.world;
     const last = world.history[world.history.length - 1];
-    if (!last) return `<div class="panel muted">The world has not played a season yet.</div>`;
-    const of = (type) => world.news.filter((n) => n.season === last.season && n.type === type && n.clubId !== state.clubId);
+    /* Only the FEED needs a completed season — it is a report on one. The
+     * search box, the top-rated list and the league browser are all reads of
+     * the world as it stands right now, and they used to be hidden behind the
+     * same early return, so the entire World tab said "nothing has happened
+     * yet" for the whole of season one. */
+    const of = (type) => (last
+      ? world.news.filter((n) => n.season === last.season && n.type === type && n.clubId !== state.clubId)
+      : []);
     const section = (title, items, limit) => `
       <div class="panel"><h3 class="muted">${title}</h3>
         ${items.slice(0, limit || 10).map((n) => `<div class="log-entry ${esc(n.type)}">${esc(n.text)}</div>`).join("") || `<div class="muted">Nothing to report.</div>`}
@@ -2345,7 +2351,63 @@
         style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--txt);font:inherit" />
       <div id="search-results" style="margin-top:8px">${searchResultsHtml()}</div>
     </div>`;
-    return search + browser + feed;
+    return search + topRatedHtml() + browser
+      + (last ? feed : `<div class="panel muted" style="font-size:12px">The world feed fills up once a season has been played.</div>`);
+  }
+
+  /* ------------------------- THE TOP-RATED LIST ----------------------------
+   * The best players in the world, filterable by position. Built as a testing
+   * instrument rather than a feature: the fastest way to see whether a change
+   * to development or to the attribute model has done what it was supposed to
+   * is to look at the top of the game and check that the ratings and the
+   * attribute means still agree. It shows both, side by side, for exactly that
+   * reason — the ATTR column is the mean of the player's six attributes, and
+   * it should sit a handful of points under the rating, never tens.
+   *
+   * Reachable from the WORLD tab, alongside the player search it sits under. */
+  const TOP_RATED_LIMIT = 40;
+  function topRatedHtml() {
+    const world = state.world;
+    const pos = state.topPos || "ALL";
+    const all = [];
+    for (const c of world.clubs) {
+      for (const p of c.squad) {
+        if (pos !== "ALL" && p.pos !== pos) continue;
+        all.push(p);
+      }
+    }
+    all.sort((a, b) => b.overall - a.overall);
+    const shown = all.slice(0, TOP_RATED_LIMIT);
+    const keys = ["ALL"].concat(MG.players.POSITION_KEYS);
+    const nav = `<div class="seg" style="flex-wrap:wrap;margin-bottom:8px">${keys.map((k) =>
+      `<button class="${pos === k ? "on" : ""}" data-toppos="${k}">${k}</button>`).join("")}</div>`;
+    const rows = shown.map((p, i) => {
+      const c = world.clubById(p.clubId);
+      const pc = posClass(p.pos);
+      const attrs = MG.ratings.radarAxes(p);
+      const mean = Math.round(attrs.reduce((t, a) => t + a.value, 0) / attrs.length);
+      const gap = Math.round(p.overall) - mean;
+      // A big gap between the badge and the stat pool is the thing this list
+      // exists to make visible.
+      const gcls = Math.abs(gap) >= 15 ? "bad" : Math.abs(gap) >= 9 ? "gold" : "accent";
+      return `<div class="crow" data-player="${p.id}" style="cursor:pointer">
+        <div class="muted" style="width:22px;font-size:11px;text-align:right">${i + 1}</div>
+        <div class="prating ${pc}" style="width:36px;height:36px;font-size:14px">${Math.round(p.overall)}</div>
+        <div class="crow-body"><div class="nm">${esc(p.name)} <span class="ppos ${pc}">${p.pos}</span></div>
+          <div class="muted" style="font-size:12px">${p.age}y · ${esc(c ? c.name : "Free agent")} · pot ${Math.round(p.potential)}</div></div>
+        <div style="text-align:right;font-size:11px;line-height:1.3">
+          <div class="muted">attr ${mean}</div>
+          <div class="${gcls}" style="font-weight:700">${gap >= 0 ? "+" : ""}${gap}</div>
+        </div>
+      </div>`;
+    }).join("");
+    return `<div class="panel">
+      <h3 class="muted">TOP RATED PLAYERS</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">The best in the world, by position. <b>attr</b> is the mean of his six
+      attributes and the number beside it is how far his rating sits above them — a testing readout, and it should stay in single figures.</div>
+      ${nav}
+      ${rows || `<div class="muted" style="font-size:12px">Nobody at that position.</div>`}
+    </div>`;
   }
 
   /** Every player in the world whose name matches the current query, best
@@ -2529,6 +2591,9 @@
     // The search box updates its own results div only — a full renderTab()
     // on every keystroke would tear down and rebuild the input itself,
     // dropping focus and the cursor position after every single letter.
+    for (const b of document.querySelectorAll("[data-toppos]")) {
+      b.addEventListener("click", () => { state.topPos = b.dataset.toppos; renderTab(); });
+    }
     const search = $("player-search");
     if (search) {
       search.addEventListener("input", () => {

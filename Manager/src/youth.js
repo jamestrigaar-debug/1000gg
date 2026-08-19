@@ -129,9 +129,20 @@
       const headroom = p.potential - p.overall;
       // Academy players train rather than play, so minutes are assumed steady.
       const gain = (0.9 + headroom * 0.11) * (0.5 + quality) + rng.gauss() * 0.7;
-      p.overall = clamp(round1(p.overall + Math.max(-0.5, gain)), 25, 96);
-      if (p.overall > p.potential) p.potential = p.overall;
-      // The focus decides WHICH attributes come on.
+      /* Overall and attributes move together — see players.js's
+       * applyDevelopment. This used to add the gain to `overall` alone and
+       * leave the attributes to the focus nudge below, which is a fraction of
+       * the size: an academy player growing twenty-five points between 15 and
+       * 20 gained about eight points of attributes, and graduated into the
+       * first team already badly adrift. Regens spend their formative years
+       * here, which made this the single biggest source of the drift. */
+      MG.players.applyDevelopment(p, Math.max(-0.5, gain));
+      /* The focus still decides WHICH attributes come on fastest — applied on
+       * top as a lean rather than as the whole movement. applyDevelopment's
+       * convergence term pulls the LEVEL back onto the population line over
+       * the following seasons while the SHAPE the focus built persists, which
+       * is exactly the division of labour wanted: the academy decides what
+       * kind of player he becomes, not how good the badge says he is. */
       for (const [k, w] of Object.entries(focus.attrs)) {
         p.attrs[k] = clamp(Math.round(p.attrs[k] + w * (0.6 + quality) + rng.gauss() * 0.4), 20, 99);
       }

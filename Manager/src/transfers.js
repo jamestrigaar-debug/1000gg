@@ -53,13 +53,11 @@
         // A season of international football sharpens a young player on top of
         // his club development — caps and goals feeding growth, as asked.
         if (MG.international && p.overall < p.potential) delta += MG.international.developmentBonus(p);
-        p.overall = clamp(Math.round((p.overall + delta) * 10) / 10, 25, 96);
-        if (p.overall > p.potential) p.potential = p.overall;
-        // Physical attributes follow the same curve, a little more slowly.
-        const phys = delta * 0.6;
-        p.attrs.speed = clamp(Math.round(p.attrs.speed + (p.age > 29 ? phys * 1.4 : phys * 0.5)), 20, 99);
-        p.attrs.fitness = clamp(Math.round(p.attrs.fitness + phys * 0.8), 20, 99);
-        p.attrs.strength = clamp(Math.round(p.attrs.strength + (p.age < 26 ? 0.6 : phys * 0.4)), 20, 99);
+        // Overall and every attribute move together — see players.js's
+        // applyDevelopment, which owns the whole relationship. It used to be
+        // three hand-written lines here that moved speed, fitness and strength
+        // by unrelated amounts and left heading and both feet untouched.
+        MG.players.applyDevelopment(p, delta);
         p.contract.years--;
         p.career.apps += p.season.apps;
         p.career.goals += p.season.goals;
@@ -100,6 +98,114 @@
 
   /** Nobody is still playing at this age, whatever else is true of him. */
   const RETIREMENT_CEILING = 41;
+
+  /* ----------------------- KEEPING A PLAYER HAPPY --------------------------
+   * A contract used to be a countdown and nothing else: it ran out, the board
+   * either could or could not afford a renewal, and the player himself had no
+   * opinion at any point. That is the whole reason the best players drifted
+   * away from the best clubs — nothing in the model preferred a good club to a
+   * bad one, so a title-winning side lost its stars to mid-table teams on the
+   * same coin-flip as anyone else.
+   *
+   * Three things now decide a renewal, and between them they produce the
+   * behaviour football actually has: good players stay at good clubs.
+   *
+   *   TEMPERAMENT   the mentality trait the database already gives every
+   *                 player, sorted into three renewal postures. A Professional
+   *                 re-signs and gets on with it. A Talisman wants to know the
+   *                 club matches his ambition and will run his deal down if it
+   *                 does not. A Mercurial one is a coin-flip with a bigger
+   *                 wage attached.
+   *   HIS SEASON    minutes, morale, and whether the club is above or below
+   *                 his own level. A player who plays, is happy, and is at a
+   *                 club better than he is, signs. The reverse leaves.
+   *   HIS AGENT     a super-agency asks for more than a local fixer, using the
+   *                 cut the agent system already computes. This is the term
+   *                 that prices small clubs out of keeping a player whose
+   *                 career has outgrown them, which is exactly the intent.
+   *
+   * The emergent result is the point: an elite club can meet the demand of an
+   * ambitious player represented by a super-agency, and a Championship club
+   * cannot, so that player moves up rather than sideways. */
+  const SETTLED = ["Calm", "Composed", "Professional", "Steady", "Balanced", "Grounded", "Level-Headed",
+    "Measured", "Reliable", "Focused", "Diligent", "Team Player", "Dependable", "Unflappable",
+    "Adaptable", "Consistent", "Quiet", "Modest", "Honest", "Understated"];
+  const AMBITIOUS = ["Leader", "Big Game Player", "Ice Cold", "Fearless", "Relentless", "Determined",
+    "Perfectionist", "Winner", "Talisman"];
+  const VOLATILE = ["Maverick", "Mercurial", "Temperamental"];
+  const TEMPERAMENT = {};
+  for (const t of SETTLED) TEMPERAMENT[t] = "settled";
+  for (const t of AMBITIOUS) TEMPERAMENT[t] = "ambitious";
+  for (const t of VOLATILE) TEMPERAMENT[t] = "volatile";
+  function temperamentOf(player) { return TEMPERAMENT[player.mentality] || "settled"; }
+
+  /** What he wants to sign for, agent included. */
+  function renewalWage(world, club, player, rng) {
+    const base = MG.players.expectedWage(player, club.leagueId) * renewalDemand(player, club, rng);
+    const rep = MG.agents && MG.agents.agentOf ? MG.agents.agentOf(world, player, "player") : null;
+    // cutPercent runs 4-24; a 10% cut is the ordinary professional's man.
+    const agentPush = rep ? 1 + (rep.cutPct - 10) / 90 : 1;
+    const temper = temperamentOf(player);
+    const mood = temper === "volatile" ? 1.12 : temper === "ambitious" ? 1.05 : 0.95;
+    return round1(base * agentPush * mood);
+  }
+
+  /** Does he sign it? */
+  function willRenew(world, club, player, rng) {
+    const level = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
+    const temper = temperamentOf(player);
+    let accept = 0.60;
+    // Is this club worthy of him? The dominant term, and the one that keeps
+    // the best players at the best clubs.
+    const standing = (level - player.overall) / 22;
+    accept += temper === "ambitious" ? standing * 1.6 : standing * 0.8;
+    // Is he playing?
+    accept += (clamp(player.season ? (player.season.minutesShare || 0) : 0, 0, 1) - 0.45) * 0.55;
+    // Is he happy?
+    accept += ((player.morale == null ? 60 : player.morale) - 60) / 160;
+    // Is the club going anywhere? A side that just overachieved is easy to
+    // re-sign for; one that just collapsed is not.
+    const report = club.board && club.board.report;
+    if (report && report.total != null) accept += clamp(report.total, -1, 1) * 0.18;
+    if (temper === "settled") accept += 0.16;
+    if (temper === "volatile") accept += rng.between(-0.28, 0.28);
+    // A man near the end of his career is not holding out for a better offer.
+    if (player.age >= 33) accept += 0.22;
+    return rng.chance(clamp(accept, 0.03, 0.95));
+  }
+
+  /* The board does not wait for a contract to expire. Once a player it rates is
+   * inside two years it opens talks — which is both what real clubs do and the
+   * only way a club gets the chance to keep someone BEFORE he is a free agent
+   * with every rival circling. Limited to a handful a summer so it stays a
+   * boardroom act rather than a blanket re-sign. */
+  const PROACTIVE_MAX = 3;
+  function proactiveRenewals(world, club, rng, isPlayerClub, canExtend, news) {
+    if (!canExtend()) return;
+    const level = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
+    // Worth keeping: better than the club's own level, or young with room.
+    const worth = club.squad
+      .filter((p) => !p.loan && p.contract.years > 0 && p.contract.years <= 2
+        && (p.overall >= level - 2 || (p.age <= 23 && p.potential > p.overall + 3)))
+      .sort((a, b) => b.overall - a.overall)
+      .slice(0, PROACTIVE_MAX);
+    for (const p of worth) {
+      const wage = renewalWage(world, club, p, rng);
+      // The board will not break itself to do this early.
+      if (wage * 52 / 1000 > club.finances.wageBudget * 0.28) {
+        if (isPlayerClub) news.push({ type: "contract", text: `Contract — talks with ${p.name} stall: his agent wants £${wage}k a week and the board will not go there yet.`, clubId: club.id });
+        continue;
+      }
+      if (willRenew(world, club, p, rng)) {
+        p.contract.years = Math.max(p.contract.years, rng.int(3, 5));
+        p.contract.wage = wage;
+        if (isPlayerClub) news.push({ type: "contract", text: `Contract — ${p.name} signs an extension to ${p.contract.years} years on £${wage}k a week.`, clubId: club.id });
+      } else if (isPlayerClub) {
+        const why = temperamentOf(p) === "ambitious" ? "he wants to know where this club is going first" : "he wants to see how the season goes";
+        news.push({ type: "contract", text: `Contract — ${p.name} turns down an extension: ${why}.`, clubId: club.id });
+      }
+    }
+  }
 
   function retirementsAndExpiries(world) {
     const rng = world.rng;
@@ -175,6 +281,9 @@
       // the skint club that cannot keep everyone.
       const canExtend = () => !club.mustSell && club.finances.balance > -club.finances.revenue * 0.5;
 
+      // The board's own initiative, before anything expires.
+      proactiveRenewals(world, club, rng, isPlayerClub, canExtend, news);
+
       // Early renewals: a player the manager asked to tie down who is NOT yet
       // expiring gets a fresh term now if the board can carry it.
       for (const p of club.squad) {
@@ -196,22 +305,44 @@
         const affordable = affordableNow();
         // The manager's request overrides the board's default inclination, but
         // affordability still gates an extend, and a release is always honoured.
-        let renew;
-        if (req === "release") renew = false;
-        else if (req === "extend") renew = canExtend();
-        else renew = wanted && affordable && rng.chance(0.8);
+        /* Two sides to this now. The CLUB decides whether it wants him and can
+         * pay; the PLAYER decides whether he wants to stay. It used to be the
+         * club's call alone, which is why a title-winning side could lose a
+         * key player to a mid-table one on a coin flip — nothing in the model
+         * preferred a good club to a bad one. */
+        let clubWants;
+        if (req === "release") clubWants = false;
+        else if (req === "extend") clubWants = canExtend();
+        else clubWants = wanted && affordable && rng.chance(0.8);
+        const wage = clubWants ? renewalWage(world, club, p, rng) : 0;
+        // Even a wanted player can price himself out of a club that cannot
+        // carry his agent's number. This is what moves a good player up the
+        // pyramid rather than sideways.
+        const affordableWage = clubWants && wage * 52 / 1000 <= club.finances.wageBudget * 0.34;
+        const renew = clubWants && affordableWage && willRenew(world, club, p, rng);
         if (renew) {
           p.contract.years = rng.int(2, 4);
-          p.contract.wage = round1(MG.players.expectedWage(p, club.leagueId) * renewalDemand(p, club, rng));
+          p.contract.wage = wage;
           stillHere.push(p);
-          if (isPlayerClub && req === "extend") news.push({ type: "contract", text: `Contract — ${p.name} renews for ${p.contract.years} years, as you asked.`, clubId: club.id });
+          if (isPlayerClub && req === "extend") news.push({ type: "contract", text: `Contract — ${p.name} renews for ${p.contract.years} years on £${wage}k a week, as you asked.`, clubId: club.id });
         } else {
           p.clubId = null;
+          /* Who let him go, and when. A club that has just declined to renew
+           * a contract must not sign the same man back off the free-agent
+           * list a moment later — the one player equivalent of the manager
+           * carousel bug, and the only one left: every OTHER same-window
+           * return is already impossible, because a player who moved this
+           * window carries _arrivedSeason and canLeave will not let him move
+           * again. */
+          p._leftClubId = club.id;
+          p._leftSeason = world.season;
           freeAgents.push(p);
           if (isPlayerClub) {
             const why = req === "release" ? "released on your instruction"
-              : req === "extend" ? "let go — the board would not fund the extension you wanted"
-                : "runs down his contract and leaves on a free";
+              : !clubWants && req === "extend" ? "let go — the board would not fund the extension you wanted"
+                : clubWants && !affordableWage ? `out of reach — his agent wanted £${wage}k a week and the club cannot carry it`
+                  : clubWants ? "offered a new deal and turned it down"
+                    : "runs down his contract and leaves on a free";
             news.push({ type: "contract", text: `Contract — ${p.name} ${why}.`, clubId: club.id });
           }
         }
@@ -224,6 +355,35 @@
 
   /* ------------------------------ LISTINGS -------------------------------- */
   /** Who each club is prepared to move on before anyone even bids. */
+  /* ------------------------- THE SETTLING-IN RULE --------------------------
+   * A player cannot be sold in the same window he arrived in.
+   *
+   * Reported from a save: free agents were being signed and moved straight back
+   * out at a profit inside one window. The guard for this already existed but
+   * lived in exactly one place — sellOne's automated pick — so every other exit
+   * (the board's own listing, the manager's SELL card, the AI market, a
+   * fire-sale) ignored it entirely. A rule enforced on one of five doors is not
+   * a rule.
+   *
+   * It is deliberately universal rather than free-transfer-only. A signing that
+   * can be flipped the same summer is a trading loophole whatever it cost, and
+   * "he has only just walked through the door" is the honest reason in every
+   * case. Loans are unaffected — they have their own return path.
+   *
+   * The second half is the same idea one step further: a player cannot rejoin
+   * the club he has just left, in the window he left it. Same reasoning as the
+   * manager carousel, which had the identical bug. */
+  function justArrived(world, player) {
+    return player._arrivedSeason === world.season;
+  }
+  function canLeave(world, player) {
+    return !player.loan && !justArrived(world, player);
+  }
+  /** Would this be a same-window return to the club he just walked out of? */
+  function isRejoin(world, player, club) {
+    return player._leftClubId === club.id && player._leftSeason === world.season;
+  }
+
   function buildListings(world) {
     const rng = world.rng;
     const listed = [];
@@ -240,7 +400,7 @@
       // compounding forever, and it is why a badly run big club eventually
       // stops being a big club.
       if (club.mustSell) {
-        const byValue = club.squad.filter((p) => !p.loan).sort((a, b) => b.value - a.value);
+        const byValue = club.squad.filter((p) => canLeave(world, p)).sort((a, b) => b.value - a.value);
         for (const p of byValue.slice(0, 3)) listed.push({ player: p, club, forced: true, fireSale: true });
       }
 
@@ -289,6 +449,11 @@
     const byPos = {};
     for (const club of world.clubs) {
       for (const p of club.squad) {
+        // A man who signed this window is not on the market this window. This
+        // is the index every AI club shops from, so excluding him here closes
+        // the loophole for the whole world at once rather than one deal path
+        // at a time.
+        if (!canLeave(world, p)) continue;
         (byPos[p.pos] = byPos[p.pos] || []).push({ player: p, club });
       }
     }
@@ -979,9 +1144,12 @@
           }
           continue;
         }
-        const idx = pool.findIndex((p) => p.pos === need.pos && p.overall >= bar - 12 && p.overall <= need.currentQuality + 8);
+        // ...and not the man this club declined to renew an hour ago.
+        const idx = pool.findIndex((p) => p.pos === need.pos && p.overall >= bar - 12
+          && p.overall <= need.currentQuality + 8 && !isRejoin(world, p, club));
         if (idx === -1) continue;
         const p = pool.splice(idx, 1)[0];
+        p._leftClubId = null; p._leftSeason = null;
         p.clubId = club.id;
         p.contract = { years: rng.int(1, 3), wage: MG.players.expectedWage(p, club.leagueId) };
         MG.players.recordMove(p, club.name, world.season);
@@ -1144,6 +1312,7 @@
     const player = club.squad.find((p) => p.id === playerId);
     if (!player) return { ok: false, reason: "he is no longer at the club" };
     if (player.loan) return { ok: false, player, reason: "he is only here on loan" };
+    if (justArrived(world, player)) return { ok: false, player, reason: "he only signed this window — nobody will take him on yet" };
     if (club.squad.length <= MIN_SQUAD) return { ok: false, player, reason: "the squad is already too thin to sell" };
     const fee = round1(player.value * 0.95);
     const buyer = world.clubs
@@ -1162,6 +1331,9 @@
   function commitSale(world, club, offer) {
     const { player, buyer, fee } = offer;
     if (!club.squad.some((p) => p.id === player.id)) return { ok: false, player, reason: "he has already left" };
+    // Re-checked at the point of no return: findSaleOffer and commitSale are
+    // separated by the manager's decision, and the world moves in between.
+    if (justArrived(world, player)) return { ok: false, player, reason: "he only signed this window" };
     if (club.squad.length <= MIN_SQUAD) return { ok: false, player, reason: "the squad is already too thin to sell" };
     club.squad = club.squad.filter((p) => p.id !== player.id);
     club.finances.balance = round1(club.finances.balance + fee);
@@ -1194,7 +1366,7 @@
     /* Worst first: if the board is going to name players it would move on, it
      * should start at the bottom of the squad rather than wherever the array
      * happens to begin. */
-    const ranked = club.squad.slice().filter((p) => !p.loan).sort((a, b) => a.overall - b.overall);
+    const ranked = club.squad.slice().filter((p) => canLeave(world, p)).sort((a, b) => a.overall - b.overall);
     for (const p of ranked) {
       if (club.squad.length - out.length <= MIN_SQUAD + 2) break;
       const depth = (byPos[p.pos] || []).length;
@@ -1381,7 +1553,7 @@
      * fx runs independently with no idea what the rest of the batch did, so
      * the guard belongs here, on the automated pick itself, not on any one
      * card. */
-    const own = club.squad.filter((p) => !p.loan && p._arrivedSeason !== world.season);
+    const own = club.squad.filter((p) => canLeave(world, p));
     const ranked = own.slice().sort((a, b) => b.overall - a.overall);
     let player;
     if (which === "star") player = ranked[0];

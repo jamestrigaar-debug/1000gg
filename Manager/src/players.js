@@ -176,6 +176,63 @@
     return -(steep) * (1 - fitness * 0.25) * (1 - coach * 0.15) + rng.gauss() * 0.6;
   }
 
+  /* --------------------- DEVELOPMENT MOVES EVERYTHING ----------------------
+   * A player's overall and his attributes are the same fact stated two ways.
+   * They were not being kept that way: developSquads added the full delta to
+   * `overall` and then nudged three attributes by hand — speed by 30% of it,
+   * fitness by 48%, strength by a FLAT 0.6 that ignored the delta entirely —
+   * and never touched heading, left foot or right foot at all.
+   *
+   * Over one season that is invisible. Over a career it is the whole problem:
+   * an academy graduate who grows twenty points of overall between 18 and 25
+   * gains about six points of attributes, and arrives in his prime rated 89
+   * with a stat pool that reads like a 55. Two regens measured in a live save
+   * sat 28 and 34 points adrift. Every screen that reads attributes was
+   * describing a different player from the one the badge claimed, and the
+   * longer a save ran the worse it got.
+   *
+   * So development is expressed ONCE, here, and every attribute moves with the
+   * overall. Two terms:
+   *
+   *   1. THE DELTA TERM. Each attribute has its own historical slope (see
+   *      HOUSE), so a point of overall is worth 1.09 points of heading and
+   *      0.39 of left foot — the real relationship, not a flat share. Age
+   *      profile on top: improvement goes disproportionately into technique,
+   *      because that is what coaching actually adds, while decline takes the
+   *      legs first and leaves the technique alone. The weights sum to the
+   *      attribute count in both directions, so the MEAN moves by exactly what
+   *      the delta says it should and only the mix changes.
+   *
+   *   2. THE CONVERGENCE TERM. A small pull toward where the population says
+   *      this attribute should sit for this overall. Without it, rounding to
+   *      integers every season lets error accumulate in one direction over a
+   *      twenty-season career. With it, drift cannot build up — and an
+   *      already-broken player from an older save heals over three or four
+   *      seasons instead of staying wrong forever.
+   *
+   * Relative shape is preserved throughout: a slow centre-half stays slow,
+   * because both terms move him from where he already is rather than snapping
+   * him onto an average. */
+  const GAIN_WEIGHTS    = { heading: 1.0, fitness: 0.9, strength: 1.0, leftFoot: 1.2, rightFoot: 1.2, speed: 0.7 };
+  const DECLINE_WEIGHTS = { heading: 0.9, fitness: 1.3, strength: 0.8, leftFoot: 0.5, rightFoot: 0.5, speed: 2.0 };
+  const CONVERGE = 0.30;   // share of any residual gap closed per season
+
+  /** Apply one season's change in overall to the player, attributes included. */
+  function applyDevelopment(player, delta) {
+    player.overall = clamp(Math.round((player.overall + delta) * 10) / 10, 25, 96);
+    if (player.overall > player.potential) player.potential = player.overall;
+    const w = delta >= 0 ? GAIN_WEIGHTS : DECLINE_WEIGHTS;
+    for (const k of Object.keys(HOUSE)) {
+      const now = player.attrs[k];
+      if (now == null) continue;
+      const slope = HOUSE[k][0];
+      const residual = houseTarget(k, player.overall) - now;
+      const move = slope * delta * w[k] + residual * CONVERGE;
+      player.attrs[k] = clamp(Math.round(now + move), 20, 99);
+    }
+    return player;
+  }
+
   /* ------------------------------ INJURIES --------------------------------
    * Rolled once per season, before a ball is kicked, as a share of the campaign
    * the player misses. A season-at-a-time game cannot model a hamstring in
@@ -407,6 +464,75 @@
   };
   function foreignPos(pos) { return FOREIGN_POS[pos] || "CM"; }
 
+  /* ------------------- RECONCILING ATTRIBUTES WITH OVERALL ------------------
+   * Four source stats cannot describe a footballer. PAC/PHY/ATT/DEF carry no
+   * passing, no vision, no first touch, no composure — so a player whose
+   * greatness lives in those things (Yamal, Kane, De Bruyne) came out of the
+   * conversion below with a physical profile indistinguishable from a decent
+   * Championship midfielder, while his `overall` still said 89. Measured across
+   * the whole foreign set, the mapping produced
+   *
+   *     attrMean = 0.465 * ovr + 31.0
+   *
+   * against this game's own convention, fitted over the 6,050 outfield players
+   * in src/data.js's historical database:
+   *
+   *     attrMean = 0.808 * ovr + 9.9
+   *
+   * Barely half the slope. At overall 50 the two agree; at overall 90 the
+   * mapping undershoots by nearly ten points, which is why an 89-rated forward
+   * displayed six attributes with nothing above 81 and a mean in the sixties.
+   * Every screen that reads attributes — the profile bars, the radar, the role
+   * fit — was describing a different player from the one the number claimed.
+   *
+   * The correction is a shift in overall-space: the gap between the two lines,
+   * which is negative at the bottom of the pyramid and positive at the top, so
+   * it steepens the relationship rather than just lifting everyone.
+   *
+   * SPEED IS DELIBERATELY EXEMPT. It is the one attribute taken verbatim from
+   * the source (PAC), and the profile's speed bar is meant to read that exact
+   * number — a second scale for "actual speed" is a bug this project has
+   * already fixed once and the brief asks never to reopen. So the five DERIVED
+   * attributes, the ones that are inference rather than data, carry the whole
+   * correction between them. */
+  /* Corrected PER ATTRIBUTE, not by one shared shift. A shared shift fixed the
+   * average and left the shape wrong: PHY drives both fitness and strength in
+   * the map below, so those two came out far too high (strength median 82
+   * against a historical 64) while heading came out too low and right foot
+   * pinned 17 players against the 99 ceiling. Getting the mean right is not
+   * the same as getting the player right.
+   *
+   * So each derived attribute is moved onto its OWN historical line. Both sets
+   * of constants are least-squares fits of `attribute = slope * overall +
+   * intercept`, HOUSE over the 6,050 outfield players in src/data.js and MAP
+   * over the 1,373 players this conversion produces before correction. The
+   * correction is their difference, so the foreign population reproduces the
+   * historical relationship attribute by attribute.
+   *
+   * Re-fit both sides if the conversion below is ever retuned — scratch fits
+   * live in the same shape: group by name, drop keepers, regress on overall.
+   * The check that matters is that a corrected foreign population lands within
+   * a point of HOUSE at overall 60 and at overall 90. */
+  const HOUSE = {
+    heading:   [1.090, -14.5], fitness: [0.914,  8.1], strength: [0.901,  2.0],
+    leftFoot:  [0.394,  31.9], rightFoot: [0.683, 23.1], speed: [0.864, 9.1],
+  };
+  /** What the population says an attribute looks like at a given overall. */
+  function houseTarget(k, ovr) { const h = HOUSE[k]; return h ? h[0] * ovr + h[1] : ovr; }
+  const MAP = {
+    heading:   [0.325,  25.1], fitness: [0.388, 41.9], strength: [0.292, 53.0],
+    leftFoot:  [0.642,   4.1], rightFoot: [0.843,  8.7],
+  };
+
+  function reconcileToOverall(attrs, ovr) {
+    for (const k of Object.keys(MAP)) {          // MAP omits speed, deliberately
+      const h = HOUSE[k], m = MAP[k];
+      const correction = (h[0] * ovr + h[1]) - (m[0] * ovr + m[1]);
+      attrs[k] = clamp(Math.round(attrs[k] + correction), 15, 99);
+    }
+    return attrs;
+  }
+
   function mapForeignAttrs(rng, raw, pos) {
     const ovr = raw.ovr;
     const tall = pos === "CB" || pos === "GK" || pos === "FW";
@@ -426,7 +552,12 @@
       };
     }
     const { pac, phy, att, def } = raw;
-    return {
+    /* Shape first, from the four source stats; then reconciled against the
+     * overall so the level matches what that overall claims. The shape is a
+     * pure translation of the five derived attributes, so a quick weak winger
+     * stays a quick weak winger relative to himself — he just stops reading as
+     * a Championship player with an elite badge on him. */
+    return reconcileToOverall({
       // Aerial ability: physical composite plus defensive awareness, with a
       // position lean for the classically tall/aerial-heavy roles.
       heading: clamp(Math.round(phy * 0.35 + def * 0.35 + (tall ? 12 : -8)), 20, 99),
@@ -444,7 +575,7 @@
       speed: clamp(Math.round(pac), 15, 99),
       height: tall ? rng.int(182, 198) : rng.int(168, 188),
       weight: rng.int(66, 92),
-    };
+    }, ovr);
   }
 
   /** Convert a record from src/data_foreign.js (real LaLiga/Bundesliga/
@@ -617,7 +748,7 @@
 
   MG.players = {
     POSITIONS, POSITION_KEYS, SQUAD_TARGET,
-    firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta,
+    firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta, applyDevelopment, houseTarget,
     AGE_CURVE, ageCurve, MENTALITY_TRAITS, rollMentalityRating, rollMentalityTrait,
     marketValue, expectedWage, ageValueFactor, LEAGUE_WAGE_FACTOR,
     makePlayer, fromDatabase, fromForeign, generate, resetIds, setNextId, rollInjury, availability, durability, recordMove,

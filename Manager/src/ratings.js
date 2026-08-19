@@ -270,7 +270,18 @@
     return [
       { label: player.pos === "GK" ? "Goalkeeping" : "Defending", value: stretch(defenceAttribute(player)) },
       { label: "Physical", value: stretch((a.strength || 50) * 0.5 + (a.fitness || 50) * 0.5) },
-      { label: "Speed", value: stretch(a.speed || 50) },
+      /* SPEED IS NOT STRETCHED. Every other axis on this radar is a blend of
+       * two or more attributes, so the number it shows corresponds to nothing
+       * the player can look up elsewhere and a contrast stretch costs nothing.
+       * Speed is the exception: it is a straight copy of one raw attribute
+       * that is ALSO printed, unstretched, in the raw-attribute grid further
+       * down the same profile. Stretched, the bar read 80 while the grid two
+       * inches below read SPD 77 — the same word, the same player, two
+       * numbers. That is exactly the "second scale for actual speed" this
+       * project has already removed once (see players.js's foreign mapping,
+       * where PAC is copied verbatim for precisely this reason) and the brief
+       * asks never to reopen. One attribute, one number. */
+      { label: "Speed", value: clamp(Math.round(a.speed || 50), 2, 99) },
       { label: "Attacking", value: stretch(((a.leftFoot || 50) + (a.rightFoot || 50)) / 2) },
       { label: "Aerial", value: stretch((a.heading || 50) * 0.7 + (a.strength || 50) * 0.1 + heightPts * 0.2) },
       { label: "Mental", value: stretch(men) },
