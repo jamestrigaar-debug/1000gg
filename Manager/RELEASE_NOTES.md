@@ -1,5 +1,273 @@
 # Football DNA Simulator — Manager
 
+## v0.9.5 · beta — the wage economy, the layout, and an AI that builds teams
+
+### 1. Every club in the world showed a negative wage room
+
+Reported from testing, and the diagnosis offered was that the wages must be
+monthly amounts being multiplied as if they were weekly. They are not — the
+numbers are weekly and weekly-scaled: Haaland lands on £524k a week against a
+publicly reported £525k, Salah on £403k against £350k. As monthly figures they
+would put Haaland on £7.5m a year against his real £27m.
+
+The real cause was that **the board's sanctioned wage budget was set below the
+cost of the squad the club already owned**. A first-tier squad priced at the
+going rate for every player came to about 76% of its club's revenue, while the
+board sanctioned around 58% of it — so no club could ever show a positive wage
+room, by construction. 69% of the world was over budget, median 1.35× and 90th
+percentile 2.85×.
+
+Both halves were wrong, and both are fixed:
+
+- **The wage curve** for the five first-tier divisions is cut about 17%, which
+  brings a full squad to 61% of revenue.
+- **The board's share** rises from a 0.54 base to 0.68, so a board funds a team
+  it can field.
+- **Every division below the top flight was earning far too little.** A
+  Championship club took £16m against a real £30-40m; League One £3m against a
+  real £8-12m. MLS and the Saudi league were worse. All raised to something
+  like their real income — which is why the problem read worst exactly where a
+  new manager starts, because that is the part of the pyramid that was
+  furthest out.
+
+Clubs over their wage budget: **69% → 9-18%**. A minority, which is correct —
+an over-committed club is a real thing and it is what makes selling pressure
+mean anything. Every English club now starts a career in the black.
+
+If you would still rather see monthly figures on screen for taste, that is a
+one-line change to the label and the ×52 — say the word.
+
+### 2. The reference tabs moved above the decisions
+
+SQUAD and TACTICS are gone from the bottom strip: the pre-season hub carries
+them, along with CONTRACTS, as its own sub-tabs, so having them twice on one
+page was only ever a second place to look. What is left — **TABLE, CAREER,
+WORLD** and the academy — now sits top-left, above the Decisions panel,
+collapsed until asked for.
+
+The strip also no longer opens itself on the season-ahead screen. That was
+harmless at the bottom of the page and is not harmless at the top: a full
+league table between the header and the decision would push the decision off
+the first screen, which is the one thing this layout exists to prevent.
+Collapsed, the whole strip is 111px and the decision starts immediately below
+it.
+
+### 3. The AI now builds a team rather than collecting players
+
+Four changes, all of which cost simulation time and are worth it.
+
+**It knows what shape it plays.** A 4-3-3 manager starts three central
+midfielders and a 4-4-2 manager starts two. Squad need was measured against one
+fixed table of how many of each position a squad "should" carry, so every club
+in the world wanted the same squad regardless of how it set up — and the trim
+that keeps squads to size cut by rating alone, so a club's third central
+midfielder was as likely to go as its fifth centre half. The formation now
+decides: the floor at every position is the starting eleven the manager picked
+plus a cover, and the top-up fills the shape's holes before anything else.
+
+**It knows what a signing actually adds.** The market scored a target on his
+rating against the current starters' average, which cannot tell a first-choice
+signing from a fourth-choice one — a club with three excellent centre halves
+rated a fourth almost as highly as the club that had none. `marginalValue`
+rebuilds the position's starting line with the player in it, takes the
+improvement, and weights it by how much that position feeds the ratings the
+match engine reads. A fourth centre half now scores zero.
+
+**It plans succession.** A position whose starters average 29+ with nobody
+under 23 behind them is next year's hole, and a club that only reacts once the
+hole opens is one whose squad falls off a cliff every few seasons. Ageing lines
+now earn a place on the summer's priority list before they collapse.
+
+**It remembers what it failed to fix.** Cycle 3 always worked out what the
+summer missed; nothing carried it into the next one, so a club could spend a
+decade shopping for the same centre half in exactly the same way. Three
+summers of memory now feed back as escalation — more money and a lower bar for
+a position that has beaten the club twice.
+
+That last one needed its own fix to be worth anything: "unmet" was measured
+against the generic 26-man quota, which adds up to more players than any squad
+carries, so 60% of priorities read as unmet and 91% of clubs looked permanently
+stuck. Measured against the eleven the manager actually picks it means
+something: **15% of priorities unmet, 15% of clubs carrying a genuinely
+unsolved position.**
+
+| squad quality, 663 club-seasons | before | after |
+|---|---|---|
+| Shape slots the squad cannot fill | 0.10 | 0.03 |
+| Surplus bodies beyond starters + cover | 4.16 | 3.35 |
+| Players out of position in the XI | 1.51 | 1.44 |
+| Gap between the XI and the rest of the squad | 7.69 | 7.98 |
+
+Simulation time is unchanged — the shape-aware fill converges faster than the
+old one, which paid for the extra evaluation.
+
+All four harnesses pass: `realism.js` all nine metrics within tolerance,
+`audit.js` no structural faults over 12 seasons, `decisions.js` 69/69 cards,
+`run_world.js` clean on five seeds.
+
+---
+
+## v0.9.4 · beta — the transfer market, and why it kept putting Haaland at Brentford
+
+Reported from a save: world-class players turning up at clubs that had no
+business having them. Tracing it turned up six separate faults feeding each
+other, and one of them had made the paid transfer market for elite players
+effectively non-existent.
+
+### 1. The biggest clubs in the world were renewing nobody
+
+`retirementsAndExpiries` gated every contract renewal behind `affordableNow()`
+— the club's wage bill against its wage budget. An elite squad structurally
+sits over its budget: Manchester City £360m of wages against £294m, Liverpool
+£382m against £248m. So the gate read false at the top of every division, every
+season, and the biggest clubs in the game let **every expiring contract walk
+for nothing**.
+
+Measured across eight seasons: **152 moves by players rated 84+ on free
+transfers against three completed paid deals**. The entire elite market was a
+free-agent lottery — which is exactly how world-class players ended up scattered
+into clubs that could never have bought them.
+
+A club now keeps anyone within two points of its own playing level unless it is
+in genuine financial trouble. He can still price himself out through his agent,
+and he can still decide to go — both of which are checked separately. The
+squeeze stays where it belongs, on the fringe of the squad.
+
+### 2. Stars were refusing to re-sign at clubs they had no reason to leave
+
+`willRenew`'s dominant term compared the player's rating to his club's *squad
+average*. Every star in the world sits several points above his own club's
+average — that is what being a star means — so the model read it as a man
+badly let down by his surroundings. Lamine Yamal at 93 against Barcelona's 84
+refused to re-sign, and so did Kimmich at Bayern, Guirassy and Schlotterbeck at
+Dortmund, Donnarumma at City.
+
+It now measures against what a club of that size would **expect** its best
+player to be. Above that — a world-class player at a mid-sized club — and the
+pull to leave is real and does the job it was always meant to do.
+
+Elite players reaching free agency fell from **114 to 33** over eight seasons.
+
+### 3. Nothing asked whether the buying club was big enough
+
+The only quality ceiling in the market was "fourteen points better than this
+position's current starters" — measured against a club's *weakest* area, so any
+side with one thin position and a good summer's budget was cleared to bid for
+anybody. And `willJoin` compared the two clubs to each other without ever
+comparing either of them to the player.
+
+Both now exist. A club looks no more than five points above its own playing
+level (eight on a free, where there is no fee to price him out), and the gap
+between what a player is and what the buying club plays at is now the strongest
+single term in his decision: five points clear is a marquee signing, ten is a
+puzzling one, fifteen does not happen.
+
+### 4. Personality now decides transfers, not just contracts
+
+v0.9.3 wired the mentality traits into contract renewals and nowhere else. The
+same three temperaments now carry real weight in whether a player moves:
+
+- **Ambitious** (Leader, Winner, Big Game Player, Talisman, Fearless, …) chase
+  the step up and refuse the step down twice as hard.
+- **Settled** (Professional, Steady, Dependable, Team Player, …) take some
+  shifting once they are somewhere, and more so under a long contract.
+- **Volatile** (Maverick, Mercurial, Temperamental) are simply less predictable
+  than anybody's model of them, which is the whole point of them.
+
+All 32 traits in the database map to one of the three; none falls through.
+
+### 5. Selling to buy
+
+A club's transfer budget was fixed the moment the window opened, so a £70m sale
+in round one bought it nothing in round two. That is not how the top of the
+market funds itself, and it is a second reason no club could ever reach a
+world-class player: a big club's budget runs to £60–90m and an elite asking
+price runs past £120m. A selling club now gets 70% of the fee back to spend
+inside the same window, and the wage it just shed back as room. The board keeps
+the rest — that is the difference between trading and churning.
+
+The fee is also weighed **as a share of what the club has** rather than in raw
+millions. At the old flat `fee × 0.35` against a score denominated in rating
+points, anything over about £40m scored negative and no AI club anywhere ever
+nominated an expensive player.
+
+### 6. Regens were being born finished
+
+`players.generate` applied its quality target regardless of age, so an
+eighteen-year-old filling a depth slot at Real Madrid was created already rated
+85 with a potential of 91 — and then developed on top of that for eight
+seasons. Twelve seasons in, **37 of the world's top 50 were generated players
+rated 93–96**, against a real database whose very best is 94.
+
+A target is now a **peak**, discounted per position off the same age curve the
+development model uses — a winger matures at 23 and is generated close to his
+peak, a goalkeeper at 27 and is generated well short of it — with the potential
+to grow into it. Top 50 is now 30 real players to 20 generated, and the ceiling
+sits back at 94.
+
+### 7. Promoted clubs were budgeted as if they had finished second
+
+`setBudgets` fed `club.lastPosition` into the revenue projection without
+checking that last season was in the *same division*. Bristol City: £19m of
+actual revenue, a £98m wage budget, and the largest wage room in the Premier
+League — which is precisely the sort of club that then turned up in the market
+for players it had no business near.
+
+### 8. The wage curve at the top, and the money that followed
+
+Once clubs actually kept their best players, the elite ran straight into
+insolvency instead: City carrying £521m of wages against £535m of revenue, a
+ratio of 97% against a real one nearer 58%. The wage curve had drifted a long
+way from its own documented calibration — a 90-rated player was asking £674k a
+week against the £350k the code says it is tuned to, and a 96-rated one £1.4m,
+roughly three times the largest wage in the real game.
+
+The curve now bends above 78 and lands back on its stated calibration (90 →
+£350k, 96 → £528k). Everything below 78 — the great majority of the population,
+and all of the lower divisions the board's finance metric was tuned against —
+is untouched. Elite commercial revenue is lifted 10% (it scales with reputation,
+so it lands on the giants and nowhere else) and the progressive operating cost
+raised from +8% to +14% at the top, so the money a club no longer spends on
+wages does not simply pile up on the balance sheet.
+
+Manchester City now runs at 57–62% of revenue on wages, near break-even, which
+is both realistic and keeps the constraint the difficulty pass put there.
+
+### 9. The QA panel now measures against the right baseline
+
+The TOP RATED list's gap number compared every player's attribute mean to his
+rating. But the six attributes the game carries do not describe every position
+equally — nothing in them covers shot-stopping or positional reading. Fitted
+across the database, at a rating of 94 a keeper's six attributes average 16
+below him, a centre half 12, and a winger 5. Read against one line, every
+keeper and centre half in the world looked broken and every attacker looked
+clean, so the readout could not do the one job it exists for.
+
+It is now a **residual** against the player's own position: zero is exactly
+typical, double figures means his stat pool genuinely does not match his badge.
+Across the whole world the median is −1 and the 95th percentile is 5.
+
+### Measured
+
+| | before | after |
+|---|---|---|
+| Elite (84+) moves on free transfers, 8 seasons | 152 | 33 |
+| Elite players reaching free agency, 8 seasons | 114 | 33 |
+| Elite moving down 15+ reputation | 4 | 0 |
+| Elite players with 3+ moves in 8 seasons | 12 | 4 |
+| Mean club reputation of the 85+ players | 82.2 | 86.6–88.5 |
+| Elite at clubs below reputation 70 | 25 | 4–7 |
+| Top 50 that are generated players (S12) | 37 | 20 |
+| Manchester City wages as a share of revenue | 97% | 57–62% |
+| Attribute-vs-rating residual (median / p95) | — | −1 / 5 |
+
+All four harnesses pass: `realism.js` all nine metrics within tolerance
+(champion 90.8 pts vs a real 88, bottom 24.2 vs 26), `audit.js` no structural
+faults over 12 seasons, `decisions.js` 69/69 cards with no swallowed errors,
+`run_world.js` clean on five seeds.
+
+---
+
 ## v0.9.3 · beta — progression, contracts and the transfer window
 
 ### 1. Progression was the real cause of the rating mismatch
