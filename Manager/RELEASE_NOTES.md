@@ -1,5 +1,175 @@
 # Football DNA Simulator — Manager
 
+## v0.9.8 · beta — balance & agility, a six-axis radar, and the Ballon d'Or
+
+Reported directly: the top of the game still read as "high everything" —
+reaching an elite badge meant being big, strong, fast and skilled all at
+once, with no room for a genuinely different kind of player to get there a
+different way.
+
+### 1. Balance & Agility — an eighth attribute, and the missing half of "physical"
+
+Nothing in the source data measures how nimble a player is, so it is built
+the way the real thing works. A light, compact frame turns and recovers
+faster than a tall, heavy one, measured against the population's own median
+build (181cm/76kg across the 6,050 outfield players in the shared database) —
+and it cuts both ways: shorter or lighter than that median is a genuine gift,
+not just the absence of a penalty.
+
+Real athleticism buys a lot of that back, but only through a square-root
+curve: going from an average athlete to a good one recovers most of what
+size cost him; going from good to elite recovers comparatively little more.
+A player elite in strength, fitness *and* speed still pays some of the size
+tax if he is genuinely big — an immense defender or forward reads as very
+good at this, not the best in the world, however good everything else is.
+
+Stored on the player (`BAL` in the raw grid, alongside HDR/FIT/STR/LF/RF/SPD/
+CRE), and *recomputed* rather than independently developed: height and
+weight never change after creation, so balance is entirely a function of the
+three attributes that do (strength, fitness, speed), refreshed every
+development tick so it never falls out of sync with the body it describes.
+
+Verified against the real population: the highest reads in the game are
+Ian Maatsen (167cm/57kg, BAL 83) and Xavi Simons (168cm/58kg, BAL 82); the
+lowest are unathletic 196cm centre-halves in the low 30s. Erling Haaland
+(195cm, elite physicals) lands a contained 56 — good, not freakish, exactly
+the "big man who is still surprisingly mobile, but not a small man's equal"
+outcome real football produces.
+
+### 2. The radar goes back to six axes — creativity and balance feed in, they don't get a dial
+
+Creativity was given its own seventh axis last release. Reverted: a radar's
+whole job is to make an elite-everywhere player look like a hexagon and an
+elite-at-one-thing player look like a spike, and a seventh or eighth corner
+just rounds every shape back off. Both new attributes are folded into the
+axes they actually describe instead:
+
+- **Balance feeds Physical** (a quarter of it) — agility is a physical
+  quality, not a separate one, and folding it in is what lets a small, light,
+  athletic player read well there without also needing to be strong.
+- **Creativity feeds Attacking** (a quarter) and **Mental** (just over a
+  quarter) — alongside the strong foot and the underlying mentality rating
+  that still do most of the work on each.
+
+Between the two of them, this is the actual fix for "high everything": a
+big, powerful, heavy-footed forward and a small, clever, two-footed one can
+now land on the same overall by two genuinely different routes through the
+same six axes, rather than the same one. All six axes were refitted against
+the 6,700-player database with the new formulas — every position still
+averages within a couple of points of the badge it carries.
+
+### 3. The Ballon d'Or, and an award tracker that finally shows something
+
+`computeAwards` has quietly worked out a Golden Boot, a top scorer and a
+Manager of the Season every single season since it was written — and nothing
+in the game ever displayed any of it. Fixed alongside adding the award it was
+missing.
+
+**The criteria, fixed every season:**
+
+1. A **pool** of the season's top performers from the four leagues that
+   actually produce Ballon d'Or contenders (Premier League, La Liga, Serie A,
+   Bundesliga) — goals and assists, weighted so a defender's tally counts for
+   more than a forward's (the same logic the real voting panel applies),
+   plus the player's own quality, so a hot striker at a mid-table club
+   doesn't outscore a genuinely world-class player having a quieter season.
+2. **Two wins, each worth double.** Winning your league doubles your score;
+   winning the Champions League doubles it again — stackable, so a real
+   treble-winning season's best player dominates the vote the way it should.
+   Nothing else in the pool multiplies; everything else only adds.
+3. A **pseudo vote**, not a straight top-of-the-list pick. The real award is
+   decided by a panel, not a stat sheet, which is why the best-numbers
+   candidate does not always win it. Drawn weighted by score, the same shape
+   as the giant-killing roll in the match engine — the front-runner usually
+   takes it, and occasionally does not.
+
+**The tracker**: a new AWARDS tab alongside TABLE/CAREER/WORLD/YOUTH — this
+season's winner and his shortlist, Manager of the Season, the Golden Boot
+per league, and a Hall of Fame of every past winner, reading straight off
+`world.history` with nothing extra to maintain.
+
+Verified across a real save: Julián Álvarez topped one season's shortlist on
+raw output (36 goals, score 336.6) and Alexander Isak won the vote anyway
+(298.9) — the pseudo-vote doing exactly the job it exists for.
+
+Existing saves are backfilled with balance & agility on load, the same
+treatment creativity got. All four harnesses pass: `realism.js` all nine
+metrics within tolerance, `audit.js` no structural faults, `decisions.js`
+69/69 cards, `run_world.js` clean on five seeds.
+
+---
+
+## v0.9.7 · beta — a bug sweep of the whole codebase, and one that mattered
+
+A full read-through of every simulation module, hunting specifically for
+anything game-breaking. Most of the codebase held up — the transfer market,
+competitions, sacking/hiring, saves and the AI's squad-building all checked
+out clean. One bug did not.
+
+### Season-long form was being silently discarded before every match
+
+`world.profile()` caches a club's attack/defence/midfield/etc. per competition
+so a full rebuild — which includes picking the starting XI — only happens when
+something actually changes. `club.form` (match-to-match momentum) is the one
+part of that profile that moves every game without the cache being
+invalidated, so the code refreshed it on every read with one line:
+
+```js
+p.form = world.clubIndex[clubId].form || 0;
+```
+
+That line does not ADD momentum to the rest of the form calculation — it
+REPLACES the whole thing. `teamProfile` computes form as three terms —
+momentum, `modifiers.form` (a decision card's season-long swing), and a morale
+term — and this line threw the other two away the instant they were computed,
+on every single access, for every match, for the entire time this caching
+system has existed.
+
+Concretely: **ninety-one separate decision-card effects** promise a form swing
+this season — pep talks, board backing, a training-ground upgrade, a director
+of football's intervention. Every one of them called `form(n)`, which correctly
+added the points to `club.modifiers.form`. None of them ever reached a match.
+The fatigue penalty for running a threadbare squad into the ground — "worth
+about two points of form across a campaign," per its own comment — never
+reached one either. Neither did the morale term match.js documents as
+"colouring a season."
+
+Verified directly: a club with `modifiers.form = 8` and `club.form = 1.5`
+should show the match engine `9.5`. It showed `1.5`.
+
+**Fixed** by splitting the cached profile's form into two parts at build time —
+the static portion (modifiers + morale, which only change when something
+explicitly invalidates the cache) and the momentum, refreshed fresh on every
+read exactly as before. Same cost, same cache-invalidation behaviour, but the
+whole sum now reaches the pitch instead of one third of it.
+
+This is a real difficulty and realism shift, not just a fix — a mechanic that
+had been silently inert this whole time is now live. Bottom-of-the-table
+points dropped from 26.5 to 20.2 in one measurement (real-world is 26, and the
+metric's tolerance is ±8, so still comfortably within it) — squads that run
+threadbare or have a poor season now actually pay the price the fatigue and
+morale systems were always meant to charge them. Every harness still passes:
+`realism.js` all nine metrics within tolerance, `audit.js` no structural
+faults over 12 seasons, `decisions.js` 69/69 cards, `run_world.js` clean on
+five seeds at 20 seasons each.
+
+### What else was checked and came back clean
+
+Full pass across `world.js` (season loop, promotion/relegation, the manager
+carousel, hiring/sacking, save/load round-tripping), `transfers.js` (the
+auction, listings, reversal), `competitions.js` (knockout byes, playoffs,
+Dixon-Coles), `match.js` (goal/assist attribution), `agents.js` (roster
+placement and bump-cascade), `youth.js` (academy development and promotion),
+`clubs.js` (financial crisis and points deductions) and `managers.js`
+(candidate scoring, sacking thresholds) — no divide-by-zero, off-by-one,
+stale-reference or double-application bugs found. A profiler run across 40
+simulated seasons confirms the hot paths are exactly where they should be —
+squad selection and the transfer market's marginal-value scoring — and every
+one of them is already the result of a prior optimisation pass with the
+before/after numbers left in the comments.
+
+---
+
 ## v0.9.6 · beta — creativity, and profiles that justify their badge
 
 Reported from play: elite players whose profiles did not look elite, with
