@@ -1,5 +1,249 @@
 # Football DNA Simulator — Manager
 
+## v0.9.3 · beta — progression, contracts and the transfer window
+
+### 1. Progression was the real cause of the rating mismatch
+
+v0.9.2 fixed the 2026 squads, but two regens in a live save still showed
+overall 89 and 93 against attribute means in the mid-50s and 60s — gaps of +34
+and +28, far worse than anything the imported squads ever had. That is because
+the import was only half the problem. The other half was **development**.
+
+`developSquads` added the full delta to `overall` and then nudged three
+attributes by hand: speed by 30% of it, fitness by 48%, strength by a **flat
+0.6 that ignored the delta entirely** — and never touched heading, left foot or
+right foot at all. The academy was worse: `overall` grew up to three points a
+season while the attributes got only a small focus-shaped nudge.
+
+Over one season that is invisible. Over a career it is the whole problem: an
+academy graduate who grows twenty points between 18 and 25 gained about six
+points of attributes and arrived in his prime rated 89 with a stat pool that
+read like a 55. **The longer a save ran, the worse it got.**
+
+Development is now expressed once, in `players.applyDevelopment`, and every
+attribute moves with the overall. Two terms:
+
+- **The delta term.** Each attribute has its own historical slope, so a point of
+  overall is worth 1.09 points of heading and 0.39 of left foot — the real
+  relationship, not a flat share. An age profile on top sends improvement into
+  technique (what coaching actually adds) and takes the legs first in decline.
+  The weights sum to the attribute count in both directions, so the mean moves
+  by exactly what the delta says and only the mix changes.
+- **The convergence term.** A 30%-per-season pull toward where the population
+  says the attribute should sit. Without it, rounding to integers lets error
+  accumulate over a twenty-season career. With it, drift cannot build up — and
+  **an already-broken player from an older save heals over three or four
+  seasons** instead of staying wrong forever.
+
+Relative shape is preserved: a slow centre-half stays slow, because both terms
+move him from where he is rather than snapping him onto an average.
+
+Measured over twelve seasons, drift now **converges instead of compounding**:
+
+| | season 0 | season 12 |
+|---|---|---|
+| median gap | 3.0 | **1.7** |
+| worst gap | 23.7 | **9.0** |
+| elite (85+) mean gap | 8.7 | **5.6** |
+
+### 2. Transfer window: a signing cannot be flipped the same window
+
+Free agents were being signed and moved straight back out at a profit inside
+one window. A guard for this already existed — but it lived in exactly one
+place, the board's automated "who do we cash in on" pick, so every other exit
+ignored it: the board's own listing, the manager's SELL card, the AI market and
+the fire-sale. **A rule enforced on one of five doors is not a rule.**
+
+It is now one shared rule applied at every door, including the market index the
+whole AI shops from, and it is deliberately universal rather than
+free-transfer-only — a signing that can be flipped the same summer is a trading
+loophole whatever it cost. Loans are unaffected; they have their own return
+path.
+
+Verified by instrumenting every arrival: **zero double-moves across 9,359
+arrivals over six seasons.**
+
+### 3. Nobody rejoins the club they just left, in the same window
+
+Chelsea sacked a manager and hired him straight back. `hireFor` scored every
+free manager on merit, and the best free manager available was — inevitably —
+the one they had just let go. A club can no longer re-appoint the man it parted
+with in the season it parted with him. Any later season is fair game: a manager
+returning to an old club years on is a real and welcome story.
+
+**Zero same-window rehires across 1,129 manager changes on four seeds.**
+
+The player equivalent needed only one extra guard, on the free-agent list — a
+club declining to renew a contract and re-signing the same man an hour later.
+Every other same-window return was already impossible once the settling-in rule
+above was in place.
+
+### 4. Contracts: the player now has a say, and so does his agent
+
+A contract used to be a countdown and nothing else. It ran out, the board could
+or could not afford a renewal, and the player himself had no opinion at any
+point — which is why the best players drifted away from the best clubs. Nothing
+in the model preferred a good club to a bad one, so a title-winning side lost
+its stars on the same coin-flip as anyone else.
+
+Three things now decide a renewal:
+
+- **Temperament.** The mentality trait every player already carries, sorted into
+  three postures. A *Professional* re-signs and gets on with it. A *Talisman*
+  wants to know the club matches his ambition and will run his deal down if it
+  does not. A *Mercurial* one is a coin-flip with a bigger wage attached.
+- **His season.** Minutes, morale, and whether the club sits above or below his
+  own level — the dominant term.
+- **His agent.** A super-agency asks for more than a local fixer, using the cut
+  the agent system already computes. This is what prices a small club out of
+  keeping a player whose career has outgrown it.
+
+The board also no longer waits for expiry: once a player it rates is inside two
+years it opens talks, up to three a summer.
+
+The emergent result is the point. Over twelve seasons the **mean club
+reputation of the world's fifty best players rises from 81.7 to 87.0** — the
+elite concentrate at the biggest clubs, because an elite club can meet an
+ambitious player's demand and a Championship club cannot, so he moves up rather
+than sideways.
+
+### 5. TOP RATED PLAYERS — a testing instrument
+
+New panel on the WORLD tab, filterable by position. It shows each player's
+rating alongside the **mean of his six attributes** and the gap between them,
+colour-coded — single figures fine, double figures worth a look. That is the
+fastest way to check whether a change to development or the attribute model did
+what it was supposed to.
+
+Building it exposed a small pre-existing fault: the whole World tab returned
+"the world has not played a season yet" for the entirety of season one, hiding
+the player search and the league browser too. Only the news *feed* needs a
+completed season, so only the feed waits now.
+
+### Verified
+
+| metric | v0.9.2 | now | real |
+|---|---|---|---|
+| champion points | 84.0 | 91.5 | 88 |
+| bottom points | 26.3 | 21.0 | 26 |
+| both teams scored | 44.9% | 44.9% | 50% |
+
+All nine metrics within tolerance. Champion points rose because the contract
+system concentrates stars at the top — the intended effect, and it is now +3.5
+against a real 88. `audit.js` clean over 12 seasons, `decisions.js` 69/69,
+`run_world.js` clean across seeds, browser checks with no console errors.
+
+### Known limit
+
+Goalkeepers carry a weaker attribute basis than outfielders — the source has no
+reflexes or handling stat, so a keeper's six attributes describe him less
+completely. The median gap is fine (2.5, against 3.8 for outfielders) but
+individual keepers can read high. Modelling limit, not a regression.
+
+---
+
+## v0.9.2 · beta — attributes now match the overall
+
+Reported from playtesting: an 89-rated forward with no attribute above 81, a
+93-rated winger whose bars averaged in the sixties, and a Speed bar reading
+about +3 above the SPD figure printed lower down the same profile.
+
+Both were real. Measured across the whole world, `overall` floated above the
+attributes and the gap **grew with the rating**:
+
+| overall band | median gap, before |
+|---|---|
+| 30–55 | +1.7 |
+| 55–65 | +2.8 |
+| 65–72 | +4.2 |
+| 72–80 | +8.3 |
+| 80–88 | +11.7 |
+| 88–99 | **+15.2** |
+
+### The cause
+
+Only the 2026 squads were affected. They come from a four-stat source
+(PAC/PHY/ATT/DEF) that carries no passing, vision, first touch or composure —
+so the conversion into this game's six attributes had nothing to work with for
+players whose quality lives in exactly those things, and it never checked its
+own output against the `overall` it had been handed.
+
+Fitted against this game's own primary data — the 6,050 outfield players in
+`src/data.js` — the two populations were on different lines entirely:
+
+```
+historical convention   attrMean = 0.808 * ovr +  9.9
+2026 conversion         attrMean = 0.465 * ovr + 31.0
+```
+
+Barely half the slope. The two agree at overall 50 and diverge by nearly ten
+points by overall 90, which is why elite players looked ordinary and ordinary
+players looked fine.
+
+### The fix
+
+Each derived attribute is now moved onto **its own** historical line, not one
+shared correction. A single shared shift was tried first and was not good
+enough: it fixed the average and left the shape wrong, because PHY drives both
+fitness and strength in the conversion, so those came out far too high
+(strength median 82 against a historical 64) while heading came out too low and
+seventeen players' right foot pinned against the 99 ceiling.
+
+After the per-attribute fit, every attribute lands within **0.4 of the
+historical line** at both overall 60 and overall 90, and the ceiling pinning is
+gone (right foot now tops out at 92, matching the source population).
+
+**Speed is deliberately exempt.** It is the one attribute copied verbatim from
+the source, precisely so the profile's speed bar reads that exact number.
+
+Harry Kane, before and after:
+
+```
+before   DEF 62  PHY 80  SPD 81  ATT 81  AER 60  MEN 69     (overall 89)
+after    DEF 66  PHY 89  SPD 78  ATT 85  AER 82  MEN 69     (overall 89)
+```
+
+Lamine Yamal stays the quick, technical, physically slight winger he should be
+— speed 91, aerial well below his own average — but at a level that reads like
+an 89 rather than a 65.
+
+### The Speed +3
+
+That was a contrast stretch applied to the radar. Every other axis is a blend
+of two or more attributes, so the number it shows corresponds to nothing you
+can look up elsewhere and the stretch costs nothing. Speed is the exception: a
+straight copy of one raw attribute that is *also* printed, unstretched, in the
+grid further down the same profile. Stretched, the bar said 80 while the grid
+two inches below said SPD 77.
+
+Speed is no longer stretched. **All 5,745 players now show the same number in
+both places.**
+
+### Checked and found correct
+
+`roleRating` varies only ±2–5 points across positions, which looked alarming —
+a goalkeeper rating 88 as a forward. It is not a bug. The match engine uses
+`effectiveOverall`, which applies positional familiarity on top and spreads
+32–45 points: Donnarumma goes from 78 in goal to 42 at centre-forward.
+`roleRating`'s few points are the attribute-fit nuance layered over that, which
+is what it is meant to be. Left alone.
+
+### Verified
+
+All nine realism metrics within tolerance, and bottom-club points landed
+essentially exact:
+
+| metric | v0.9.1 | now | real |
+|---|---|---|---|
+| champion points | 84.2 | 84.0 | 88 |
+| bottom points | 25.2 | **26.3** | 26 |
+| title-race spread | 59 | 58 | 62 |
+
+`audit.js` clean over 12 seasons, `decisions.js` 69/69 cards, `run_world.js`
+clean, plus a browser profile check with no console errors.
+
+---
+
 ## v0.9.1 · beta — the difficulty pass
 
 The game was too easy, and profiling the build showed it was not because any one
