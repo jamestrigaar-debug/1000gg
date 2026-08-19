@@ -112,10 +112,13 @@
    *                   (negative = demands better than the squad deserves)
    * tolerance         how many places either side of target counts as "met"
    * reactivity        multiplier on every confidence swing
-   * patience          seasons of grace a new manager is given. Never below 2:
-   *                   every manager in the world gets a full season to be
-   *                   judged on before the axe can fall, which is both fair
-   *                   and what stops a career ending before it starts.
+   * patience          base seasons of grace a new manager is given, then
+   *                   adjusted by the size of the club in onManagerAppointed —
+   *                   a giant gives you one season, a small club three. Never
+   *                   below 1, and grace only decrements at the end of a
+   *                   season, so every manager in the world still gets one
+   *                   full campaign judged on its own merits before the axe
+   *                   can fall.
    * sackFloor         confidence at which the axe falls
    * drift             random noise added to expectations each season
    * weights           how the season's metrics are weighted into the verdict
@@ -124,22 +127,22 @@
   const BOARD_STYLES = {
     Balanced: {
       label: "Balanced", blurb: "Expects what the squad deserves and reacts in proportion.",
-      expectationShift: 0, tolerance: 2, reactivity: 1.0, patience: 2, sackFloor: 28, drift: 0.6, fanSensitivity: 1.0,
+      expectationShift: 0, tolerance: 2, reactivity: 1.0, patience: 2, sackFloor: 34, drift: 0.6, fanSensitivity: 1.0,
       weights: { league: 0.45, cup: 0.15, finance: 0.20, youth: 0.20 }, backing: 0.5,
     },
     Patient: {
       label: "Patient", blurb: "Backs a project. Judges over years, values the academy.",
-      expectationShift: 2, tolerance: 4, reactivity: 0.6, patience: 4, sackFloor: 16, drift: 0.3, fanSensitivity: 0.55,
+      expectationShift: 2, tolerance: 4, reactivity: 0.6, patience: 3, sackFloor: 22, drift: 0.3, fanSensitivity: 0.55,
       weights: { league: 0.30, cup: 0.10, finance: 0.25, youth: 0.35 }, backing: 0.4,
     },
     Chaotic: {
       label: "Chaotic", blurb: "Moves the goalposts. Nobody is ever quite safe.",
-      expectationShift: -1, tolerance: 2, reactivity: 1.25, patience: 2, sackFloor: 34, drift: 3.2, fanSensitivity: 1.45,
+      expectationShift: -1, tolerance: 2, reactivity: 1.25, patience: 2, sackFloor: 40, drift: 3.2, fanSensitivity: 1.45,
       weights: { league: 0.40, cup: 0.20, finance: 0.15, youth: 0.25 }, backing: 0.6,
     },
     Aggressive: {
       label: "Aggressive", blurb: "Demands more than the squad deserves, and demands it now.",
-      expectationShift: -1.5, tolerance: 1, reactivity: 1.55, patience: 2, sackFloor: 36, drift: 0.8, fanSensitivity: 1.25,
+      expectationShift: -1.5, tolerance: 1, reactivity: 1.55, patience: 2, sackFloor: 43, drift: 0.8, fanSensitivity: 1.25,
       weights: { league: 0.60, cup: 0.20, finance: 0.10, youth: 0.10 }, backing: 0.75,
     },
   };
@@ -488,13 +491,30 @@
    * big club's balance compounds into the billions over a long save, because
    * playing wages alone never come close to consuming the revenue. */
   const OPERATING_COST_SHARE = 0.24;
+  /* And it is PROGRESSIVE. A flat 24% of revenue was enough to stop a balance
+   * compounding into the billions but not enough to stop it compounding: across
+   * twelve simulated seasons the median Premier League balance still tripled,
+   * from £60m to £192m, and transfer budgets are set from the balance. Money
+   * quietly stopped being a constraint somewhere around season five, which
+   * removed the single thing that keeps a small club small and makes a big
+   * signing a decision rather than a formality.
+   *
+   * The curve is not arbitrary: a bigger club really does run a bigger
+   * non-playing operation — more staff, a bigger stadium, an academy at every
+   * age group, a global commercial arm — and those costs scale with the revenue
+   * that pays for them. At the top of the Premier League this reaches 34%; in
+   * the National League it is indistinguishable from the flat rate. */
+  const OPERATING_COST_MAX_EXTRA = 0.08;
+  function operatingShare(revenue) {
+    return OPERATING_COST_SHARE + Math.min(OPERATING_COST_MAX_EXTRA, Math.max(0, revenue) / 3000);
+  }
 
   /** Book the season's money. Returns the profit/loss for the news feed. */
   function settleFinances(club, position, fieldSize, europeanRun) {
     const f = club.finances;
     f.revenue = computeRevenue(club, position, fieldSize, europeanRun);
     f.wageBill = wageBill(club);
-    f.operating = round1(f.revenue * OPERATING_COST_SHARE);
+    f.operating = round1(f.revenue * operatingShare(f.revenue));
     const profit = round1(f.revenue - f.wageBill - f.operating - f.spent + f.received);
     f.balance = round1(f.balance + profit);
     f.lastProfit = profit;
@@ -514,15 +534,32 @@
    * a rich club grows a better academy and develops players faster. */
   function reinvestSurplus(club) {
     const f = club.finances;
-    const cap = Math.max(5, f.revenue * 1.2);
+    /* Clubs do not hoard. The cap was 1.2 seasons of turnover, which for a big
+     * Premier League club is most of a nine-figure war chest sitting in the bank
+     * doing nothing except making next summer easy. Just over half a season's
+     * revenue is both truer to how football clubs actually run and the number
+     * that keeps a transfer budget feeling like a budget. */
+    const cap = Math.max(5, f.revenue * 0.75);
     if (f.balance <= cap) return 0;
     const surplus = f.balance - cap;
     f.balance = round1(cap);
     f.invested = round1((f.invested || 0) + surplus);
+    /* What the money buys is capped per season, and the cap is what stops this
+     * being a rich-get-richer engine. A big club's surplus can be several times
+     * a small club's entire revenue, and unbounded that bought facility points
+     * at a rate no amount of good management could answer: measured over six
+     * seasons the Premier League's training grounds spread from 46 to 86, and
+     * facilities drive how fast every player at the club develops. There is also
+     * a real-world reason for the ceiling — you cannot build a training ground
+     * twice as fast by paying twice as much, and past a point the money goes on
+     * things this simulation does not model (the stadium, the debt, the
+     * commercial arm). The rest is still removed from the balance and recorded
+     * in f.invested; it simply stops converting into an advantage. */
     const scale = f.revenue > 0 ? surplus / f.revenue : 0;
-    club.facilities.training = clamp(Math.round(club.facilities.training + scale * 1.6), 15, 99);
-    club.facilities.youth = clamp(Math.round(club.facilities.youth + scale * 1.3), 10, 99);
-    club.facilities.scouting = clamp(Math.round((club.facilities.scouting || 50) + scale * 1.1), 15, 99);
+    const cap1 = (rate) => Math.min(2.5, scale * rate);
+    club.facilities.training = clamp(Math.round(club.facilities.training + cap1(1.6)), 15, 99);
+    club.facilities.youth = clamp(Math.round(club.facilities.youth + cap1(1.3)), 10, 99);
+    club.facilities.scouting = clamp(Math.round((club.facilities.scouting || 50) + cap1(1.1)), 15, 99);
     return surplus;
   }
 
@@ -557,7 +594,7 @@
 
   /* The season's brief, handed to the manager before a ball is kicked. Every
    * club in the world gets one; the human's is simply the one that gets shown. */
-  function setSeasonTargets(club, leagueClubs, rng) {
+  function setSeasonTargets(club, leagueClubs, rng, manager) {
     const cfg = BOARD_STYLES[club.board.style];
     const league = LEAGUES[club.leagueId];
     const size = leagueClubs.length;
@@ -574,13 +611,28 @@
     const momentum = (club.lastLeagueId === club.leagueId && club.lastPosition != null)
       ? clamp(standing - club.lastPosition, -3, 12) : 0;
 
+    /* WHO IS IN THE DUGOUT changes the brief. A board that has just appointed a
+     * decorated name expects more from the same squad than one that took a
+     * chance on a journeyman — and, more importantly, as a manager's own
+     * standing grows the same finish stops being called an achievement.
+     *
+     * Without this the brief tracked the SQUAD and nothing else, so a career of
+     * overachievement was met with the same soft target every year: the better
+     * you got, the easier the game became relative to what was asked of you.
+     * This is the term that makes success self-punishing, which is the only
+     * thing that stops a long career flattening out. It cuts both ways — a
+     * rookie at a big club is genuinely given slack, and should be. */
+    const repEdge = manager ? clamp((manager.reputation - club.reputation) / 14, -1.5, 2.5) : 0;
+
     const drift = cfg.drift * rng.gauss();
-    let position = Math.round(standing + cfg.expectationShift + drift - momentum * 0.6);
+    let position = Math.round(standing + cfg.expectationShift + drift - momentum * 0.6 - repEdge);
     position = clamp(position, 1, size);
     // Sustained overperformance also narrows how much slack the board gives —
     // it has learned what this manager can actually do, and stops calling a
-    // repeat of it a bonus.
-    const tolerance = momentum >= 4 ? Math.max(1, cfg.tolerance - 1) : cfg.tolerance;
+    // repeat of it a bonus. A manager brought in from well above the club's own
+    // level is held to the standard he arrived with, from day one.
+    let tolerance = momentum >= 4 ? Math.max(1, cfg.tolerance - 1) : cfg.tolerance;
+    if (manager && manager.reputation >= club.reputation + 15) tolerance = Math.max(1, tolerance - 1);
 
     // A board whose club sits in the promotion places expects promotion, and
     // one at the bottom expects survival. These are the lines the report reads.
@@ -814,7 +866,13 @@
     // the verdict. Without it, a few good years bank a manager enough goodwill
     // to sit at 100 for the rest of his life and the top of the game stops
     // turning over at all.
-    const gravity = (55 - club.board.confidence) * 0.12;
+    /* Asymmetric on purpose. Pulling equally hard in both directions meant the
+     * same mechanism that stopped a good manager sitting at 100 forever also
+     * quietly rescued a bad one from 30 back toward the middle every summer,
+     * which is most of why nobody ever reached the sack floor. Goodwill decays
+     * fast; trouble does not evaporate. */
+    const gap = 55 - club.board.confidence;
+    const gravity = gap * (gap < 0 ? 0.14 : 0.05);
     club.board.confidence = clamp(club.board.confidence + swing + gravity + fanPressure, 0, 100);
     club.board.seasonsWithManager++;
     if (club.board.grace > 0) club.board.grace--;
@@ -855,6 +913,18 @@
     if (!club.managerId) return false;
     if (club.board.grace > 0 && club.board.confidence > 12) return false;
     if (club.board.confidence <= cfg.sackFloor) return true;
+    /* Two bad seasons back to back is a sacking in its own right, whatever the
+     * confidence number happens to read. Confidence is a slow-moving average,
+     * and a manager who missed his brief twice could sit comfortably above the
+     * floor purely because he had banked goodwill in year one. Measured, the
+     * whole world changed manager 11.5% of the time a season against a real
+     * Premier League turnover closer to 40% — the axe existed but it was hung
+     * too high to fall on anyone who had ever been good. */
+    const h = club.board.history || [];
+    if (h.length >= 2) {
+      const last = h[h.length - 1], prev = h[h.length - 2];
+      if (last.total < -0.2 && prev.total < -0.2 && rng.chance(0.55)) return true;
+    }
     // Chaotic boards occasionally sack a manager who did nothing wrong.
     if (club.board.style === "Chaotic" && rng.chance(0.07)) return true;
     return false;
@@ -866,7 +936,19 @@
     club.managerId = manager ? manager.id : null;
     club.board.confidence = clamp(55 + (manager ? (manager.reputation - club.reputation) * 0.25 : 0), 35, 85);
     club.board.seasonsWithManager = 0;
-    club.board.grace = cfg.patience;
+    /* How long you get scales with the size of the club. A giant gives you one
+     * season and then judges you on it; a small club further down can afford to
+     * wait three. A flat two for everyone was the single biggest reason the top
+     * of the game did not turn over — Premier League clubs changed manager 13.8%
+     * of the time a season against a real-world figure several times that, and
+     * the reason was structural rather than a tuning number: nobody at the top
+     * could be sacked early enough for it to happen often.
+     *
+     * Never below 1, and grace is decremented at the END of a season, so even
+     * at a giant every manager in the world still gets one full campaign judged
+     * on its own merits before the axe can fall. */
+    const patienceAdj = club.reputation >= 70 ? -1 : club.reputation <= 35 ? 1 : 0;
+    club.board.grace = Math.max(1, cfg.patience + patienceAdj);
     club.board.report = null;
   }
 
@@ -952,7 +1034,7 @@
     LEAGUES, LEAGUE_KEYS, PL_BANDS, ENGLISH_PYRAMID, leagueIdFor,
     BOARD_STYLES, BOARD_STYLE_KEYS, rollBoardStyle,
     createClub, calibrateReputation, calibrateFacilities, calibrateIdentity, refreshRatings, clubStrength,
-    computeRevenue, wageBill, setBudgets, settleFinances, reinvestSurplus, OPERATING_COST_SHARE,
+    computeRevenue, wageBill, setBudgets, settleFinances, reinvestSurplus, OPERATING_COST_SHARE, operatingShare,
     LEAGUE_PLAYER_LEVEL, playerLevelFor,
     createBoard, standingIn, setSeasonTargets, describeTargets, evaluateSeason, wantsSacking,
     onManagerAppointed, adjustReputation, CUP_ROUND_RANK, decayModifiers,

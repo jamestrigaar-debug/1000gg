@@ -23,7 +23,8 @@
  *
  * THE API (`api` passed to every fx):
  *   sign({pos, quality, maxFee})  buy a player — "star" | "solid" | "prospect"
- *   sell("star"|"veteran"|"fringe")  cash in on one
+ *   sell("star"|"prize"|"veteran"|"fringe")  cash in on one — "prize" is the
+ *                                 best player young enough to have a market
  *   budget(n) / wage(n)           move the transfer or wage budget, in £m
  *   confidence(n)                 board confidence, the thing that sacks you
  *   form(n)                       season-long form swing for the match engine
@@ -52,6 +53,13 @@
     const weakest = MG.players.weakestUnit(club.squad);
     const avgAge = squad.length ? squad.reduce((t, p) => t + p.age, 0) / squad.length : 26;
     const star = squad[0];
+    /* The best player a bigger club would actually come for — the top-rated of
+     * those still young enough to be worth a fee. `star` is just the best player
+     * at the club, which for an ageing squad is a 36-year-old nobody is bidding
+     * for: Brighton's best player is Danny Welbeck at 36, and any card about the
+     * market that reached for `star` was reaching for the wrong man. Cards about
+     * the DRESSING ROOM still want `star`; cards about the MARKET want this. */
+    const prize = squad.find((p) => p.age <= 30) || null;
     const veteran = club.squad.slice().sort((a, b) => b.age - a.age)[0];
     const prospect = club.squad
       .filter((p) => p.age <= 21)
@@ -62,6 +70,7 @@
     return {
       season: world.season, year: world.year,
       clubName: club.name, leagueName: league.name, tier: league.tier,
+      clubRep: club.reputation,
       boardStyle: board.style,
       confidence: Math.round(board.confidence),
       target: board.targets ? board.targets.position : null,
@@ -85,7 +94,7 @@
       avgAge: round1(avgAge),
       weakUnit: weakest.unit,
       weakPositions: weakest.positions,
-      star, veteran, prospect, scorer,
+      star, prize, veteran, prospect, scorer,
       injuredLast,
       expiring: club.squad.filter((p) => p.contract.years <= 1).length,
       youthCount: club.squad.filter((p) => p.age <= 21).length,
@@ -195,7 +204,23 @@
       // Performance/Improvement lever (tactics.js). The tactics screen lets
       // the manager set this directly too; this is the same switch.
       trainingFocus(key) { if (MG.tactics && MG.tactics.setTrainingFocus) MG.tactics.setTrainingFocus(club, key); },
-      rep(n) { manager.reputation = clamp(manager.reputation + n, 1, 99); },
+      /* Reputation from a decision climbs on the same curve as reputation
+       * earned from results (see world.js's season swing): cheap to build a
+       * name from nothing, very hard to move one already near the top. Across
+       * the whole card pool, 25 choices GRANT reputation and 4 cost it — a
+       * one-way ratchet on a number that is 40% of the manager-quality term
+       * the match engine reads, so a career of picking the flattering option
+       * bought a permanent edge in every fixture. Damped here rather than card
+       * by card, so every card written from now on inherits it.
+       *
+       * Deliberately asymmetric: losses are never damped. A reputation is
+       * slow to build at the top and quick to lose anywhere, which is both
+       * truer and the direction that keeps the game honest. */
+      rep(n) {
+        let d = n;
+        if (d > 0 && manager.reputation > 70) d *= clamp(1 - (manager.reputation - 70) / 34, 0.2, 1);
+        manager.reputation = clamp(manager.reputation + d, 1, 99);
+      },
       /* The supporters. Separate from board confidence on purpose: pleasing the
        * crowd and pleasing the owner are frequently not the same act, and the
        * mood in the ground feeds back into the boardroom at the end of the
@@ -298,6 +323,50 @@
           fx: (api) => { api.budget(0); api.confidence(1); return `No signing. You back the group — and the wage bill stays where the board wants it.`; } },
       ],
     },
+    /* The existing pre_sell_star card only fires when the club is skint — it is
+     * about a forced sale. This one is the opposite and the gap it fills is the
+     * whole point: a side that has just overachieved has its best player come
+     * under real pressure precisely BECAUSE it overachieved, and nothing in the
+     * game previously made success cost you anything. A squad you built was a
+     * permanent asset. Now the reward for a good season is a bidding war for the
+     * man who delivered it, and no free way out — the refusal is the expensive
+     * option, which is the right way round. */
+    {
+      id: "pre_poached", category: "TRANSFERS", weight: 9,
+      /* Gated on AGE rather than transfer value, which is the mistake the first
+       * version made. A value floor looks like it measures desirability and
+       * actually measures youth twice over: a 35-year-old rated 83 is worth
+       * £4m, so the club whose best player is an ageing star was excluded for
+       * having a cheap one rather than an unwanted one. `age <= 31` says the
+       * real thing — a rival poaches a player with a future, not a testimonial.
+       * The reputation ceiling excludes genuine giants, who do the poaching
+       * rather than suffer it, and overall 66 reaches down far enough to catch a
+       * promoted second-tier side losing the man who got them up. */
+      req: (c) => c.prize && c.prize.overall >= 66 && !c.inDebt
+        && (c.beatTarget || c.champion || c.promoted) && c.clubRep < 82,
+      text: (c) => `${c.prize.name} was the best thing about last season and everybody noticed. A club above yours has made an offer, his agent has made sure you know about it, and he has not said no to anybody.`,
+      choices: (c) => [
+        { label: `Take the money for ${c.prize.name}`, detail: `About ${fmt(c.prize.value)}, reinvested where you choose.`,
+          fx: (api) => {
+            const s = api.sell("prize");
+            if (!s) return `The bid is withdrawn before you can accept it. He stays, and he knows what he is worth now.`;
+            api.budget(s.fee * 0.55); api.confidence(3); api.form(-2); api.morale(-4);
+            return `${s.player.name} joins ${s.to} for ${api.money(s.fee)}. ${api.money(s.fee * 0.55)} of it comes back to you as budget; the rest goes where money always goes.`;
+          } },
+        { label: "Refuse, and tell him so publicly", detail: "He is going nowhere. It will cost you.",
+          fx: (api) => {
+            api.confidence(-6); api.morale(-7); api.form(0.5); api.rep(1);
+            api.flag("held_a_star", 2);
+            return `You say it out loud: he is not for sale at any price. The supporters love it, the boardroom does not, and he trains all summer like a man whose move you blocked.`;
+          } },
+        { label: "Keep him, and pay him to be happy", detail: "Match the offer he was going to get.",
+          fx: (api) => {
+            api.wage(-Math.max(3, Math.round(api.ctx.prize.value * 0.12)));
+            api.morale(4); api.form(1);
+            return `He signs a new deal on money this club has never paid anyone. He is delighted, the wage structure is not what it was, and every agent in the game now knows what you will do under pressure.`;
+          } },
+      ],
+    },
     {
       id: "pre_sell_star", category: "TRANSFERS", weight: 7,
       req: (c) => c.star && c.star.value >= 15 && (c.inDebt || c.budget < 10),
@@ -333,9 +402,9 @@
             return `${s.player.name} leaves for ${s.to}. ${api.money(s.fee)} in, and his wage off the bill.`;
           } },
         { label: "Keep him as a leader", detail: "He organises the dressing room.",
-          fx: (api) => { api.form(1.5); api.unit({ defence: 1 }, 1); return `He stays as the senior voice. The younger players are visibly better for it.`; } },
+          fx: (api) => { api.form(1.5); api.unit({ defence: 1 }, 1); api.youth(-0.05); return `He stays as the senior voice. The younger players are visibly better for it — and one of them is still waiting for his place.`; } },
         { label: "Make him a player-coach", detail: "Fewer minutes, more influence on the kids.",
-          fx: (api) => { api.facilities({ training: 2 }); api.youth(0.06); return `He takes on coaching duties. The academy sessions are sharper than they were.`; } },
+          fx: (api) => { api.facilities({ training: 2 }); api.youth(0.06); api.form(-0.6); return `He takes on coaching duties. The academy sessions are sharper than they were, and the side sees rather less of him.`; } },
       ],
     },
 
@@ -375,7 +444,7 @@
         { label: "Manage expectations down", detail: "Less pressure, less faith.",
           fx: (api) => { api.confidence(-5); api.flag("cautious", 2); return `You spend the meeting explaining how hard this will be. They listen, and they trust you slightly less.`; } },
         { label: "Say nothing and go to work", detail: "No promises either way.",
-          fx: (api) => { api.rep(1); return `You decline to make predictions. The board find it either admirable or evasive.`; } },
+          fx: (api) => { api.rep(1); api.confidence(-2); api.fans(-3, "the manager would not say what the season was for"); return `You decline to make predictions. The board find it evasive, and so do the stands.`; } },
       ],
     },
     {
@@ -401,9 +470,9 @@
       text: (c) => `The armband is yours to give. It is a smaller decision than the press think, and a bigger one than the squad admits.`,
       choices: (c) => [
         { label: c.veteran ? `Give it to ${c.veteran.name}` : "Give it to the senior pro", detail: "Experience, authority, one eye on the past.",
-          fx: (api) => { api.form(1.5); api.unit({ defence: 1 }, 1); return `The senior man takes the armband. The back line looks better organised for it.`; } },
+          fx: (api) => { api.form(1.5); api.unit({ defence: 1 }, 1); api.morale(-3); return `The senior man takes the armband. The back line looks better organised for it; two others thought it was theirs.`; } },
         { label: c.star ? `Give it to ${c.star.name}` : "Give it to your best player", detail: "Leadership by performance.",
-          fx: (api) => { api.form(1); api.unit({ attack: 1 }, 1); return `Your best player takes it and responds by playing like he means it.`; } },
+          fx: (api) => { api.form(1); api.unit({ attack: 1 }, 1); api.morale(-2); return `Your best player takes it and responds by playing like he means it. The senior professionals notice who it went to.`; } },
         { label: c.prospect ? `Give it to ${c.prospect.name}` : "Give it to a young player", detail: "A statement about where this club is going.",
           fx: (api) => { api.youth(0.1); api.rep(2); api.form(-0.5); return `A bold call. The academy takes note; a few senior players do not like it.`; } },
       ],
@@ -481,7 +550,7 @@
         { label: "Take the big commercial deal", detail: "Money now, a badge on everything.",
           fx: (api) => { const g = round1(api.club.finances.revenue * 0.09 + 4); api.cash(g); api.budget(g * 0.6); return `The deal is signed. ${api.money(g)} arrives, and some of it reaches the transfer budget. The shirt looks busier.`; } },
         { label: "A modest, cleaner partnership", detail: "Less money, fewer obligations.",
-          fx: (api) => { api.cash(3); api.rep(1); return `A smaller, quieter deal. The accountants are content and nobody in the stands complains.`; } },
+          fx: (api) => { api.cash(3); return `A smaller, quieter deal. The accountants are content and nobody in the stands complains.`; } },
         { label: "Turn it down on principle", detail: "Keep the club's identity intact.",
           fx: (api) => { api.rep(2); api.confidence(-2); return `You walk away from the money. The supporters notice; the finance director does not thank you.`; } },
       ],
@@ -515,7 +584,7 @@
       text: (c) => `There is no transfer budget worth the name — ${fmt(c.budget)}, and the board are not finding any more. Whatever this window is, it has to be free.`,
       choices: (c) => [
         { label: "Trust the academy completely", detail: "Every gap gets filled from within, or not at all.",
-          fx: (api) => { api.youth(0.14); api.confidence(2); api.facilities({ youth: 2 }); return `You tell the board the kids will carry the squad this year. It costs nothing, and the pressure moves onto the academy.`; } },
+          fx: (api) => { api.youth(0.14); api.facilities({ youth: 2 }); api.form(-1.2); api.confidence(-2); return `You tell the board the kids will carry the squad this year. It costs nothing, the pressure moves onto the academy, and nobody upstairs mistakes it for a plan.`; } },
         { label: "Go looking on the free-agent list personally", detail: "No fee, whoever is actually available.",
           fx: (api) => {
             const s = api.sign({ quality: "prospect", maxFee: 0.05 });
@@ -535,7 +604,7 @@
         { label: "Hire him — defend the box", detail: "Stop leaking soft goals.",
           fx: (api) => { api.unit({ defence: 2 }, 2); api.budget(-1.5); return `The back post is manned properly now. The soft goals dry up.`; } },
         { label: "Coach it yourself for free", detail: "Save the money, spread yourself thinner.",
-          fx: (api) => { api.unit({ attack: 1, defence: 1 }, 1); return `You take the sessions personally. A marginal gain at both ends, and one more plate spinning.`; } },
+          fx: (api) => { api.unit({ attack: 1, defence: 1 }, 1); api.youth(-0.06); return `You take the sessions personally. A marginal gain at both ends, and one more plate spinning — the academy sees rather less of you.`; } },
       ],
     },
     {
@@ -719,7 +788,7 @@
             return s ? `${s.player.name} is moved on to ${s.to} for ${api.money(s.fee)}. The message lands.` : `You try to move one on and find no buyer. The row festers.`;
           } },
         { label: "Bang heads together behind closed doors", detail: "Deal with it internally.",
-          fx: (api) => { api.form(1); api.unit({ midfield: 1 }, 1); return `An hour in a locked room. Whatever was said, they played like a team afterwards.`; } },
+          fx: (api) => { api.form(1); api.unit({ midfield: 1 }, 1); api.confidence(-1); return `An hour in a locked room. Whatever was said, they played like a team afterwards — and upstairs now know there was something to say.`; } },
         { label: "Let them fight it out", detail: "Some squads need the edge.",
           fx: (api) => { api.form(-1); api.unit({ attack: 2 }, 1); api.morale(-5); return `You let it burn. It is a nastier dressing room now, and a sharper one going forward.`; } },
       ],
@@ -771,7 +840,7 @@
             return `${p.name} is sold for ${api.money(p.value * 2.2)} before he has played fifty games. The accountants are delighted.`;
           } },
         { label: "Loan him out to toughen him up", detail: "A year in the lower leagues.",
-          fx: (api) => { api.youth(-0.02); api.facilities({ youth: 2 }); return `He goes out on loan. He will come back a man, or he will not come back at all.`; } },
+          fx: (api) => { api.youth(-0.02); api.morale(-2); return `He goes out on loan. He will come back a man, or he will not come back at all.`; } },
       ],
     },
 
@@ -783,7 +852,7 @@
         const alt = Object.keys(MG.managers.TACTICS).filter((t) => t !== c.tactic);
         return [
           { label: "Refine it — same system, sharper", detail: "Evolution.",
-            fx: (api) => { api.unit({ midfield: 2, attack: 1 }, 2); return `The system stays and gets more detailed. They know it inside out now.`; } },
+            fx: (api) => { api.unit({ midfield: 2, attack: 1 }, 1); return `The system stays and gets more detailed. They know it inside out now — and so, before long, will everyone else.`; } },
           { label: `Move to ${alt[0]}`, detail: "A genuine change of identity.",
             fx: (api) => { api.tactic(alt[0]); api.form(-2); api.unit({ attack: 2 }, 2); return `A new way of playing, and a summer of unlearning the old one.`; } },
           { label: "Build a second system", detail: "Flexibility, at the cost of mastery.",
@@ -835,7 +904,7 @@
         { label: "Straight into the transfer budget", detail: "Push on while it's good.",
           fx: (api) => { api.budget(api.club.finances.revenue * 0.14); api.confidence(2); return `You reinvest the lot. Next summer's window will be your biggest yet.`; } },
         { label: "Into the training ground", detail: "Compound the advantage for years.",
-          fx: (api) => { api.facilities({ training: 5, youth: 4 }); api.confidence(1); return `The money goes into concrete and coaching. Every player who comes through here benefits now.`; } },
+          fx: (api) => { api.facilities({ training: 5, youth: 4 }); api.confidence(-2); return `The money goes into concrete and coaching. Every player who comes through here benefits now — and none of it shows up this season, which the board notice.`; } },
         { label: "Bank it against a rainy day", detail: "The board's finance metric approves.",
           fx: (api) => { api.cash(api.club.finances.revenue * 0.12); api.confidence(4); return `You put it away. The board sleep easier, and so does the wage bill.`; } },
       ],
@@ -981,9 +1050,9 @@
         { label: "Answer him publicly", detail: "A fight the cameras will love.",
           fx: (api) => { api.rep(2); api.fans(5, "you fought the club's corner in public"); api.confidence(-3); api.form(1.5); return `You name him and take him apart in a press conference. It leads the bulletins; the squad love it.`; } },
         { label: "Rise above it entirely", detail: "Say nothing, win instead.",
-          fx: (api) => { api.confidence(3); api.rep(1); return `You refuse to engage. The story dies for lack of oxygen and the board note your composure.`; } },
+          fx: (api) => { api.confidence(3); return `You refuse to engage. The story dies for lack of oxygen and the board note your composure.`; } },
         { label: "Use it in the dressing room", detail: "Pin it to the wall.",
-          fx: (api) => { api.form(2.5); api.unit({ midfield: 1 }, 1); return `The article goes up in the changing room. They report back in July with something to prove.`; } },
+          fx: (api) => { api.form(2); api.unit({ midfield: 1 }, 1); api.rep(-1); return `The article goes up in the changing room. They report back in July with something to prove, and you look like a man who reads his own reviews.`; } },
       ],
     },
     {
@@ -1029,7 +1098,7 @@
       text: (c) => `The captaincy is not working. ${c.veteran.name} has lost the room, and everyone can feel it except him.`,
       choices: (c) => [
         { label: "Strip the armband and give it to a leader", detail: "Brutal, clarifying.",
-          fx: (api) => { api.form(2); api.unit({ midfield: 1 }, 1); api.rep(1); return `You take it off him in private and hand it to someone the squad actually follows. The training ground changes within a week.`; } },
+          fx: (api) => { api.form(2); api.unit({ midfield: 1 }, 1); api.rep(1); api.morale(-4); return `You take it off him in private and hand it to someone the squad actually follows. The training ground changes within a week; his allies have not forgotten.`; } },
         { label: "Sell him and move on entirely", detail: "Remove the problem.",
           fx: (api) => { const s = api.sell("veteran"); api.form(1.5); api.fans(-3, "a club captain was sold"); return s ? `${s.player.name} leaves for ${s.to} for ${api.money(s.fee)}. Some of the crowd will never forgive it.` : `You offer him around and find nothing. He stays, diminished.`; } },
         { label: "Back him one more year", detail: "Loyalty over the evidence.",
@@ -1069,7 +1138,7 @@
         { label: "Hire the big name", detail: "Expensive, transformative.",
           fx: (api) => { api.budget(-5); api.facilities({ youth: 8 }); api.youth(0.06); return `${api.money(5)} for a man who has produced internationals elsewhere. The intake will look different within three years.`; } },
         { label: "Promote from within", detail: "Continuity, and cheap.",
-          fx: (api) => { api.facilities({ youth: 3 }); api.fans(2, "a club man got the academy job"); return `A club man gets the job. Less transformative, and the supporters like the symbolism.`; } },
+          fx: (api) => { api.facilities({ youth: 3, training: -2 }); api.fans(2, "a club man got the academy job"); return `A club man gets the job. Less transformative, the supporters like the symbolism, and the first-team staff are a man light.`; } },
         { label: "Fold the academy into the first team", detail: "One programme, one philosophy.",
           fx: (api) => { api.facilities({ training: 3, youth: 2 }); api.youth(0.1); api.form(-1); return `Youth and senior training merge. The kids learn faster and the first team's week is busier than it was.`; } },
       ],
@@ -1117,7 +1186,7 @@
         { label: "Give him a testimonial and a send-off", detail: "The romantic option.",
           fx: (api) => { api.cash(1.5); api.fans(7, `${api.ctx.veteran.name} got the send-off he deserved`); api.form(1.5); return `A packed ground, a lap of honour and a genuinely emotional afternoon. It costs nothing and buys a great deal.`; } },
         { label: "Offer him a coaching role", detail: "Keep the knowledge in the building.",
-          fx: (api) => { api.facilities({ training: 3 }); api.youth(0.06); api.form(1); return `He swaps the shirt for a tracksuit. The young players now have someone who has done it to ask.`; } },
+          fx: (api) => { api.facilities({ training: 3 }); api.youth(0.06); api.wage(-1.5); return `He swaps the shirt for a tracksuit. The young players now have someone who has done it to ask, and he is still on the payroll.`; } },
         { label: "Let the contract lapse quietly", detail: "No ceremony, no cost.",
           fx: (api) => { api.wage(3); api.fans(-5, "a club legend left without a word"); return `He leaves in June without an announcement. The wage comes off the bill and the forums are not kind.`; } },
       ],
@@ -1129,7 +1198,7 @@
         { label: "Go for it — spend everything", detail: "Promotion or bust.",
           fx: (api) => { api.budget(api.club.finances.revenue * 0.2); api.flag("on_the_line", 1); api.fans(6, "the club went all in on promotion"); const s = api.sign({ quality: "star" }); return `Every available pound goes on the squad.` + (s ? ` ${s.player.name} (${Math.round(s.player.overall)}) is the statement, in from ${s.from} for ${api.money(s.fee)}.` : ` Now it has to work.`); } },
         { label: "Build steadily for a two-year climb", detail: "Patience, and a plan.",
-          fx: (api) => { api.facilities({ training: 4, youth: 3 }); api.confidence(3); api.youth(0.08); return `You argue for the longer road. The board are relieved and the supporters are not thrilled.`; } },
+          fx: (api) => { api.facilities({ training: 4, youth: 3 }); api.confidence(3); api.youth(0.08); api.form(-1.2); api.fans(-5, "the club passed up its promotion window"); return `You argue for the longer road. The board are relieved; the supporters watched their window close.`; } },
         { label: "Bank the money against relegation", detail: "Defensive, prudent, uninspiring.",
           fx: (api) => { api.cash(api.club.finances.revenue * 0.1); api.confidence(6); api.fans(-6, "the club showed no ambition"); return `The money goes in the bank. The finance director is delighted; the stands read it as surrender.`; } },
       ],
@@ -1213,7 +1282,7 @@
       text: (c) => `${c.earlyGoalsFor} goals in ${c.earlyPlayed} games. The chances are being made${c.earlyScorer ? `, and ${c.earlyScorer.name} has ${c.earlyScorer.goals}` : ""} — the finishing is the problem.`,
       choices: () => [
         { label: "Finishing drills, every session", detail: "Repetition in front of goal.",
-          fx: (api) => { api.train("rightFoot", 1); api.train("leftFoot", 1); api.unit({ attack: 2 }, 1); return `Hours in front of goal. The shooting looks better; whether it holds up at 2-2 in November is another matter.`; } },
+          fx: (api) => { api.train("rightFoot", 1); api.train("leftFoot", 1); api.unit({ attack: 2, defence: -1 }, 1); return `Hours in front of goal. The shooting looks better; the hours had to come from somewhere, and it was the back line.`; } },
         { label: "Commit more bodies forward", detail: "More in the box, more exposed behind.",
           fx: (api) => { api.unit({ attack: 4, defence: -3 }, 1); return `Full-backs high, midfield pushed on. The box is busier and so is your own.`; } },
         { label: "Go and buy a finisher in January", detail: "Spend now, ask questions later.",

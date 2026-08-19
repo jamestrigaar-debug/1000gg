@@ -379,7 +379,23 @@
   function matchModifiers(manager, club) {
     const tac = TACTICS[manager.tactic] || TACTICS.Possession;
     const fit = tacticalFit(manager, club.squad);
-    const quality = (manager.reputation * 0.4 + manager.attrs.manManagement * 0.3 + manager.attrs.discipline * 0.3) / 100;
+    /* Reputation is compressed above 70 before it reaches the pitch. It is
+     * FAME, and past the top of the profession more of it stops translating
+     * into results — the gap between the best coach alive and a very good one
+     * is not the same as the gap between a very good one and a journeyman,
+     * even though the numbers 99/80 and 80/61 say it is.
+     *
+     * Uncompressed it was the single worst runaway in the game. Manager quality
+     * is a direct multiplier on every match played; a human climbing to 99
+     * against a league median of 53 was carrying a permanent edge into every
+     * fixture, and it grew as he succeeded. It also polarised the AI world once
+     * elite coaching stopped draining away — measured, bottom-club points fell
+     * to 16.7 against a real 26 purely from the top of the table pulling clear.
+     * Halving the slope above 70 keeps the lever meaningful and stops it
+     * running away at the top, where only the player ever lives. */
+    const rep = manager.reputation;
+    const repTerm = rep <= 70 ? rep : 70 + (rep - 70) * 0.5;
+    const quality = (repTerm * 0.4 + manager.attrs.manManagement * 0.3 + manager.attrs.discipline * 0.3) / 100;
 
     const shift = deriveShift(manager.tactic) || tac.shift;
     let attack = shift.attack, midfield = shift.midfield, defence = shift.defence;

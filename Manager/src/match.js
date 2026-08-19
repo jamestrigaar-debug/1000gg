@@ -65,6 +65,8 @@
    * If the rating scales are ever rebalanced, re-run the benchmark and retune
    * this constant — it is calibration, not physics. */
   const BASE_XG = 0.90;
+  /** Attack rating points a fully-predictable side gives up. See tactics.js. */
+  const PREDICT_COST = 2.5;
   function resolveDuel(rng, attack, defence, chaosRange) {
     const diff = attack - defence;
     const baseXG = BASE_XG + diff / 24;
@@ -169,6 +171,10 @@
        * blends the tail of the squad into the club's rating in the first
        * place. A depth number computed here and read by nothing was a third
        * copy of that idea that never reached the pitch. */
+      /* How thoroughly the division has worked this side out — see tactics.js.
+       * Carried on the profile rather than recomputed per match, like
+       * everything else here. */
+      predictability: MG.tactics && MG.tactics.predictability ? MG.tactics.predictability(club, manager) : 0,
       // Playstyle, shape, training and the manager himself, read together —
       // see tactics.js. 1.0 is neutral; the match engine applies it straight
       // to this side's xG.
@@ -205,8 +211,30 @@
     const homeChaos = (t.chaosMod + derbyChaos) * (home.variance || 1) - (mgrDiff > 0 ? mgrChaosTrim : 0);
     const awayChaos = (t.chaosMod + derbyChaos) * (away.variance || 1) - (mgrDiff < 0 ? mgrChaosTrim : 0);
 
-    let homeXG = resolveDuel(rng, home.attack * t.homeAtkMod, away.defence * t.awayDefMod, clamp(homeChaos, 4, 40));
-    let awayXG = resolveDuel(rng, away.attack * t.awayAtkMod, home.defence * t.homeDefMod, clamp(awayChaos, 4, 40));
+    /* Being worked out is measured AGAINST THE OPPONENT, not in absolute terms,
+     * and the two adjustments sum to zero. Everyone's system is known to
+     * everyone to some degree; what decides a match is whether yours is the
+     * more readable of the two.
+     *
+     * Charged absolutely at first, it deflated the whole league: AI clubs rarely
+     * change shape, so within six seasons every side in the world was carrying
+     * the full penalty, total goals fell and both-teams-scored dropped to 43.7%
+     * against a real 50% — a global goal drought dressed up as a tactics
+     * mechanic. Zero-sum, aggregate scoring is untouched and the incentive is
+     * exactly the one intended: a manager who refreshes his system while the
+     * division stands still is genuinely harder to play against, and one who
+     * has run the same thing for five years is genuinely easier.
+     *
+     * The gap is halved because it is applied to both sides, so a fully-worked-
+     * out side facing a brand-new one still swings the duel by the full 2.5
+     * points — about a tenth of a goal a game through resolveDuel's diff/24,
+     * which is a few points across a season. Enough to decide a title race,
+     * never enough to break a good side. */
+    const predGap = ((home.predictability || 0) - (away.predictability || 0)) / 2;
+    const homeAtk = home.attack * t.homeAtkMod - PREDICT_COST * predGap;
+    const awayAtk = away.attack * t.awayAtkMod + PREDICT_COST * predGap;
+    let homeXG = resolveDuel(rng, homeAtk, away.defence * t.awayDefMod, clamp(homeChaos, 4, 40));
+    let awayXG = resolveDuel(rng, awayAtk, home.defence * t.homeDefMod, clamp(awayChaos, 4, 40));
     homeXG *= homeMid; awayXG *= awayMid;
     homeXG += mgrSwing;
     awayXG -= mgrSwing;

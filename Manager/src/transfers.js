@@ -71,6 +71,36 @@
   }
 
   /** Retirement, then contract expiry. Returns the news-worthy departures. */
+  /* WHAT A PLAYER ASKS FOR AT RENEWAL is not only what his rating says he is
+   * worth. It is what he has just done, and where the club has just finished.
+   *
+   * Renewals used to cost expected wage plus a flat 0-15%, which meant a squad
+   * could win a title and then re-sign itself at essentially the same price.
+   * Success had no running cost at all: build a good side, keep it forever, and
+   * the wage bill tracked the players' ratings and nothing else. Now a regular
+   * in a side that has just overachieved renews at up to about 1.7x the going
+   * rate, and the board's wage budget does not automatically rise to meet it —
+   * so the manager who has built something has to start deciding which parts of
+   * it he can afford to keep. That is the intended difficulty: not a tax, a
+   * choice, and one that only ever arrives because you did well.
+   *
+   * Bit-part players are barely affected — the multiplier is gated on minutes,
+   * so this squeezes the men who actually won you something. */
+  function renewalDemand(player, club, rng) {
+    let mult = rng.between(1.0, 1.15);
+    const played = clamp(player.season ? (player.season.minutesShare || 0) : 0, 0, 1);
+    const report = club.board && club.board.report;
+    const success = report && report.total != null ? clamp(report.total, -1, 1) : 0;
+    // Minutes alone move it; minutes in a successful side move it much more.
+    mult += played * 0.22 + Math.max(0, success) * played * 0.30;
+    // An international CV is leverage of its own.
+    if (player.intl && (player.intl.caps || 0) >= 20) mult += 0.06;
+    return mult;
+  }
+
+  /** Nobody is still playing at this age, whatever else is true of him. */
+  const RETIREMENT_CEILING = 41;
+
   function retirementsAndExpiries(world) {
     const rng = world.rng;
     const news = [];
@@ -94,11 +124,20 @@
         const belowLevel = p.overall < 35 + league.prestige * 25;
         const playingTime = p.season.minutesShare || 0;
         const eliteForAge = p.overall >= (club.level != null ? club.level : 60) + 6;
-        let retireChance = p.age >= 41 ? 1 : p.age >= 38 ? 0.5 : p.age >= 36 ? 0.2
+        let retireChance = p.age >= 38 ? 0.5 : p.age >= 36 ? 0.2
           : p.age >= 34 ? 0.09 : p.age >= 32 ? 0.03 : 0;
         if (p.age >= 32 && playingTime < 0.25) retireChance += 0.18;
         if (eliteForAge) retireChance *= 0.55;
         if (belowLevel && p.age >= 31) retireChance += 0.2;
+        /* The ceiling is ABSOLUTE, and it is applied last so that nothing can
+         * discount it. It used to sit at the top of the chain as `age >= 41 ? 1`,
+         * where the eliteForAge multiplier below then took that certainty down to
+         * 0.55 — so a player still well above his club's level had a 45% chance
+         * of surviving every season, forever. Pepe Reina reached 44 at Como on
+         * one seed and tripped run_world's age invariant; on other seeds the same
+         * players quietly retired and it never showed. Nobody plays past 41,
+         * however good he still is. */
+        if (p.age >= RETIREMENT_CEILING) retireChance = 1;
         retireChance = clamp(retireChance, 0, 1);
         if (retireChance > 0 && rng.chance(retireChance)) {
           p.retired = true;
@@ -163,7 +202,7 @@
         else renew = wanted && affordable && rng.chance(0.8);
         if (renew) {
           p.contract.years = rng.int(2, 4);
-          p.contract.wage = round1(MG.players.expectedWage(p, club.leagueId) * rng.between(1.0, 1.15));
+          p.contract.wage = round1(MG.players.expectedWage(p, club.leagueId) * renewalDemand(p, club, rng));
           stillHere.push(p);
           if (isPlayerClub && req === "extend") news.push({ type: "contract", text: `Contract — ${p.name} renews for ${p.contract.years} years, as you asked.`, clubId: club.id });
         } else {
@@ -360,11 +399,35 @@
     const fringe = better >= 11;
     const starter = better <= 4;
 
-    let accept = 0.88 + step * 0.7;
-    if (step < -0.05 && starter) accept -= 0.42;   // dropping down while first choice
-    if (fringe) accept += 0.3;                     // anything for a game
-    // Standing within the same division still counts: a bigger name persuades.
-    accept += (buyer.reputation - seller.reputation) / 180;
+    /* The base used to be 0.88 against a cap of 0.97, which meant the market
+     * essentially never said no: every modifier below was decorating a decision
+     * that had already been made. A transfer window in which the board brings
+     * you three names and you sign three names is not a window, it is a
+     * shopping list — and it was one of the quietest reasons the game was too
+     * easy, because squad-building had no failure mode.
+     *
+     * At 0.62 the modifiers actually carry the decision: a step up in division,
+     * a real pay rise, a bigger club or a contract running down will still get
+     * most deals over the line, and a settled first-choice player at a club as
+     * good as yours will frequently just say no. Both callers already handle a
+     * refusal properly — the AI moves to its next target, and the managed club
+     * gets a NO DEAL line with the reason — so a tighter market produces more
+     * texture in the log rather than an empty window. */
+    let accept = 0.62 + step * 0.8;
+    // Being first choice where he is, is itself a reason to stay put.
+    if (starter) accept -= 0.18;
+    if (step < -0.05 && starter) accept -= 0.34;   // and dropping down as well
+    if (fringe) accept += 0.34;                    // anything for a game
+    /* Standing within the same division still counts: a bigger name persuades,
+     * and it persuades hard. Strengthened at the same time as the base was cut,
+     * and for the same reason from the other direction — the point is not that
+     * the market is uniformly stingy, it is that WHO IS ASKING decides it. A
+     * giant still gets the man it wants; a club of the player's own size, or
+     * smaller, now frequently does not. That restores the natural hierarchy the
+     * lower base had flattened (measured: champion points recovered from 82.3
+     * to 85.3 against a real 88) while leaving the hard part hard, because the
+     * manager is usually the one at the smaller club. */
+    accept += (buyer.reputation - seller.reputation) / 105;
     // Money talks, and for the ordinary professional it talks loudest.
     const now = player.contract.wage || 1;
     if (wage > now * 1.4) accept += 0.22;
@@ -380,7 +443,7 @@
     const yearsLeft = (player.contract && player.contract.years != null) ? player.contract.years : 2;
     if (yearsLeft <= 1) accept += 0.16;
     else if (yearsLeft >= 4) accept -= 0.14;
-    return rng.chance(clamp(accept, 0.04, 0.97));
+    return rng.chance(clamp(accept, 0.03, 0.94));
   }
 
   /* --------------------------- MOVEMENT APPROVAL ---------------------------
@@ -872,10 +935,29 @@
    * journeymen rather than treating the free-agent pool as a shopping list. */
   const FREE_AGENT_SHORT_THRESHOLD = 2;
 
+  /** Oldest a club will take on a free transfer. Retirement is certain at 41
+   *  (see retirementsAndExpiries), and this runs after that pass, so the
+   *  ceiling has to leave room for a signed player to age at least once. */
+  const FREE_AGENT_MAX_AGE = 37;
+
   function signFreeAgents(world, freeAgents) {
     const rng = world.rng;
     const news = [];
-    const pool = freeAgents.filter((p) => !p.retired).sort((a, b) => b.overall - a.overall);
+    /* Nobody signs a free agent who is past playing. The retirement pass runs
+     * EARLIER in the season than this does (see world.js's advanceSeason), so a
+     * player who becomes available at the top of the age curve has already had
+     * his roll for the year — sign him and he ages into next season before the
+     * next roll can reach him, which is how a 43-year-old goalkeeper ended up on
+     * a Premier League bench and tripped run_world's age invariant.
+     *
+     * Gating the pool rather than reordering the season is the right fix: the
+     * ordering is deliberate (a club in trouble should get first refusal on free
+     * agents before the generic top-up runs), and "no club signs a 39-year-old
+     * free agent" is true anyway. FREE_AGENT_MAX_AGE sits a clear margin below
+     * the age at which retirement becomes certain, so the gap cannot reopen. */
+    const pool = freeAgents
+      .filter((p) => !p.retired && p.age <= FREE_AGENT_MAX_AGE)
+      .sort((a, b) => b.overall - a.overall);
     // Best clubs pick first, but only from players good enough for them.
     const clubs = world.clubs.slice().sort((a, b) => b.reputation - a.reputation);
     for (const club of clubs) {
@@ -1303,11 +1385,17 @@
     const ranked = own.slice().sort((a, b) => b.overall - a.overall);
     let player;
     if (which === "star") player = ranked[0];
+    /* "prize" is the best player young enough for a bigger club to actually
+     * want — the market's idea of a club's best asset rather than the team
+     * sheet's. A card that NAMES a player in its text has to sell that same
+     * player or the outcome contradicts the question, and "star" alone would
+     * hand over a 36-year-old while the card was talking about a 25-year-old. */
+    else if (which === "prize") player = ranked.find((p) => p.age <= 30) || ranked[0];
     else if (which === "veteran") player = own.slice().sort((a, b) => b.age - a.age)[0];
     else player = ranked[ranked.length - 1];
     if (!player) return null;
 
-    const fee = round1(player.value * (which === "star" ? 1.25 : 0.9));
+    const fee = round1(player.value * (which === "star" || which === "prize" ? 1.25 : 0.9));
 
     /* Somebody has to buy him. Handing the selling club the money and deleting
      * the player would leak a footballer out of the world every time a manager
@@ -1472,7 +1560,7 @@
 
   MG.transfers = {
     MIN_SQUAD, findAndSign, findSigning, commitSigning, findSaleOffer, commitSale, sellOne, boardListings, runLoans, returnLoans, willJoin, executeManagerRequests, developSquads, retirementsAndExpiries, buildListings, indexPlayers,
-    askingPrice, targetScore, clubNeeds, runWindow, signFreeAgents, topUpSquads, FREE_AGENT_SHORT_THRESHOLD, minimumShape, recordMovement, reverseMovement,
+    askingPrice, targetScore, clubNeeds, runWindow, signFreeAgents, topUpSquads, FREE_AGENT_SHORT_THRESHOLD, FREE_AGENT_MAX_AGE, minimumShape, recordMovement, reverseMovement,
     noteTransfer, clubTransfers, biggestTransfers,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

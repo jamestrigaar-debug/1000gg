@@ -113,9 +113,14 @@
   }
 
   /** Cycle 1. Returns the plan, and stores it on the club. */
-  function planSummer(world, club) {
+  function planSummer(world, club, opts) {
     const posture = readPosture(world, club);
     const needs = MG.transfers.clubNeeds(club);
+    const o = opts || {};
+    const rivalGap = rivalryGap(world, club, o.playerClub);
+    // Closest rivals push hardest; a side three places away is only mildly
+    // bothered about you.
+    const rivalPush = rivalGap == null ? 0 : (RIVALRY_RANGE + 1 - rivalGap) / (RIVALRY_RANGE + 1);
 
     /* The priority list. clubNeeds already ranks by urgency; the posture
      * re-weights it — a pushing club cares about upgrading its weakest
@@ -127,6 +132,12 @@
       if (posture.key === "push") weight += Math.max(0, level - n.currentQuality) * 0.10;
       if (posture.key === "rebuild" || posture.key === "consolidate") weight += n.short * 0.6;
       if (posture.key === "firefight") weight -= 0.5;
+      /* Where the manager's side is better than ours, that is the gap to close.
+       * Only ever a positive term — a rival does not stop wanting a goalkeeper
+       * because the human happens to be weak there too. */
+      if (rivalPush && o.playerQuality && o.playerQuality[n.pos] != null) {
+        weight += Math.max(0, o.playerQuality[n.pos] - n.currentQuality) * 0.13 * rivalPush;
+      }
       return { pos: n.pos, short: n.short, currentQuality: n.currentQuality, weight };
     }).sort((a, b) => b.weight - a.weight);
 
@@ -134,7 +145,8 @@
 
     const manager = world.managerById(club.managerId);
     const policy = MG.managers.recruitmentPolicy(manager);
-    const wanted = clamp(Math.round(2 + policy.churn + posture.signings), 0, 6);
+    // A rival in the hunt finds one more signing and a little more money.
+    const wanted = clamp(Math.round(2 + policy.churn + posture.signings + (rivalPush >= 0.5 ? 1 : 0)), 0, 7);
 
     const plan = {
       season: world.season,
@@ -144,7 +156,10 @@
       priorities: priorities.map((p) => p.pos),
       priorityDetail: priorities,
       wanted,
-      spend: posture.spend,
+      spend: posture.spend * (1 + rivalPush * 0.18),
+      // Non-null when this club is treating the managed side as a direct rival;
+      // read by the scouting screen so the manager can see it coming.
+      rivalGap,
       sell: posture.sell,
       ageBias: posture.ageBias,
       patience: posture.patience,
@@ -157,10 +172,70 @@
 
   /** Cycle 1, for the whole world. The human's club is left alone. */
   function planWorld(world) {
+    /* The managed club's own per-position quality, read once. Every rival that
+     * finished near him gets to compare itself against it — see planSummer's
+     * rivalry term. Computed here rather than inside the loop because it is the
+     * same answer for all of them. */
+    let playerQuality = null, playerClub = null;
+    if (world.playerClubId) {
+      playerClub = world.clubById(world.playerClubId);
+      if (playerClub) {
+        playerQuality = {};
+        for (const n of MG.transfers.clubNeeds(playerClub)) playerQuality[n.pos] = n.currentQuality;
+      }
+    }
     for (const club of world.clubs) {
       if (club.id === world.playerClubId) { club.plan = null; continue; }
-      planSummer(world, club);
+      planSummer(world, club, { playerClub, playerQuality });
+      refreshSystem(world, club);
     }
+  }
+
+  /* ---------------------------- THE RIVALRY TERM ----------------------------
+   * The clubs that finished within a few places of the manager take him
+   * personally. Until now every AI club planned its summer in a vacuum: it read
+   * its own finances, its own squad and its own board, and nothing anywhere in
+   * the world knew or cared that a human was competing with it. A league that
+   * never reacts to you is scenery, and beating scenery gets old.
+   *
+   * What a genuine rival does is close the gap: it spends a little harder, signs
+   * one more player, and points its recruitment at the positions where YOUR side
+   * is better than its own. That is legible on the scouting screen, it is the
+   * behaviour a real director of football would recognise, and it costs one
+   * comparison per club per summer. */
+  const RIVALRY_RANGE = 3;      // places either side of the manager in the table
+
+  function rivalryGap(world, club, playerClub) {
+    if (!playerClub || club.id === playerClub.id) return null;
+    if (club.leagueId !== playerClub.leagueId) return null;
+    const mine = club.lastPosition, theirs = playerClub.lastPosition;
+    if (mine == null || theirs == null) return null;
+    const gap = Math.abs(mine - theirs);
+    return gap <= RIVALRY_RANGE ? gap : null;
+  }
+
+  /* A rival who has been running the same shape for years and getting nowhere
+   * eventually changes it. Without this the world never refreshed a system at
+   * all — only a change of manager did — so every AI club drifted to maximally
+   * predictable and stayed there, and a human who rotated his shape every few
+   * seasons would have collected a permanent free edge over a league that never
+   * responded. It has to be RESULTS-driven rather than random: a side winning
+   * things has no reason to tear up what works, and the manager who does is the
+   * one whose board is asking questions. */
+  function refreshSystem(world, club) {
+    if (!MG.tactics || !MG.tactics.setFormation) return;
+    const seasons = club.systemSeasons || 1;
+    if (seasons < 3) return;
+    const report = club.board && club.board.report;
+    const struggling = report ? report.total < 0 : false;
+    // Ramps from nothing at three seasons to a near-certainty for a side that
+    // has been both stale and poor for years.
+    const chance = clamp((seasons - 2) * (struggling ? 0.22 : 0.06), 0, 0.8);
+    if (!world.rng.chance(chance)) return;
+    const keys = MG.tactics.FORMATION_KEYS.filter((k) => k !== club.formation);
+    if (!keys.length) return;
+    MG.tactics.setFormation(club, world.rng.pick(keys));
+    world.invalidateProfile(club.id);
   }
 
   /* ---------------------------- CYCLE 2 SUPPORT ----------------------------

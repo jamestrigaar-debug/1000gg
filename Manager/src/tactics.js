@@ -617,7 +617,64 @@
     return s;
   }
 
+  /* ---------------------- TACTICAL PREDICTABILITY ---------------------------
+   * A system that never changes gets worked out. Every other side in the
+   * division watches you twice a year, and by the fourth or fifth season of the
+   * same playstyle in the same shape they know where the ball is going before
+   * you play it.
+   *
+   * This is the answer to the flattest thing about a long career: find a set-up
+   * that beats the league, and there was previously no reason on earth ever to
+   * touch it again. Nothing degraded, nobody adjusted, and the tenth season
+   * played exactly like the second. Now standing still has a price, and it
+   * compounds in the one direction a manager cannot buy his way out of.
+   *
+   * Deliberately symmetric — every club in the world is aged the same way, so a
+   * rival who has run one shape for a decade is readable to YOU as well, and it
+   * shows up on the scouting screen. And deliberately escapable: changing
+   * playstyle or formation resets the clock, at the cost of the settling-in
+   * penalty the tactical decision cards already charge. That trade — a
+   * known quantity going stale versus a fresh idea that needs a season to bed
+   * in — is the decision this whole mechanic exists to create.
+   *
+   * A system is (playstyle, formation). Changing either resets it: a new shape
+   * for the same philosophy is genuinely new information for an opponent. */
+  const PREDICT_RAMP = 5;        // seasons from brand new to fully worked out
+  const PREDICT_COST = 2.5;      // attack rating points at full predictability
+
+  function systemKey(club, manager) {
+    const style = manager ? manager.tactic : (club.tacticalStyle || "Possession");
+    return `${style}|${club.formation || "4-4-2"}`;
+  }
+
+  /** Advance the clock. Called once a season, before a ball is kicked. */
+  function ageSystem(club, manager) {
+    const key = systemKey(club, manager);
+    if (club._systemKey === key) club.systemSeasons = (club.systemSeasons || 1) + 1;
+    else { club._systemKey = key; club.systemSeasons = 1; }
+    return club.systemSeasons;
+  }
+
+  /** 0 = nobody has a read on you. 1 = the division knows what is coming. */
+  function predictability(club, manager) {
+    const seasons = club.systemSeasons || 1;
+    // An adaptable coach disguises a system for longer — same shape on the team
+    // sheet, different problem to prepare for. Uses the attribute the match
+    // engine already reads for midfield, so it costs nothing new to model.
+    const adapt = manager && manager.attrs ? (manager.attrs.adaptability - 60) / 200 : 0;
+    return clamp((seasons - 1) / PREDICT_RAMP - adapt, 0, 1);
+  }
+
+  /** How it reads on a screen, for the pre-season brief and the scouting page. */
+  function predictabilityLabel(p) {
+    if (p >= 0.8) return { key: "read", label: "worked out", blurb: "the division knows exactly what is coming — a change of shape or philosophy would buy back the surprise" };
+    if (p >= 0.5) return { key: "known", label: "well known", blurb: "opponents have seen this often enough to prepare for it properly" };
+    if (p >= 0.25) return { key: "studied", label: "being studied", blurb: "the better-prepared sides are starting to get a read on it" };
+    return { key: "fresh", label: "fresh", blurb: "nobody in the division has a settled plan for it yet" };
+  }
+
   MG.tactics = {
+    PREDICT_RAMP, PREDICT_COST, systemKey, ageSystem, predictability, predictabilityLabel,
     FORMATIONS, FORMATION_KEYS, FAMILIARITY, familiarity,
     initMorale, effectiveOverall, teamMorale, shiftMorale, settleMorale,
     autoPick, effectiveXI, setXI, setFormation, xiRatings, xiReport,

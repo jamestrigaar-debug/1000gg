@@ -526,7 +526,7 @@
     }
     // Targets need every club's ratings to be current, so they come second.
     for (const club of world.clubs) {
-      MG.clubs.setSeasonTargets(club, world.clubsInLeague(club.leagueId), world.rng);
+      MG.clubs.setSeasonTargets(club, world.clubsInLeague(club.leagueId), world.rng, world.managerById(club.managerId));
     }
     // Build selections up front so youth minutes are decided before a ball is
     // kicked — a manager picks his squad, he does not discover it in May.
@@ -572,11 +572,40 @@
    * all, which is exactly why the benchmark is unaffected by any of this. */
   const EARLY_SEASON_SHARE = 0.32;
 
+  /* Advance every club's tactical clock — how many seasons running it has
+   * played the same playstyle in the same shape, which is what tactics.js turns
+   * into how thoroughly the division has worked it out.
+   *
+   * Called at KICK-OFF, from whichever entry point actually starts the season,
+   * and stamped with the season so it can only ever run once per campaign.
+   * Two things forced that shape:
+   *
+   *   - not prepareSeason, which runs at the tail of the PREVIOUS season's
+   *     advanceSeason, before the manager has seen a pre-season card. Ageing
+   *     there would read last season's set-up, so a summer switch of formation
+   *     or philosophy would not take effect until the season after the one it
+   *     was made for — and buying back the surprise for the campaign you
+   *     changed for is the entire point of offering the choice.
+   *   - not beginSeason alone, which returns early when no human is managing
+   *     anyone. Every headless world (the benchmark harnesses, and any future
+   *     spectate mode) would have left the clock frozen at one season forever,
+   *     so the mechanic would have applied to the player and to nobody else.
+   *
+   * Profiles are dropped so the new reading actually reaches the pitch. */
+  function ageSystems(world) {
+    if (!MG.tactics.ageSystem) return;
+    if (world._systemAgedSeason === world.season) return;
+    for (const c of world.clubs) MG.tactics.ageSystem(c, world.managerById(c.managerId));
+    world._systemAgedSeason = world.season;
+    world._profiles = {};
+  }
+
   function beginSeason(world) {
     if (!world.playerClubId) return null;
     if (world._partialLeague) return world._earlySnapshot || null;   // already begun
     const club = world.clubById(world.playerClubId);
     if (!club) return null;
+    ageSystems(world);
     const st = MG.competitions.beginLeague(world, club.leagueId);
     if (!st) return null;
     const upTo = Math.max(1, Math.floor(st.fixtures.length * EARLY_SEASON_SHARE));
@@ -618,6 +647,7 @@
   }
 
   function advanceSeason(world) {
+    ageSystems(world);
     const rng = world.rng;
     const seasonNews = [];
     const results = {};
@@ -642,7 +672,7 @@
         // Without this a career could end before its first board review.
         if (club.board.grace > 0) continue;
         const pressure = (behind - threshold) / 10;
-        const odds = clamp(pressure * style.reactivity * 0.5, 0, 0.7);
+        const odds = clamp(pressure * style.reactivity * 0.65, 0, 0.75);
         if (!rng.chance(odds)) continue;
         const out = removeManager(world, club, "sacked mid-season");
         club.board.confidence = clamp(club.board.confidence - 20, 0, 100);
@@ -812,9 +842,46 @@
       if (manager) {
         manager.tenure++;
         manager.record.seasons++;
-        // A manager's standing follows what his board thinks of him, damped by
-        // the size of club he is doing it at.
-        const swing = boardReports[club.id].total * 6 + (club.reputation - manager.reputation) * 0.12;
+        /* A manager's standing follows what his board thinks of him, damped by
+         * the size of club he is doing it at — but only lightly, and with
+         * achievement able to override the damping entirely.
+         *
+         * The damping used to be 0.12 of the gap. That meant a reputation-96
+         * coach at a reputation-80 club shed nearly two points every season
+         * however well he did, and nothing anywhere in the world ever created
+         * a new elite name to replace him: every rookie appointment is seeded
+         * BELOW its club's reputation, so the pool only ever leaked downward.
+         * Measured across twelve simulated seasons the Premier League's median
+         * manager fell from 74 to 50 and the best coach in the world from 96 to
+         * 85, while a human manager climbing on results alone gains about six a
+         * season. The player was not pulling away from the field so much as the
+         * field was walking backwards — and manager reputation is 40% of
+         * matchModifiers' quality term, which is a direct edge in every single
+         * match played. Halved, and floored on achievement below. */
+        let swing = boardReports[club.id].total * 6 + (club.reputation - manager.reputation) * 0.05;
+        /* Winning something is what actually makes a name, and it is what keeps
+         * elite reputations in the world at all. A good league finish is
+         * already in report.total; this is the part that outlives the season. */
+        const o = club._outcome;
+        if (o) {
+          if (o.champion) swing += 4;
+          else if (o.promoted) swing += 2.5;
+          if (o.europe && o.europe.round === "W") swing += 3;
+          if (o.relegated) swing -= 3;
+        }
+        /* Climbing gets harder the higher you already are. Without this the
+         * same six-a-season a competent manager earns in the third tier keeps
+         * paying all the way to 99, so any human who simply does his job
+         * arrives at the ceiling inside a decade and stays there — with a
+         * permanent match-engine edge over every opponent, since reputation is
+         * 40% of manager quality. Above the low 80s the difference between a
+         * very good manager and a great one stops being another solid season
+         * and starts being trophies, which is exactly what the flat bonuses
+         * above deliver: they are damped too, but they are large enough to
+         * still move a reputation that ordinary competence no longer can. */
+        if (swing > 0 && manager.reputation > 82) {
+          swing *= clamp(1 - (manager.reputation - 82) / 24, 0.25, 1);
+        }
         manager.reputation = clamp(Math.round(manager.reputation + swing), 3, 99);
       }
     }
@@ -1156,12 +1223,23 @@
 
     candidates.sort((a, b) => b.score - a.score);
     let chosen = candidates[0];
-    // Boards do not always get their first choice.
-    if (candidates.length > 2 && rng.chance(0.3)) chosen = rng.pick(candidates.slice(0, 3));
+    /* Boards do not always get their first choice — but a board with real pull
+     * usually does. Flat at 0.3 for everyone, the biggest clubs in the world
+     * missed on their target as often as a mid-table one, which is the other
+     * half of why elite coaching drained out of the world: nothing above the
+     * appointment itself ever concentrated the best managers at the best
+     * clubs. */
+    const missChance = club.reputation >= 70 ? 0.12 : club.reputation >= 50 ? 0.22 : 0.3;
+    if (candidates.length > 2 && rng.chance(missChance)) chosen = rng.pick(candidates.slice(0, 3));
 
     if (!chosen || chosen.score < club.reputation * 0.25) {
-      // Nobody suitable: the club appoints an unknown.
-      const rookie = MG.managers.generate(rng, clamp(club.reputation - rng.int(5, 20), 3, 90));
+      /* Nobody suitable: the club appoints an unknown. Seeded off the club's
+       * own standing — a giant forced into the market late still appoints
+       * someone near its level rather than a total unknown, where the flat
+       * "5 to 20 points below" applied to every club in the pyramid was one
+       * of the leaks that walked the world's coaching quality down. */
+      const drop = rng.int(2, Math.max(4, Math.round(22 - club.reputation * 0.22)));
+      const rookie = MG.managers.generate(rng, clamp(club.reputation - drop, 3, 92));
       world.managers.push(rookie);
       world.managerIndex[rookie.id] = rookie;
       return appointManager(world, club, rookie);

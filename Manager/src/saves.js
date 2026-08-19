@@ -84,7 +84,7 @@
     "seed", "year", "season", "clubs", "managers", "freeManagers", "news",
     "history", "playerClubId", "playerMovements", "playerMatches",
     "agentRosters", "clubTransferLog",
-    "_partialLeague", "_earlySnapshot", "_lastEuroQualification",
+    "_partialLeague", "_earlySnapshot", "_lastEuroQualification", "_systemAgedSeason",
   ];
 
   function packWorld(world) {

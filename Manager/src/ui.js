@@ -351,7 +351,7 @@
     state.clubId = clubId;
     world.playerClubId = clubId;
     c.transferList = []; c.targets = [];
-    MG.clubs.setSeasonTargets(c, world.clubsInLeague(c.leagueId), world.rng);
+    MG.clubs.setSeasonTargets(c, world.clubsInLeague(c.leagueId), world.rng, state.manager);
     state.lastReport = null; state.lastRow = null; state.outcomes = [];
     state.transfersSeason = null; state.signCount = 0; state.signPositions = [];
     // A new job at a new club starts its own notification history — a sacked
@@ -705,7 +705,7 @@
         if (entry) { openEnding(entry, "sacked"); return; }
         renderSacked(); show("screen-sacked"); return;
       }
-      MG.clubs.setSeasonTargets(c, world.clubsInLeague(c.leagueId), world.rng);
+      MG.clubs.setSeasonTargets(c, world.clubsInLeague(c.leagueId), world.rng, state.manager);
       state.stage = "result";
       render();
       autosave();   // milestone: End Season
@@ -756,7 +756,7 @@
     state.clubId = clubId;
     world.playerClubId = clubId;
     newClub.transferList = []; newClub.targets = [];
-    MG.clubs.setSeasonTargets(newClub, world.clubsInLeague(newClub.leagueId), world.rng);
+    MG.clubs.setSeasonTargets(newClub, world.clubsInLeague(newClub.leagueId), world.rng, state.manager);
     state.lastReport = null; state.lastRow = null;
     state.transfersSeason = null; state.signCount = 0; state.signPositions = [];
     state.lastSeenNewsId = world.news.length ? world.news[world.news.length - 1].id : 0;
@@ -1251,9 +1251,18 @@
       : `<div class="decision-tag">SEASON ${state.world.season} · ${esc(c.name.toUpperCase())}</div>
          <div class="decision-text">${esc(state.lastRow ? (state.lastRow.champion ? "Fresh off a title." : state.lastRow.promoted ? "Fresh off promotion." : state.lastRow.relegated ? "Straight back up, after relegation." : `${ordinal(state.lastRow.position)} last time out.`) : "A new season begins.")} Here is everything before the window opens.</div>`;
 
+    /* How well the division has your system read. Shown only once there is
+     * something to say — a manager in his first two seasons at a club does not
+     * need a line telling him nobody has worked him out yet. */
+    const pred = MG.tactics.predictability(c, m);
+    const predLab = MG.tactics.predictabilityLabel(pred);
+    const predLine = pred < 0.25 ? "" :
+      `<div class="board-note" style="margin-top:8px"><b class="${pred >= 0.8 ? "bad" : "gold"}">Your system is ${esc(predLab.label)}</b> — ${esc(predLab.blurb)}. ${c.systemSeasons || 1} season${(c.systemSeasons || 1) === 1 ? "" : "s"} of ${esc(m.tactic)} in a ${esc(c.formation)}.</div>`;
+
     return `
       <div class="decision boardroom">
         ${head}
+        ${predLine}
         <div class="stat-grid">
           <div class="stat-box"><div class="sb-num">${Math.round(r.attack)}</div><div class="sb-lab">Attack</div></div>
           <div class="stat-box"><div class="sb-num">${Math.round(r.midfield)}</div><div class="sb-lab">Midfield</div></div>
@@ -2009,6 +2018,11 @@
         <div class="seg">${MG.tactics.FORMATION_KEYS.map((k) => `
           <button class="${k === c.formation ? "on" : ""}" data-formation="${k}">${k}</button>`).join("")}</div>
         <div class="muted" style="font-size:12px;margin-top:6px">${esc(formation.blurb)}</div>
+        ${(() => {
+          const p = MG.tactics.predictability(c, state.manager);
+          const l = MG.tactics.predictabilityLabel(p);
+          return `<div class="muted" style="font-size:12px;margin-top:6px">Opponents find this side <b class="${p >= 0.8 ? "bad" : p >= 0.5 ? "gold" : "accent"}">${esc(l.label)}</b> — ${esc(l.blurb)}. Changing the shape or the playstyle starts that clock again.</div>`;
+        })()}
       </div>
       <div class="panel">
         <h3 class="muted">SEASON FOCUS</h3>
@@ -2415,6 +2429,11 @@
       </div>
       <div class="muted" style="font-size:13px;margin-bottom:4px">Manager: <b>${esc(m ? m.name : "—")}</b>${m ? ` · ${esc(m.archetypeName)} · ${esc(m.tactic)} · ${esc(c.formation)}` : ""}</div>
       <div class="muted" style="font-size:13px;margin-bottom:8px">Boardroom: <b>${esc(c.board.style)}</b> · ${esc(ownerLabel(c))}</div>
+      ${(() => {
+        const p = MG.tactics.predictability(c, m);
+        const l = MG.tactics.predictabilityLabel(p);
+        return `<div class="muted" style="font-size:13px;margin-bottom:8px">System: <b>${esc(c.formation)}</b> · <b class="${p >= 0.8 ? "accent" : p >= 0.5 ? "gold" : "bad"}">${esc(l.label)}</b> after ${c.systemSeasons || 1} season${(c.systemSeasons || 1) === 1 ? "" : "s"} — a side that has played the same way for years is a side you can prepare for.</div>`;
+      })()}
       ${rivalIntentHtml(world, mine, c, rep)}
       <div class="chooser-list">${squad.slice(0, 24).map((p) => pcard(p, { level: c.level })).join("")}</div>`);
     for (const el of document.querySelectorAll("[data-player]")) {
@@ -2448,8 +2467,15 @@
      * scouting department can tell you about a rival — not what they wanted,
      * but where they came up short and will still be weak in October. */
     const unmet = (plan.unmet || []).filter((p) => !plan.signed.some((s) => s.pos === p));
+    /* A club that finished within a few places of you plans its summer AGAINST
+     * you specifically — see ai.js's rivalry term. Worth a line of its own,
+     * because it changes what they will bid for and how hard. */
+    const rivalry = plan.rivalGap != null
+      ? `<div style="margin-top:4px"><b class="bad">They have you in their sights</b> <span class="muted">— they finished ${plan.rivalGap === 0 ? "level with you" : `${plan.rivalGap} place${plan.rivalGap === 1 ? "" : "s"} from you`}, and this window is aimed at closing the gap.</span></div>`
+      : "";
     return `<div class="board-note" style="margin-bottom:8px">
       <b class="accent">Summer intent</b> — <b>${esc(posture.label)}</b>. ${esc(posture.blurb)}
+      ${rivalry}
       <div style="margin-top:4px">Chasing: ${chasing}${plan.signed.length ? ` · <span class="muted">${plan.signed.length} signed so far</span>` : ""}</div>
       ${unmet.length ? `<div style="margin-top:4px"><span class="bad">Came up short at</span> ${unmet.map((p) => `<span class="ppos ${posClass(p)}">${esc(p)}</span>`).join(" ")} <span class="muted">— still a hole they have to play through.</span></div>` : ""}
     </div>`;
