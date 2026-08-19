@@ -1,5 +1,66 @@
 # Football DNA Simulator — Manager
 
+## v0.9.10 · beta — real attributes for the foreign leagues
+
+### Non-Premier-League squads stop being interpolations
+
+The five foreign leagues are sourced from a squad report that carries
+only four EA-FC-style composites per player — PAC, PHY, ATT, DEF. The
+game has to fan those four numbers out into eight attributes plus a
+build, and however carefully that mapping is written, four numbers
+cannot describe eight: two players with similar composites came out as
+near-copies, and nothing in the source could tell a two-footed
+playmaker from a one-footed finisher.
+
+**274 players now carry real per-attribute cards**, in the same schema
+the Premier League database already uses. Where a card exists the
+derived attributes are discarded outright rather than blended — blending
+real data with an interpolation just puts the interpolation back.
+
+Miles Robinson now reads HDR 79 / STR 79 / CRE 47: a centre-half, which
+four composites could never have produced. Messi's creativity stands at
+94 with pace at 73, which is recognisably him rather than a smooth curve
+through four averages.
+
+**Scope, deliberately narrow.** Only players *already in a squad* are
+touched. The source also describes players who have since moved on, or
+who play for clubs the game does not carry — those are skipped rather
+than signed. Nobody is moved, nobody is added, no transfer history is
+rewritten. 274 of the document's 404 cards matched a squad in play.
+
+**Ratings are not imported.** The cards rate their subjects about two
+points above the game's own ratings for the same men, and `overall`
+feeds club strength and therefore results. So the ratings stay exactly
+as they are and the card is *levelled* onto them — the shape is the
+card's, the level is the game's. Height and weight are never shifted;
+they are measurements, not ratings. Carded players come out marginally
+better calibrated than the population average, so nothing needed
+recalibrating.
+
+Two other fields are deliberately left out: the cards' mentality traits
+(GOAT, Maestro, Artist) use their own vocabulary, and the game's traits
+are a fixed set that morale and the match engine look up by name —
+importing free text would break those lookups. DEF-ATR is derived here
+rather than stored.
+
+### The profile shows less
+
+Two things came off the player profile:
+
+**The raw attribute grid.** HDR/FIT/STR/LF/RF/SPD/CRE/BAL/HGT/WGT/MEN
+printed in a block directly beneath the six bars and the radar that are
+*built from those same numbers* — the same player described twice, once
+in the game's language and once in the engine's. It read as a debug
+panel bolted to a player card, and a profile that shows its own workings
+underneath undercuts them.
+
+**The agent chip.** Agency, tier and his cut. The agent still works
+exactly as before behind the scenes — rostering clients, driving the
+bidding wars, taking his cut — the manager simply does not get to read
+his terms off a player's profile.
+
+Durability, the season line and the full career history all stay.
+
 ## v0.9.9 · beta — the elite band stops faking it
 
 Beta feedback, and it was the right complaint: for players rated 89 and
