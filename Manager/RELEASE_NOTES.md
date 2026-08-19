@@ -1,5 +1,109 @@
 # Football DNA Simulator — Manager
 
+## v0.9.6 · beta — creativity, and profiles that justify their badge
+
+Reported from play: elite players whose profiles did not look elite, with
+Lautaro Martínez as the case in point — right foot 91, left foot 65, and an
+Attacking bar reading 78.
+
+### 1. Being one-footed made him a worse player instead of a different one
+
+The Attacking axis was **the average of both feet**. For an elite one-footed
+finisher that is a straight penalty for something that is not a weakness: a
+striker finishes with his good foot. Martínez came out at 78, below players he
+is plainly better than, and his 88 badge looked unearned as a result.
+
+Attacking is now his **strong** foot with the weak one behind it (78/22). He
+reads 91 — an elite finisher, which is what he is.
+
+### 2. What the weak foot actually tells you: CREATIVITY
+
+A new seventh attribute, and the one the source data was crying out for. The
+database has no vision, passing or flair field — but it has **both feet**, and
+two good feet is the most reliable public signal that a footballer has options:
+he can go either way, receive on either side, pick a pass he is not square to.
+The population's median weak foot is 55 and its 99th percentile is 75, so a
+genuinely two-footed player is rare enough to mean something.
+
+Creativity is derived from the weak foot, football intelligence, position (an
+attacking midfielder is picked for this; a centre half is not) and a light
+touch of the player's own level. It is a **real attribute**, not a display
+trick — it is stored on the player, it develops with him (gaining readily,
+decaying barely at all, because it is the last thing to leave a footballer),
+it shows in the raw grid as CRE, and it has its own axis on the radar.
+
+The effect is that players of the same rating now read as different
+footballers: van Dijk 81 creativity, Martínez 85, Haaland 91, De Bruyne 92,
+Salah 94.
+
+### 3. Football intelligence at the top
+
+The database's mentalityRating rises with quality as it should — 62 through the
+bulk of the population, 82.8 across players rated 85+ — but individual records
+are noisy, and the noise showed worst where it mattered. Valverde at 89 carried
+a 69 and Martínez at 88 a 68, so two world-class players displayed a Mental
+score in the middle of the range while a journeyman beside them displayed a
+better one.
+
+A floor, not a rewrite: untouched below 78 and untouched for anyone already
+reading above the line, so the real spread survives and only the implausible
+bottom of the elite band moves.
+
+### 4. The axes now add up to the badge
+
+This is what "they have 90 rating but are clearly not 90 rated players" was
+really about. The raw attributes describe a winger's game almost completely and
+a goalkeeper's barely at all, so a 90-rated keeper's profile read in the
+mid-seventies and a 90-rated winger's read at 88 — the same badge, two
+completely different-looking players.
+
+Three stages, all fitted across the 6,700 players in the shared database:
+
+- **Per-axis scaling**, matching each axis's distribution to the distribution
+  of `overall` — so an axis reading 90 means "as far above average at this as a
+  90-rated player is at football". Deliberately global, not per position,
+  because the positional differences are real information: a forward genuinely
+  cannot defend, and flattening that out would leave every radar the same
+  shape. Moment matching rather than regression, which would have flattened
+  mentality to a slope of 0.6 and squashed everyone toward the middle.
+- **A quality term**, zero below 70 and rising. The attributes genuinely
+  under-describe great players — what separates very good from great is mostly
+  the first touch under pressure and the run made without the ball, none of
+  which is in a column. **Creativity is exempt**, and has to be: it is the axis
+  that exists to tell players of the same quality apart, so a term rising with
+  quality would defeat it by construction.
+- **A soft ceiling** above 86, because the slopes exceed one and a hard clamp
+  would spend them pinning the top of the game to 99. An early cut had Haaland
+  on 99 Physical, 99 Attacking, 99 Mental and 98 Aerial — a perfectly
+  calibrated average and a radar shaped like a heptagon.
+
+Every position now averages within 0.1 of the badge across the population, and
+the elite band within 2-3. None of it touches a rating the match engine reads —
+it is a presentation correction, and it is what makes a profile justify its
+number.
+
+| | before | after |
+|---|---|---|
+| Lautaro Martínez, Attacking | 78 | 91 |
+| Lautaro Martínez, axis mean vs his 88 badge | −10 | −2 |
+| Axis values pinned at 98+ | — | 0.00% |
+| Per-position axis mean vs badge | −4.7 to +4.7 | ±0.1 |
+
+The QA panel's gap column is now the plain question it should always have been:
+does his profile add up to his rating? Zero is well-formed, double figures is a
+player whose stat pool and badge describe different footballers.
+
+Careers saved before this update are backfilled on load, so an existing save
+reads identically to a new one rather than falling back to a placeholder for
+the rest of the career.
+
+All four harnesses pass — `realism.js` all nine metrics within tolerance
+(bottom points 26.5 against a real 26, the closest yet), `audit.js` no
+structural faults, `decisions.js` 69/69 cards, `run_world.js` clean on five
+seeds.
+
+---
+
 ## v0.9.5 · beta — the wage economy, the layout, and an AI that builds teams
 
 ### 1. Every club in the world showed a negative wage room
