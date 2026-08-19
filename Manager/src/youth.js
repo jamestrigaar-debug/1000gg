@@ -202,29 +202,62 @@
     return p;
   }
 
-  /* An AI club promotes anyone good enough for its senior squad, and lets go of
-   * anyone who has aged out without getting there. The player's club is left
-   * alone: those are his calls to make. */
+  /* EVERY club's academy is run by its own staff, the player's included.
+   *
+   * It used to carve out an exception — "the player's club is left alone:
+   * those are his calls to make" — which put a PROMOTE and a RELEASE button
+   * beside each boy and made the manager the academy's line manager. Beta
+   * feedback asked for the opposite, and it is the better model: a first-team
+   * manager does not personally decide which sixteen-year-old is stepping up,
+   * the academy staff do, and he finds out when a name appears in his squad.
+   * It also removes a screen of unrewarding admin — promoting the obvious
+   * candidate every season was a decision only in the sense that it required
+   * a tap.
+   *
+   * So the rule is one rule for everybody. What the player gets instead is
+   * VISIBILITY: the group, its grades, and the three the coaches rate — plus
+   * a line in the log naming anyone the staff push up or let go, which is
+   * more than he ever got about his own academy before.
+   *
+   * Returns what happened, so runSeason can report it. */
+  /* WHAT THE ACADEMY COACHES FOR, chosen by the club rather than the manager.
+   * The focus buttons used to sit on the YOUTH tab; with the academy handed to
+   * the board they go too, so this picks a house style the club would plausibly
+   * have. Deterministic and stable — a club's academy has an identity, and a
+   * manager arriving should find one already there rather than a blank slate.
+   * A well-funded youth setup can afford to coach the ball; a poor one falls
+   * back on athletes, which is exactly what happens in the real world. */
+  function boardFocus(club) {
+    const youth = club.facilities ? club.facilities.youth : 50;
+    const training = club.facilities ? club.facilities.training : 50;
+    if (youth >= 78) return "technical";
+    if (youth >= 62) return training >= 70 ? "technical" : "balanced";
+    if (youth <= 42) return "physical";
+    return club.board && club.board.style === "Patient" ? "mentality" : "balanced";
+  }
+
   function autoManage(world, club) {
     const a = ensure(club);
-    const isPlayerClub = club.id === world.playerClubId;
+    a.focus = boardFocus(club);
     const level = club.level != null ? club.level : 50;
-    const keep = [];
+    const keep = [], promoted = [], released = [];
     for (const p of a.players) {
       const ready = p.overall >= level - 8 || p.potential >= level + 4;
-      if (p.age >= PROMOTE_AGE - 1 && ready && !isPlayerClub) {
+      if (p.age >= PROMOTE_AGE - 1 && ready) {
         p.academy = false;
         p.clubId = club.id;
         MG.players.recordMove(p, club.name, world.season);
         MG.tactics.initMorale(p);
         club.squad.push(p);
+        promoted.push(p);
         continue;
       }
       // Aged out and never made it — released, wherever he is.
-      if (p.age > PROMOTE_AGE) { p.retired = true; continue; }
+      if (p.age > PROMOTE_AGE) { p.retired = true; released.push(p); continue; }
       keep.push(p);
     }
     a.players = keep;
+    return { promoted, released };
   }
 
   /** The whole academy year, for every club. Returns news for the player's. */
@@ -232,7 +265,25 @@
     const news = [];
     for (const club of world.clubs) {
       develop(world, club);
-      autoManage(world, club);
+      const moved = autoManage(world, club);
+      const isPlayerClub = club.id === world.playerClubId;
+      /* The board runs the academy now, so the manager has to be TOLD what it
+       * did — a boy appearing in the senior squad with no explanation is the
+       * "the game moved on without you" failure the log exists to prevent. */
+      if (isPlayerClub && moved.promoted.length) {
+        news.push({
+          type: "youth",
+          text: `ACADEMY — the staff promote ${moved.promoted.map((p) => `${p.name} (${p.pos}, ${p.age})`).join(", ")} to the first-team squad.`,
+          clubId: club.id,
+        });
+      }
+      if (isPlayerClub && moved.released.length) {
+        news.push({
+          type: "youth",
+          text: `ACADEMY — released after ageing out: ${moved.released.map((p) => p.name).join(", ")}.`,
+          clubId: club.id,
+        });
+      }
       const added = intake(world, club);
       if (club.id === world.playerClubId && added.length) {
         const best = added.slice().sort((x, y) => y.potential - x.potential)[0];
@@ -258,6 +309,6 @@
 
   MG.youth = {
     FOCUS, FOCUS_KEYS, POOL_TARGET, PROMOTE_AGE,
-    ensure, intake, develop, promote, promoteReadyForPos, release, autoManage, runSeason, grade, makeProspect,
+    ensure, intake, develop, promote, promoteReadyForPos, release, autoManage, boardFocus, runSeason, grade, makeProspect,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -304,11 +304,11 @@
    * carrying their own axes — the raw values feeding those three keys changed
    * shape, so the old constants no longer matched the population. */
   const AXIS_CAL = {
-    def: [1.140,  -0.2], phy: [1.242, -12.6], att: [1.002,   8.4],
-    aer: [1.171,  -2.2], men: [1.412, -15.8],
+    def: [0.959,  17.4], phy: [1.220, -11.5], att: [0.967,  10.2],
+    aer: [1.172,  -2.1], men: [1.361, -13.1],
   };
   const POS_OFFSET = {
-    GK: 0.7, CB: -1.6, FB: -1.1, DM: 1.2, CM: 0.5, AM: 1.9, WG: 1.5, FW: -1.4,
+    GK: -1.2, CB: -3.4, FB: -2.0, DM: -0.2, CM: 0.7, AM: 2.4, WG: 2.2, FW: -0.9,
   };
 
   /* A SOFT CEILING, because the calibration has slopes greater than one and a
@@ -342,9 +342,60 @@
   function eliteLift(overall) {
     return Math.max(0, (overall || 60) - ELITE_FROM) * ELITE_RATE;
   }
+
+  /* ---------------------- WHERE THE ELITE LIFT IS ALLOWED TO LAND ----------
+   * The lift above used to be added to every axis equally, and that was the
+   * single loudest piece of beta feedback: a 90-rated winger read 81 for
+   * DEFENDING and an 89-rated one read 91, because being good at football
+   * paid out identically on all six dials. Padding a great attacker's
+   * defensive and aerial numbers is precisely what makes a profile look
+   * invented — the reader knows Mohamed Salah is not an 81 defender, and one
+   * number he can see is wrong poisons the five beside it that are right.
+   *
+   * So the lift is SHARED OUT rather than sprayed: each position declares how
+   * much of its game genuinely runs through each axis, and the quality bonus
+   * follows that shape. A winger's spends itself on speed, attacking and
+   * mental; a centre half's on defending, aerial and physical.
+   *
+   * NORMALISED, so this redistributes rather than deletes. The shares are
+   * scaled to average exactly 1 across the five calibrated axes, which means
+   * the TOTAL lift a player receives is unchanged and the property the whole
+   * calibration rests on — that a player's axes average to his badge — still
+   * holds exactly. What changes is only WHERE it goes, which is the entire
+   * complaint. Speed is not in the table because speed is never calibrated at
+   * all (see radarAxes): it is a straight copy of the raw attribute, and that
+   * stays true here. */
+  const AXIS_RELEVANCE = {
+    GK: { def: 1.00, phy: 0.55, att: 0.15, aer: 0.60, men: 0.95 },
+    CB: { def: 1.00, phy: 0.90, att: 0.25, aer: 1.00, men: 0.80 },
+    FB: { def: 0.85, phy: 0.75, att: 0.55, aer: 0.40, men: 0.65 },
+    DM: { def: 0.95, phy: 0.85, att: 0.55, aer: 0.65, men: 0.95 },
+    CM: { def: 0.65, phy: 0.75, att: 0.85, aer: 0.40, men: 1.00 },
+    AM: { def: 0.30, phy: 0.55, att: 1.00, aer: 0.30, men: 1.00 },
+    WG: { def: 0.25, phy: 0.50, att: 1.00, aer: 0.22, men: 0.85 },
+    FW: { def: 0.20, phy: 0.80, att: 1.00, aer: 0.85, men: 0.85 },
+  };
+  const RELEVANCE_KEYS = ["def", "phy", "att", "aer", "men"];
+  const DEFAULT_RELEVANCE = { def: 0.7, phy: 0.7, att: 0.7, aer: 0.7, men: 0.7 };
+  /* Precomputed once: the normalising divisor per position, so the per-axis
+   * shares average 1. Done at load rather than per call because radarAxes runs
+   * for every player in a 5,000-player world every time a list is drawn. */
+  const RELEVANCE_NORM = {};
+  for (const pos of Object.keys(AXIS_RELEVANCE)) {
+    const rel = AXIS_RELEVANCE[pos];
+    RELEVANCE_NORM[pos] = RELEVANCE_KEYS.reduce((t, k) => t + rel[k], 0) / RELEVANCE_KEYS.length;
+  }
+  function eliteShare(pos, key) {
+    const rel = AXIS_RELEVANCE[pos] || DEFAULT_RELEVANCE;
+    const norm = RELEVANCE_NORM[pos] || 0.7;
+    const r = rel[key];
+    return r == null ? 1 : r / norm;
+  }
+
   function calibrate(key, pos, v, overall) {
     const c = AXIS_CAL[key] || [1, 0];
-    return clamp(Math.round(soften(v * c[0] + c[1] + (POS_OFFSET[pos] || 0) + eliteLift(overall))), 2, 99);
+    const lift = eliteLift(overall) * eliteShare(pos, key);
+    return clamp(Math.round(soften(v * c[0] + c[1] + (POS_OFFSET[pos] || 0) + lift)), 2, 99);
   }
 
   function radarAxes(player) {
@@ -429,7 +480,19 @@
    * calculation: the database bakes a keeper down to one overall number with
    * no separate reflexes or handling attribute to reweight, so GK_ATR reads
    * heading as commanding the box and leans on the same physical blend. */
-  const DEF_ATR_WEIGHT = { GK: 1.0, CB: 1.0, FB: 1.0, DM: 0.9, CM: 0.9, AM: 0.75, WG: 0.7, FW: 0.65 };
+  /* THE SPREAD HAD TO WIDEN. The old table ran 1.0 down to only 0.65, and
+   * since `overall` enters at weight*0.6 that meant 39% of a FORWARD's rating
+   * was counted as defensive ability before a single defensive attribute was
+   * read — the second and larger half of the beta-feedback padding, and the
+   * reason Pedri read 89 and Raphinha 91 at defending. A great forward being
+   * automatically three-quarters as good a defender as a great centre half is
+   * not a calibration nuance, it is the model saying something false.
+   *
+   * Now it runs 1.0 down to 0.22, so out-of-position defending is carried by
+   * the player's actual physical attributes rather than by his badge. A
+   * hard-working forward can still read respectably here — strength, heading
+   * and fitness are his to earn — but he can no longer inherit it. */
+  const DEF_ATR_WEIGHT = { GK: 1.0, CB: 1.0, FB: 0.86, DM: 0.80, CM: 0.58, AM: 0.34, WG: 0.26, FW: 0.22 };
   function heightScore(cm) { return clamp(Math.round(((cm || 180) - 160) * 1.8), 10, 99); }
   function defenceAttribute(player) {
     const a = player.attrs || {};
@@ -438,9 +501,60 @@
     return clamp(Math.round(player.overall * weight * 0.6 + physical * 0.4), 1, 99);
   }
 
+  /* ------------------- "DO HIS AXES ADD UP TO HIS BADGE?" -------------------
+   * The number the TOP RATED list prints beside a player, and a testing
+   * instrument rather than a feature: it should read near zero for a
+   * well-formed player and in double figures for one whose stat pool and
+   * rating describe different footballers.
+   *
+   * WEIGHTED, because a flat mean of six axes quietly libelled goalkeepers.
+   * Five of the six — physical, speed, attacking, aerial, mental — barely
+   * describe a keeper at all, so the flat average of a genuinely elite one
+   * came out ten to thirteen points under his badge and the list flagged
+   * Donnarumma, Alisson and Courtois as broken players when nothing was wrong
+   * with them. Weighting each axis by how much the position actually plays
+   * through it (the same AXIS_RELEVANCE the elite lift uses) asks the question
+   * the indicator was always meant to ask: does he add up as a player in HIS
+   * position, rather than as an average of six dials.
+   *
+   * Speed gets a nominal relevance of its own here — it is never calibrated,
+   * but it is on the radar and a winger's pace is a real part of whether he
+   * adds up. */
+  const SPEED_RELEVANCE = { GK: 0.20, CB: 0.45, FB: 0.95, DM: 0.45, CM: 0.55, AM: 0.70, WG: 1.00, FW: 0.75 };
+  /* Recentred per position, and deliberately NOT by moving POS_OFFSET.
+   *
+   * Weighting the mean shifts where it sits — it leans on the axes a position
+   * is good at, so it lands a couple of points above the badge. That could be
+   * absorbed by refitting POS_OFFSET against the weighted mean instead of the
+   * flat one, and it was tried: it works, and it costs two to five points off
+   * every radar in the game, because the calibration would then be solving for
+   * a diagnostic rather than for what the player sees. Deflating the radar —
+   * the actual user-facing artefact — to make an internal instrument read
+   * zero is the wrong way round.
+   *
+   * So the radar keeps its own calibration and the INDICATOR carries the
+   * offset. These are the mean weighted gaps measured across two full worlds,
+   * subtracted so a well-formed player of any position reads about zero and
+   * the number means the same thing for a keeper as for a winger. */
+  const INDICATOR_BASELINE = { GK: 3.2, CB: 2.5, FB: 1.2, DM: 0.6, CM: 0.8, AM: 2.4, WG: 3.3, FW: 2.2 };
+  function axisMean(player) {
+    const axes = radarAxes(player);
+    const pos = player.pos;
+    const rel = AXIS_RELEVANCE[pos] || DEFAULT_RELEVANCE;
+    // radarAxes order: def, phy, spd, att, aer, men
+    const weights = [
+      rel.def, rel.phy, SPEED_RELEVANCE[pos] != null ? SPEED_RELEVANCE[pos] : 0.6,
+      rel.att, rel.aer, rel.men,
+    ];
+    let vsum = 0, wsum = 0;
+    for (let i = 0; i < axes.length; i++) { vsum += axes[i].value * weights[i]; wsum += weights[i]; }
+    if (!wsum) return 0;
+    return vsum / wsum - (INDICATOR_BASELINE[pos] || 0);
+  }
+
   MG.ratings = {
     ROLE_WEIGHTS, ROLE_INFLUENCE, attrValue, roleRating,
     hidden, resetHidden, pruneHidden, rollSeasonForm, fatigueFactor,
-    radarAxes, DEF_ATR_WEIGHT, heightScore, defenceAttribute,
+    radarAxes, axisMean, AXIS_RELEVANCE, DEF_ATR_WEIGHT, heightScore, defenceAttribute,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

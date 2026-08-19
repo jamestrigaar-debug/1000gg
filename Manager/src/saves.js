@@ -208,7 +208,7 @@
       // after, not carry a hole in the grid for the rest of the career.
       if (p.attrs.balance == null && MG.players.deriveBalanceAgility) {
         p.attrs.balance = MG.players.deriveBalanceAgility(
-          p.attrs.strength, p.attrs.fitness, p.attrs.speed, p.attrs.height, p.attrs.weight);
+          p.attrs.strength, p.attrs.fitness, p.attrs.speed, p.attrs.height, p.attrs.weight, p.overall);
       }
     };
     for (const club of world.clubs) {

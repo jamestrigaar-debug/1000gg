@@ -1314,7 +1314,7 @@
     const top = a.players.slice().sort((x, y) => (y.potential - y.overall) - (x.potential - x.overall)).slice(0, 2);
     return `<div class="panel">
       <h3 class="muted">COMING THROUGH THE ACADEMY</h3>
-      <div class="muted" style="font-size:12px;margin-bottom:8px">The pick of the youth squad — the full academy, and the PROMOTE button, are on the YOUTH tab.</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">The pick of the youth squad — the full academy, and what the staff have done with it, are on the YOUTH tab.</div>
       ${top.map((p) => {
         const g = MG.youth.grade(p);
         const ready = p.overall >= level - 8;
@@ -1769,13 +1769,21 @@
     const hint = $("tab-hint");
     if (hint) hint.textContent = state.tabOpen
       ? "Tap the open tab again to close it."
-      : "Tap to open — the table, your record, the world, the academy, the honours.";
+      : "Tap to open — your squad, the table, your record, the world, the academy, the honours.";
   }
 
   function renderTab() {
     renderTabStrip();
     const el = $("tab-body");
-    const views = { table: tableHtml, career: careerHtml, world: worldHtml, youth: youthHtml, awards: awardsHtml };
+    /* SQUAD lives here as well as in the pre-season hub. Beta feedback asked
+     * for it on the always-available strip alongside the table and the world,
+     * and it belongs there: it is the one reference surface a manager wants
+     * mid-season, not only in the window. squadHtml is self-contained — it
+     * reads club() and state, and wireTab already binds its sort, list and
+     * mentor controls document-wide — so it needs nothing the hub gives it.
+     * Tactics deliberately stays where it was, inside the decisions at the
+     * point of the season that asks for it. */
+    const views = { squad: squadHtml, table: tableHtml, career: careerHtml, world: worldHtml, youth: youthHtml, awards: awardsHtml };
     el.innerHTML = (views[state.tab] || tableHtml)();
     wireTab();
   }
@@ -2202,7 +2210,23 @@
     const t = c.board.targets;
     const players = a.players.slice().sort((x, y) => (y.potential - y.overall) - (x.potential - x.overall) || y.overall - x.overall);
     const level = c.level != null ? c.level : 60;
-    const focus = MG.youth.FOCUS[a.focus];
+    const focus = MG.youth.FOCUS[a.focus] || MG.youth.FOCUS.balanced;
+    /* The academy is the board's to run now, so this screen reports rather
+     * than commands: the shape of the group, and the three the coaches rate. */
+    const top3 = players.slice(0, 3);
+    const n = players.length || 1;
+    const avgAge = Math.round(players.reduce((t, p) => t + p.age, 0) / n);
+    const avgOvr = Math.round(players.reduce((t, p) => t + p.overall, 0) / n);
+    const bestCeiling = players.length
+      ? Math.max(...players.map((p) => (p.scouted && p.scouted.ceiling) || p.potential)) : 0;
+    const readyCount = players.filter((p) => p.overall >= level - 8).length;
+    const nextOut = players.filter((p) => p.age >= MG.youth.PROMOTE_AGE).length;
+    const gradeCounts = (() => {
+      const order = ["Exceptional", "Promising", "Useful", "Limited"];
+      const tally = {};
+      for (const p of players) { const g = MG.youth.grade(p).label; tally[g] = (tally[g] || 0) + 1; }
+      return order.filter((l) => tally[l]).map((l) => ({ label: l, n: tally[l] }));
+    })();
 
     return `<div class="panel">
       <h3 class="muted">THE ACADEMY · ${esc(c.name)}</h3>
@@ -2224,34 +2248,53 @@
 
     <div class="panel">
       <h3 class="muted">HOW THEY ARE COACHED</h3>
-      <div class="seg">${MG.youth.FOCUS_KEYS.map((k) => `
-        <button class="${k === a.focus ? "on" : ""}" data-yfocus="${k}">${esc(MG.youth.FOCUS[k].label)}</button>`).join("")}</div>
-      <div class="muted" style="font-size:12px;margin-top:6px">${esc(focus.blurb)}</div>
+      <div class="nm">${esc(focus.label)}</div>
+      <div class="muted" style="font-size:12px;margin-top:4px">${esc(focus.blurb)}</div>
+      <div class="muted" style="font-size:12px;margin-top:6px">
+        Set by the club, not by you — an academy has a house style, and yours reflects what its facilities can actually deliver.
+      </div>
     </div>
 
     <div class="panel">
-      <h3 class="muted">THE YOUTH SQUAD</h3>
+      <h3 class="muted">THE PICK OF THE ACADEMY</h3>
       <div class="muted" style="font-size:12px;margin-bottom:8px">
-        Your coaches' verdict, not a spreadsheet — the range is what they are prepared to commit to.
-        <b>PROMOTE</b> puts a boy in the senior squad; leave him and he keeps training, but past ${MG.youth.PROMOTE_AGE} he is released.
+        The three your coaches rate most highly. Their verdict, not a spreadsheet — the range is what they are prepared to
+        commit to. Tap a name for his full profile.
       </div>
-      ${players.length ? players.map((p) => {
+      ${top3.length ? top3.map((p) => {
         const g = MG.youth.grade(p);
         const ready = p.overall >= level - 8;
-        const s = p.scouted || {};
-        return `<div class="crow ${ready ? "extend" : ""}">
-          <div class="prating ${posClass(p.pos)}" style="width:38px;height:38px;font-size:15px;cursor:pointer" data-player="${p.id}">${Math.round(p.overall)}</div>
+        const sc = p.scouted || {};
+        return `<div class="crow ${ready ? "extend" : ""}" data-player="${p.id}" style="cursor:pointer">
+          <div class="prating ${posClass(p.pos)}" style="width:38px;height:38px;font-size:15px">${Math.round(p.overall)}</div>
           <div class="crow-body">
             <div class="nm">${esc(p.name)} <span class="ppos ${posClass(p.pos)}">${p.pos}</span>
               <span class="pmark ${g.cls === "gold" ? "mark-great" : g.cls === "accent" ? "mark-good" : "mark-ok"}">${esc(g.label)}</span></div>
-            <div class="muted" style="font-size:12px">${p.age}y · coaches see him reaching <b>${s.floor || "?"}–${s.ceiling || "?"}</b>${ready ? ` · <span class="accent">ready for the first team</span>` : ` · needs time`}</div>
-          </div>
-          <div class="crow-actions">
-            <button class="btn tiny ${ready ? "primary" : ""}" data-promote="${p.id}">PROMOTE</button>
-            <button class="btn tiny danger" data-release="${p.id}">RELEASE</button>
+            <div class="muted" style="font-size:12px">${p.age}y · coaches see him reaching <b>${sc.floor || "?"}–${sc.ceiling || "?"}</b>${ready ? ` · <span class="accent">knocking on the first-team door</span>` : ` · needs time`}</div>
           </div>
         </div>`;
       }).join("") : `<div class="muted">The academy is empty — a new intake arrives at the end of the season.</div>`}
+    </div>
+
+    <div class="panel">
+      <h3 class="muted">THE GROUP</h3>
+      ${players.length ? `<div class="stat-grid">
+        <div class="stat-box"><div class="sb-num">${players.length}</div><div class="sb-lab">Scholars</div></div>
+        <div class="stat-box"><div class="sb-num">${avgAge}</div><div class="sb-lab">Average age</div></div>
+        <div class="stat-box"><div class="sb-num">${avgOvr}</div><div class="sb-lab">Average rating</div></div>
+        <div class="stat-box"><div class="sb-num gold">${bestCeiling}</div><div class="sb-lab">Best ceiling</div></div>
+        <div class="stat-box"><div class="sb-num">${readyCount}</div><div class="sb-lab">Near first team</div></div>
+        <div class="stat-box"><div class="sb-num">${nextOut}</div><div class="sb-lab">Ageing out</div></div>
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:8px">
+        Grades across the group:
+        ${gradeCounts.map((g) => `<b>${g.n}</b> ${esc(g.label.toLowerCase())}`).join(" · ")}.
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:6px">
+        The academy staff run this themselves: they promote anyone ready for the senior squad and release anyone who reaches
+        ${MG.youth.PROMOTE_AGE} without getting there. Both show up in your log when they happen.
+      </div>`
+      : `<div class="muted">The academy is empty — a new intake arrives at the end of the season.</div>`}
     </div>`;
   }
 
@@ -2391,8 +2434,11 @@
     const rows = shown.map((p, i) => {
       const c = world.clubById(p.clubId);
       const pc = posClass(p.pos);
-      const attrs = MG.ratings.radarAxes(p);
-      const mean = Math.round(attrs.reduce((t, a) => t + a.value, 0) / attrs.length);
+      // Weighted by what the position actually plays through — see
+      // ratings.axisMean. A flat mean used to flag every elite goalkeeper in
+      // the world as broken, because five of his six axes describe somebody
+      // else's job.
+      const mean = Math.round(MG.ratings.axisMean(p));
       /* Straight against the badge. The six axes carry a per-position
        * calibration (see ratings.AXIS_CAL) fitted so that they AVERAGE to the
        * overall the player holds — so this number is once again the plain
@@ -2462,11 +2508,16 @@
     // Every past winner, most recent first — the Hall of Fame this tracker
     // exists to build. Read straight off world.history: nothing extra to
     // maintain, and it grows one line a season for the length of the save.
-    const history = seasons.slice().reverse().filter((h) => h.awards.ballonDor && h.awards.ballonDor.winner);
-    const historyBlock = history.length > 1
+    // Excluded by identity (`h !== latest`), not by slicing off index 0 —
+    // slicing assumed the newest winner-bearing season was always `latest`
+    // itself, which breaks the moment the latest season has no Ballon d'Or
+    // (nobody stood out) but an earlier one does: that winner would silently
+    // drop out of the list instead of surfacing here as the most recent one.
+    const history = seasons.slice().reverse().filter((h) => h.awards.ballonDor && h.awards.ballonDor.winner && h !== latest);
+    const historyBlock = history.length
       ? `<div class="panel" style="margin-bottom:10px">
           <h3 class="muted" style="font-size:12px">PAST WINNERS</h3>
-          ${history.slice(1, 16).map((h) => {
+          ${history.slice(0, 15).map((h) => {
             const w = h.awards.ballonDor.winner;
             return `<div class="crow" data-player="${w.playerId}" style="cursor:pointer">
               <div class="muted" style="width:52px;font-size:11px">${esc(seasonLabel(h.year))}</div>
@@ -2655,23 +2706,12 @@
     for (const b of document.querySelectorAll("[data-squadsort]")) {
       b.addEventListener("click", () => { state.squadSort = b.dataset.squadsort; refreshLists(); });
     }
-    for (const b of document.querySelectorAll("[data-yfocus]")) {
-      b.addEventListener("click", () => { MG.youth.ensure(c).focus = b.dataset.yfocus; refreshLists(); });
-    }
-    for (const b of document.querySelectorAll("[data-promote]")) {
-      b.addEventListener("click", () => {
-        const p = MG.youth.promote(c, Number(b.dataset.promote), state.world.season);
-        if (p) state.world.report(`ACADEMY — ${p.name} (${p.pos}, ${p.age}) is promoted to the first team.`, "youth", c.id);
-        render();
-      });
-    }
-    for (const b of document.querySelectorAll("[data-release]")) {
-      b.addEventListener("click", () => {
-        const p = MG.youth.release(c, Number(b.dataset.release));
-        if (p) state.world.report(`ACADEMY — ${p.name} is released by the club.`, "youth", c.id);
-        refreshLists();
-      });
-    }
+    /* The academy's focus, promote and release handlers lived here. All three
+     * are gone with the buttons they served: the academy is run by its own
+     * staff now (youth.js autoManage), for every club including the player's,
+     * and the YOUTH tab reports what they did rather than asking him to do it.
+     * MG.youth.promote and .release remain exported — promoteReadyForPos still
+     * calls promote when the squad needs a body — they simply have no UI. */
     for (const b of document.querySelectorAll("[data-league]")) {
       b.addEventListener("click", () => openLeague(b.dataset.league));
     }
@@ -2876,6 +2916,20 @@
       for (const other of state.world.clubs) {
         const p = other.squad.find((x) => x.id === id);
         if (p) { player = p; from = other.name; break; }
+      }
+    }
+    /* ACADEMY PROSPECTS TOO. This searched senior squads only, so tapping a
+     * boy on the YOUTH tab hit the `return` below and did nothing at all —
+     * a dead tap that has been there as long as the tab has. It went unseen
+     * because the old tab put its real controls (PROMOTE, RELEASE) on the row
+     * beside the rating, so nobody had reason to tap the rating itself. The
+     * academy is a reporting surface now and the profile is the only thing
+     * to open, so the lookup has to reach the players it is showing. */
+    if (!player && MG.youth) {
+      for (const other of state.world.clubs) {
+        const a = other.academy;
+        const p = a && a.players ? a.players.find((x) => x.id === id) : null;
+        if (p) { player = p; from = `${other.name} academy`; break; }
       }
     }
     if (!player) return;

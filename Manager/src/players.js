@@ -254,7 +254,16 @@
    * same relationship would only let it fall out of sync with the body it
    * describes. */
   const BAL_HEIGHT_NEUTRAL = 181, BAL_WEIGHT_NEUTRAL = 76;   // the population's own median build
-  function deriveBalanceAgility(strength, fitness, speed, heightCm, weightKg) {
+  /* Quality buys real body control, and this is the second half of moving the
+   * elite band's headroom out of the axes it was faking (see deriveCreativity).
+   * Balance was pure physique — build plus athleticism — which said that a
+   * 94-rated forward and a 62-rated one of identical dimensions move the same
+   * way, and they plainly do not. Deliberately smaller than creativity's slope
+   * and floored at the same 70: physique still decides most of it, so a big man
+   * is still a big man however good he is, which is the whole point of the
+   * attribute. */
+  const BAL_QUALITY_FROM = 70, BAL_QUALITY_RATE = 0.30;
+  function deriveBalanceAgility(strength, fitness, speed, heightCm, weightKg, overall) {
     const h = heightCm || 181, w = weightKg || 76;
     const heightCost = Math.max(0, h - BAL_HEIGHT_NEUTRAL) * 1.05;
     const weightCost = Math.max(0, w - BAL_WEIGHT_NEUTRAL) * 0.85;
@@ -271,28 +280,41 @@
     const recoveryShare = Math.sqrt(clamp((athletic - 40) / 58, 0, 1));
     const recovered = sizeCost * recoveryShare * 0.88;
 
-    const bal = 58 + heightGift + weightGift - sizeCost + recovered + (athletic - 60) * 0.12;
+    const quality = Math.max(0, (Number.isFinite(overall) ? overall : 60) - BAL_QUALITY_FROM) * BAL_QUALITY_RATE;
+    const bal = 58 + heightGift + weightGift - sizeCost + recovered + (athletic - 60) * 0.12 + quality;
     return clamp(Math.round(bal), 15, 99);
   }
 
   /** Apply one season's change in overall to the player, attributes included. */
   function applyDevelopment(player, delta) {
-    player.overall = clamp(Math.round((player.overall + delta) * 10) / 10, 25, 96);
+    // clamp() does not rescue NaN (Math.min/Math.max propagate it), so a bad
+    // `delta` or an already-NaN `player.overall` would otherwise store NaN
+    // right here and every attribute in HOUSE would follow it into NaN below,
+    // permanently, since nothing downstream can recover a NaN once it's
+    // written back onto the player. No known caller can trigger this today —
+    // developmentDelta and every route into applyDevelopment were audited
+    // clean across 55-season stress runs — but this is the one place that
+    // turns "somewhere upstream went wrong" into "this player is broken for
+    // the rest of the save", so it gets the same finite-or-fallback guard as
+    // deriveCreativity, footballIntelligence and houseTarget above.
+    const d = Number.isFinite(delta) ? delta : 0;
+    const prevOverall = Number.isFinite(player.overall) ? player.overall : 60;
+    player.overall = clamp(Math.round((prevOverall + d) * 10) / 10, 25, 96);
     if (player.overall > player.potential) player.potential = player.overall;
-    const w = delta >= 0 ? GAIN_WEIGHTS : DECLINE_WEIGHTS;
+    const w = d >= 0 ? GAIN_WEIGHTS : DECLINE_WEIGHTS;
     for (const k of Object.keys(HOUSE)) {
       const now = player.attrs[k];
       if (now == null) continue;
       const slope = HOUSE[k][0];
       const residual = houseTarget(k, player.overall) - now;
-      const move = slope * delta * w[k] + residual * CONVERGE;
+      const move = slope * d * w[k] + residual * CONVERGE;
       player.attrs[k] = clamp(Math.round(now + move), 20, 99);
     }
     // Balance tracks the body it describes, not its own curve — see above.
     if (player.attrs.balance != null) {
       player.attrs.balance = deriveBalanceAgility(
         player.attrs.strength, player.attrs.fitness, player.attrs.speed,
-        player.attrs.height, player.attrs.weight);
+        player.attrs.height, player.attrs.weight, player.overall);
     }
     return player;
   }
@@ -509,9 +531,121 @@
     if (season != null && !(opts && opts.initial)) player._arrivedSeason = season;
   }
 
+  /* --------------------------- KNOWN LEFT-FOOTERS --------------------------
+   * The source database records footedness as two numbers (leftFoot /
+   * rightFoot) but does not always get the DOMINANT one right: it had Cole
+   * Palmer, Alejandro Balde and Federico Dimarco reading right-footed, which
+   * anyone who has watched them will notice immediately and which quietly
+   * skews every derived number that reads the strong foot — Attacking,
+   * creativity, role fit.
+   *
+   * This is the correction list: players who are genuinely left-footed, as of
+   * the 2024/25 season. It is applied by NAME and it only ever SWAPS the two
+   * values — so a player already recorded correctly is untouched, his actual
+   * ability is preserved exactly, and nobody is added to a squad he is not in.
+   * 56 of these names have since left the leagues the 2026 database covers;
+   * they simply never match, which is the intended behaviour rather than a
+   * gap to fill.
+   *
+   * Applied in BOTH import paths. fromDatabase reads the two feet straight
+   * from the record; fromForeign has no footedness in its source at all (the
+   * foreign squads carry PAC/PHY/ATT/DEF composites) so mapForeignAttrs
+   * derives them, and the swap lands after that derivation. */
+  const LEFT_FOOTED = new Set([
+    "Gabriel Magalhães", "Jakub Kiwior", "Oleksandr Zinchenko", "Bukayo Saka",
+    "Martin Ødegaard", "Lucas Digne", "Pau Torres", "Álex Moreno", "Leon Bailey",
+    "Milos Kerkez", "Marcos Senesi", "Lloyd Kelly", "Rico Henry", "Ethan Pinnock", "Ben Mee",
+    "Pervis Estupiñán", "Igor Julio", "Ben Chilwell", "Marc Cucurella", "Levi Colwill",
+    "Cole Palmer", "Noni Madueke", "Tyrick Mitchell", "Michael Olise", "Vitaliy Mykolenko",
+    "Jarrad Branthwaite", "Dwight McNeil", "Antonee Robinson", "Tim Ream", "Calvin Bassey",
+    "Leif Davis", "Victor Kristiansen", "Andy Robertson", "Kostas Tsimikas", "Mohamed Salah",
+    "Nathan Aké", "Joško Gvardiol", "Phil Foden", "Bernardo Silva", "Erling Haaland",
+    "Luke Shaw", "Lisandro Martínez", "Tyrell Malacia", "Amad Diallo", "Antony", "Dan Burn",
+    "Sven Botman", "Lewis Hall", "Matt Targett", "Murillo", "Ryan Manning", "Destiny Udogie",
+    "Micky van de Ven", "Ben Davies", "Sergio Reguilón", "Dejan Kulusevski",
+    "Emerson Palmieri", "Nayef Aguerd", "Aaron Cresswell", "Lucas Paquetá", "Rayan Aït-Nouri",
+    "Toti Gomes", "David Alaba", "Ferland Mendy", "Fran García", "Eduardo Camavinga",
+    "Arda Güler", "Endrick", "Alejandro Balde", "Iñigo Martínez", "Raphinha", "Lamine Yamal",
+    "Reinildo Mandava", "Mario Hermoso", "Samuel Lino", "Rodrigo Riquelme",
+    "Antoine Griezmann", "Yuri Berchiche", "Marcos Acuña", "Adrià Pedrosa", "Kike Salas",
+    "Dodi Lukébakio", "Aihen Muñoz", "Javi Galán", "Mikel Merino", "Mikel Oyarzabal",
+    "Takefusa Kubo", "Alfonso Pedraza", "Alberto Moreno", "José Gayà", "Cenk Özkacar",
+    "Juan Miranda", "Marc Roca", "Miguel Gutiérrez", "Daley Blind", "Sávio",
+    "Viktor Tsyhankov", "Diego Rico", "Manu Sánchez", "Pacha Espino", "Juan Cruz",
+    "Jaume Costa", "Sergi Cardona", "Brian Oliván", "Alphonso Davies", "Raphaël Guerreiro",
+    "Hiroki Ito", "Leroy Sané", "Álex Grimaldo", "Piero Hincapié", "Granit Xhaka",
+    "Patrik Schick", "Ramy Bensebaini", "Nico Schlotterbeck", "Ian Maatsen", "David Raum",
+    "Castello Lukeba", "Maximilian Mittelstädt", "Angelo Stiller", "Philipp Max",
+    "Arthur Theate", "Niels Nkounkou", "Christian Günter", "Alexander Prass",
+    "Jérôme Roussillon", "Luca Netz", "Maximilian Wöber", "Robin Gosens", "Diogo Leite",
+    "Anthony Jung", "Iago", "Jonas Föhrenbach", "Maximilian Wittek", "Federico Dimarco",
+    "Alessandro Bastoni", "Francesco Acerbi", "Carlos Augusto", "Theo Hernández",
+    "Ismaël Bennacer", "Andrea Cambiaso", "Filip Kostić", "Adrien Rabiot", "Kenan Yıldız",
+    "Dušan Vlahović", "Mathías Olivera", "Mário Rui", "Juan Jesus", "Romelu Lukaku",
+    "Leonardo Spinazzola", "Angeliño", "Evan Ndicka", "Paulo Dybala", "Nuno Tavares",
+    "Luca Pellegrini", "Alessio Romagnoli", "Matteo Ruggeri", "Sead Kolašinac",
+    "Teun Koopmeiners", "Charles De Ketelaere", "Cristiano Biraghi", "Fabiano Parisi",
+    "Luca Ranieri", "Ricardo Rodríguez", "Andrea Carboni", "Aaron Martín", "Emanuele Valeri",
+    "Tommaso Augello", "Antonino Gallo", "Jordan Zemura", "Giuseppe Pezzella",
+    "Domagoj Bradarić", "Renan Lodi", "Ali Al-Bulaihi", "Kalidou Koulibaly",
+    "Salem Al-Dawsari", "Malcom", "Alex Telles", "Aymeric Laporte", "Anderson Talisca",
+    "Houssem Aouar", "Moussa Diaby", "Riyad Mahrez", "Roger Ibañez", "Yannick Carrasco",
+    "Musa Barrow",
+  ]);
+  /** Swap a player's feet if he is a known left-footer recorded right-footed.
+   *  Mutates and returns the same attrs object. */
+  function applyKnownFootedness(name, attrs) {
+    if (!LEFT_FOOTED.has(name)) return attrs;
+    if (attrs.rightFoot > attrs.leftFoot) {
+      const t = attrs.leftFoot; attrs.leftFoot = attrs.rightFoot; attrs.rightFoot = t;
+    }
+    return attrs;
+  }
+
+  /* ------------------------- THE ELITE BAND, STRETCHED ---------------------
+   * The source database tops out at 94 (Erling Haaland), and everything from
+   * about 88 upward is bunched into those last handful of points: Haaland 94,
+   * van Dijk 92, then a wall of 90s and 88s. That compression is the reason
+   * the very top of the game reads flat — the difference between the best
+   * player alive and the eighth-best is six points, so no amount of axis work
+   * can make him feel like the best player alive.
+   *
+   * A ONE-SIDED stretch above a knee at 88. Below it nothing moves at all, so
+   * the bulk of the population — every squad player, every academy graduate,
+   * every rating the board and the transfer market are tuned against — is
+   * exactly where it was. Above it the band opens out by a third, which is
+   * enough to put Haaland on 96 and leave real daylight behind him without
+   * touching the 96 ceiling that rollPotential and applyDevelopment already
+   * enforce.
+   *
+   * THE KNEE IS HIGH ON PURPOSE, and the realism benchmark is why. unitRating
+   * reads `overall` straight, so this is not a cosmetic scale — it feeds club
+   * strength and therefore results. An earlier cut put the knee at 82, which
+   * caught most of a big club's first eleven rather than its stars, inflated
+   * the top sides wholesale and blew the league apart: champions went from 87
+   * points to 93 and the bottom club fell from 23 to 17, outside tolerance.
+   * At 88 it reaches only the two or three dozen genuinely elite players in
+   * the world, which is who it was meant for.
+   *
+   * Applied HERE, at the one point a real rating enters the game, rather than
+   * anywhere downstream — so value, wage, board expectation and the match
+   * engine all read the stretched number and stay consistent with each other.
+   * fromForeign runs it too, for the same reason: one scale for everybody. */
+  const ELITE_STRETCH_KNEE = 88, ELITE_STRETCH = 4 / 3;
+  function stretchElite(overall) {
+    const o = Number.isFinite(overall) ? overall : 60;
+    if (o <= ELITE_STRETCH_KNEE) return o;
+    return Math.min(96, Math.round(ELITE_STRETCH_KNEE + (o - ELITE_STRETCH_KNEE) * ELITE_STRETCH));
+  }
+
   /** Convert a record from src/data.js into a live player. */
   function fromDatabase(rng, raw, currentYear, firstSeason, league) {
     const age = inferAge(rng, raw, currentYear, firstSeason);
+    const overall = stretchElite(raw.overall);
+    /* Footedness correction FIRST, because creativity and the Attacking axis
+     * both read the strong and weak foot — deriving them from the wrong
+     * dominant foot and swapping afterwards would leave the two disagreeing. */
+    const feet = applyKnownFootedness(raw.name, { leftFoot: raw.leftFoot, rightFoot: raw.rightFoot });
     const p = makePlayer({
       name: raw.name,
       /* A real player's actual nationality when we have it; the league-weighted
@@ -519,17 +653,17 @@
       nationality: MG.names.knownNationality(raw.name) || MG.names.nationForLeague(rng, league),
       pos: POSITIONS[raw.pos] ? raw.pos : "CM",
       age,
-      overall: raw.overall,
+      overall,
       attrs: {
         heading: raw.heading, fitness: raw.fitness, strength: raw.strength,
-        leftFoot: raw.leftFoot, rightFoot: raw.rightFoot, speed: raw.speed,
-        creativity: deriveCreativity(raw.pos, raw.overall, raw.leftFoot, raw.rightFoot,
-          footballIntelligence(raw.mentalityRating, raw.overall)),
-        balance: deriveBalanceAgility(raw.strength, raw.fitness, raw.speed, raw.height, raw.weight),
+        leftFoot: feet.leftFoot, rightFoot: feet.rightFoot, speed: raw.speed,
+        creativity: deriveCreativity(raw.pos, overall, feet.leftFoot, feet.rightFoot,
+          footballIntelligence(raw.mentalityRating, overall)),
+        balance: deriveBalanceAgility(raw.strength, raw.fitness, raw.speed, raw.height, raw.weight, overall),
         height: raw.height, weight: raw.weight,
       },
       mentality: raw.mentality,
-      mentalityRating: footballIntelligence(raw.mentalityRating, raw.overall),
+      mentalityRating: footballIntelligence(raw.mentalityRating, overall),
       contract: { years: rng.int(1, 5), wage: 0 },
     });
     p.career.seasons = estimateCareerSeasons(p.age);
@@ -656,13 +790,40 @@
       38
       + clamp(weak - 52, -20, 40) * 0.75       // both feet: options
       + ((mentalityRating || 60) - 62) * 0.35  // football intelligence
-      /* A light touch only. The DISPLAY already carries a quality term (see
-       * ratings.eliteLift), and an earlier cut weighted this at 0.55 as well,
-       * which double-counted: Virgil van Dijk — weak foot 60, a centre half —
-       * came out reading 90 for creativity purely because he is very good at
-       * football. What this attribute is for is telling two players of the
-       * SAME quality apart, so the quality term has to be the small one. */
-      + (overall - 62) * 0.30
+      /* THE QUALITY TERM, and the one that carries the elite band.
+       *
+       * This was deliberately light (0.30) while ratings.eliteLift padded
+       * every axis by a flat amount for anyone above 70 — at 0.55 the two
+       * double-counted. Beta feedback found the flat lift from the other
+       * end: what it actually did was inflate AERIAL and DEFENDING for
+       * players who have no business being good at either, so a 90-rated
+       * winger read 81 at defending and an 89-rated one read 91. Padding a
+       * great player's out-of-position axes is the one thing the display
+       * must never do, because it is what makes a profile look invented.
+       *
+       * So eliteLift is now shared out by how much a position actually
+       * plays through each axis (ratings.AXIS_RELEVANCE), and the quality
+       * headroom it used to spend on aerial ability moves HERE instead —
+       * to creativity and balance, the two attributes that are genuinely
+       * position-neutral. A great centre half really is a better passer
+       * than an average one; a great winger really does keep his feet in
+       * traffic. That is a truthful place to put "he is simply better than
+       * you", and an out-of-position defensive number never was.
+       *
+       * The weak-foot and position terms still do the discriminating, so
+       * this cannot run away with itself: Virgil van Dijk (weak foot 60,
+       * CB) lands in the sixties, not the nineties, which is the failure
+       * the old 0.30 was protecting against. */
+      // Guarded the same way `overall`'s two neighbours above already are —
+      // this one call site was the sole way a malformed input (a stray NaN
+      // or missing overall on a hand-built player, say from a test harness)
+      // could poison the whole expression to NaN, since `NaN - 62` is NaN
+      // and every `||` fallback beside it is powerless against a value that
+      // is falsy-looking but not actually absent. Found by exactly that kind
+      // of stress test; every real call site already passes a real number,
+      // so this changes nothing for an ordinary player and only stops a
+      // future caller from producing an unrenderable attribute.
+      + ((Number.isFinite(overall) ? overall : 60) - 62) * 0.55
       + (CREATIVE_POS[pos] || 0)
     ), 15, 99);
   }
@@ -684,11 +845,26 @@
    * a new one. */
   function footballIntelligence(mentalityRating, overall) {
     const men = mentalityRating || 60;
-    if (overall < 78) return men;
-    return Math.max(men, Math.round(55 + (overall - 78) * 1.8));
+    // `overall < 78` reads false for a NaN overall exactly as it would for a
+    // real one below 78, so a malformed caller fell through into the branch
+    // that then poisoned itself on `NaN - 78`. Same guard as deriveCreativity,
+    // for the same reason — see the note there.
+    const ovr = Number.isFinite(overall) ? overall : 60;
+    if (ovr < 78) return men;
+    return Math.max(men, Math.round(55 + (ovr - 78) * 1.8));
   }
   /** What the population says an attribute looks like at a given overall. */
-  function houseTarget(k, ovr) { const h = HOUSE[k]; return h ? h[0] * ovr + h[1] : ovr; }
+  function houseTarget(k, ovr) {
+    const h = HOUSE[k];
+    // Same guard as deriveCreativity/footballIntelligence above: `ovr` is
+    // always player.overall in practice, which applyDevelopment itself now
+    // keeps finite, but this is the one spot that turns a bad number into a
+    // permanent one — a NaN target here poisons `residual`, then `move`, then
+    // every attribute in HOUSE, forever, since nothing downstream ever
+    // recovers from NaN once it's stored back onto the player.
+    const v = Number.isFinite(ovr) ? ovr : 60;
+    return h ? h[0] * v + h[1] : v;
+  }
   const MAP = {
     heading:   [0.325,  25.1], fitness: [0.388, 41.9], strength: [0.292, 53.0],
     leftFoot:  [0.642,   4.1], rightFoot: [0.843,  8.7],
@@ -703,8 +879,12 @@
     return attrs;
   }
 
-  function mapForeignAttrs(rng, raw, pos) {
-    const ovr = raw.ovr;
+  function mapForeignAttrs(rng, raw, pos, stretched) {
+    // Reconciled against the STRETCHED overall the player will actually carry,
+    // not the raw source number. Reconciling to raw.ovr while displaying the
+    // stretched badge is precisely the "his attributes and his rating describe
+    // different footballers" fault this function exists to prevent.
+    const ovr = stretched != null ? stretched : raw.ovr;
     const tall = pos === "CB" || pos === "GK" || pos === "FW";
     if (pos === "GK" || raw.pac == null) {
       // Keepers carry no PAC/PHY/ATT/DEF in the source (goalkeepers aren't
@@ -754,16 +934,23 @@
   function fromForeign(rng, raw, league) {
     const pos = foreignPos(raw.pos);
     const age = clamp(raw.age != null ? raw.age : guessAgeFromRating(rng, raw.ovr), 15, 42);
-    const mentalityRating = footballIntelligence(rollMentalityRating(rng, raw.ovr), raw.ovr);
-    const attrs = mapForeignAttrs(rng, raw, pos);
-    attrs.creativity = deriveCreativity(pos, raw.ovr, attrs.leftFoot, attrs.rightFoot, mentalityRating);
-    attrs.balance = deriveBalanceAgility(attrs.strength, attrs.fitness, attrs.speed, attrs.height, attrs.weight);
+    // Same elite stretch the Premier League import runs — one scale for
+    // everybody, or Serie A's best would sit a clear two points under an
+    // identically-rated Englishman for no reason a player could ever see.
+    const overall = stretchElite(raw.ovr);
+    const mentalityRating = footballIntelligence(rollMentalityRating(rng, raw.ovr), overall);
+    const attrs = mapForeignAttrs(rng, raw, pos, overall);
+    // The foreign source carries no footedness at all, so the feet above are
+    // derived — correct the known left-footers before creativity reads them.
+    applyKnownFootedness(raw.name, attrs);
+    attrs.creativity = deriveCreativity(pos, overall, attrs.leftFoot, attrs.rightFoot, mentalityRating);
+    attrs.balance = deriveBalanceAgility(attrs.strength, attrs.fitness, attrs.speed, attrs.height, attrs.weight, overall);
     const p = makePlayer({
       name: raw.name,
       nationality: MG.names.knownNationality(raw.name) || raw.nationality || MG.names.nationForLeague(rng, league),
       pos,
       age,
-      overall: raw.ovr,
+      overall,
       attrs,
       mentality: rollMentalityTrait(rng, mentalityRating),
       mentalityRating,
@@ -858,7 +1045,7 @@
     // Derived from the feet he just rolled, exactly as an imported player's is
     // derived from the feet the database gave him — one rule for everybody.
     genAttrs.creativity = deriveCreativity(pos, overall, genAttrs.leftFoot, genAttrs.rightFoot, mentalityRating);
-    genAttrs.balance = deriveBalanceAgility(genAttrs.strength, genAttrs.fitness, genAttrs.speed, genAttrs.height, genAttrs.weight);
+    genAttrs.balance = deriveBalanceAgility(genAttrs.strength, genAttrs.fitness, genAttrs.speed, genAttrs.height, genAttrs.weight, overall);
     const p = makePlayer({
       name: MG.names.personName(rng, nationality),
       nationality, pos, age, overall,
@@ -962,6 +1149,7 @@
     firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta, applyDevelopment, houseTarget, deriveCreativity, footballIntelligence, deriveBalanceAgility,
     AGE_CURVE, ageCurve, MENTALITY_TRAITS, rollMentalityRating, rollMentalityTrait,
     marketValue, expectedWage, ageValueFactor, LEAGUE_WAGE_FACTOR,
+    LEFT_FOOTED, applyKnownFootedness, stretchElite,
     makePlayer, fromDatabase, fromForeign, generate, resetIds, setNextId, rollInjury, availability, durability, recordMove,
     unitRating, keeperRating, squadRatings, squadNeeds, weakestUnit,
   };
