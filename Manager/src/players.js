@@ -879,6 +879,42 @@
     return attrs;
   }
 
+  /* ---------------------- REAL CARDS FOR THE FOREIGN LEAGUES ---------------
+   * mapForeignAttrs below fans four EA-FC-style composites (PAC/PHY/ATT/DEF)
+   * out into eight attributes plus a build, because four numbers is all the
+   * foreign squad source carries. It is a careful mapping and it is still a
+   * mapping: four numbers cannot describe eight, so two players with similar
+   * composites come out near-identical and nothing in the source can tell a
+   * two-footed playmaker from a one-footed finisher.
+   *
+   * data_cards.js carries REAL per-attribute cards for 274 of those players,
+   * in the same schema the Premier League database uses. Where a card exists
+   * it wins outright — the derived attributes are discarded, not blended,
+   * because blending real data with an interpolation just puts the
+   * interpolation back.
+   *
+   * LEVELLED, not lifted. The cards rate their subjects about two points above
+   * the game's own ratings for the same men, and `overall` drives club strength
+   * and therefore results — so the ratings are left exactly as they are and the
+   * card is shifted onto them instead. The SHAPE is what the card is for and
+   * the shape is preserved intact: the gap between Messi's creativity and his
+   * pace is his, the level it all sits at is the game's. Without this a carded
+   * player would read two points better than his badge across the board, which
+   * is precisely the "his stat pool and his rating describe different
+   * footballers" fault the whole attribute system exists to prevent.
+   *
+   * Height and weight are NOT shifted. They are measurements, not ratings. */
+  function applyCard(card, gameOvr, cardOvr) {
+    const shift = Number.isFinite(cardOvr) && Number.isFinite(gameOvr) ? gameOvr - cardOvr : 0;
+    const out = {};
+    for (const k of Object.keys(card)) {
+      out[k] = k === "height" || k === "weight"
+        ? card[k]
+        : clamp(Math.round(card[k] + shift), 15, 99);
+    }
+    return out;
+  }
+
   function mapForeignAttrs(rng, raw, pos, stretched) {
     // Reconciled against the STRETCHED overall the player will actually carry,
     // not the raw source number. Reconciling to raw.ovr while displaying the
@@ -939,12 +975,23 @@
     // identically-rated Englishman for no reason a player could ever see.
     const overall = stretchElite(raw.ovr);
     const mentalityRating = footballIntelligence(rollMentalityRating(rng, raw.ovr), overall);
-    const attrs = mapForeignAttrs(rng, raw, pos, overall);
-    // The foreign source carries no footedness at all, so the feet above are
-    // derived — correct the known left-footers before creativity reads them.
-    applyKnownFootedness(raw.name, attrs);
-    attrs.creativity = deriveCreativity(pos, overall, attrs.leftFoot, attrs.rightFoot, mentalityRating);
-    attrs.balance = deriveBalanceAgility(attrs.strength, attrs.fitness, attrs.speed, attrs.height, attrs.weight, overall);
+    /* A real card if the source has one for this man, otherwise the four-number
+     * mapping. See applyCard above for why the card is levelled onto the
+     * game's rating rather than bringing its own. */
+    const card = MG.dataCards ? MG.dataCards.cardFor(raw.name) : null;
+    const attrs = card
+      ? applyCard(card.attrs, overall, card.overall)
+      : mapForeignAttrs(rng, raw, pos, overall);
+    // The foreign source carries no footedness at all, so derived feet need
+    // correcting — a card already states which foot is which, so it does not.
+    if (!card) applyKnownFootedness(raw.name, attrs);
+    /* A card states creativity and balance outright; only a mapped player has
+     * to have them inferred. Deriving over the top of real values would throw
+     * away the very thing the card was imported for. */
+    if (!card) {
+      attrs.creativity = deriveCreativity(pos, overall, attrs.leftFoot, attrs.rightFoot, mentalityRating);
+      attrs.balance = deriveBalanceAgility(attrs.strength, attrs.fitness, attrs.speed, attrs.height, attrs.weight, overall);
+    }
     const p = makePlayer({
       name: raw.name,
       nationality: MG.names.knownNationality(raw.name) || raw.nationality || MG.names.nationForLeague(rng, league),
@@ -1149,7 +1196,7 @@
     firstSeasonIndex, inferAge, guessAgeFromRating, rollPotential, developmentDelta, applyDevelopment, houseTarget, deriveCreativity, footballIntelligence, deriveBalanceAgility,
     AGE_CURVE, ageCurve, MENTALITY_TRAITS, rollMentalityRating, rollMentalityTrait,
     marketValue, expectedWage, ageValueFactor, LEAGUE_WAGE_FACTOR,
-    LEFT_FOOTED, applyKnownFootedness, stretchElite,
+    LEFT_FOOTED, applyKnownFootedness, stretchElite, applyCard,
     makePlayer, fromDatabase, fromForeign, generate, resetIds, setNextId, rollInjury, availability, durability, recordMove,
     unitRating, keeperRating, squadRatings, squadNeeds, weakestUnit,
   };

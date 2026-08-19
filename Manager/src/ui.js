@@ -83,18 +83,6 @@
     if (diff <= -10) return "rtier-poor";
     return "";
   }
-  const ATTR_ROWS = [
-    { k: "heading", label: "HDR" }, { k: "fitness", label: "FIT" }, { k: "strength", label: "STR" },
-    { k: "leftFoot", label: "LF" }, { k: "rightFoot", label: "RF" }, { k: "speed", label: "SPD" },
-    { k: "creativity", label: "CRE" }, { k: "balance", label: "BAL" },
-    { k: "height", label: "HGT", suffix: "cm" }, { k: "weight", label: "WGT", suffix: "kg" },
-  ];
-  function attrGrid(p) {
-    const defAtr = MG.ratings && MG.ratings.defenceAttribute ? MG.ratings.defenceAttribute(p) : null;
-    return `<div class="pattrs">${ATTR_ROWS.map((r) =>
-      `<div class="pattr"><span>${r.label}</span><b>${p.attrs[r.k]}${r.suffix || ""}</b></div>`).join("")
-      }<div class="pattr"><span>MEN</span><b>${esc(p.mentality)}</b></div>${defAtr != null ? `<div class="pattr"><span>${p.pos === "GK" ? "GK-ATR" : "DEF-ATR"}</span><b>${defAtr}</b></div>` : ""}</div>`;
-  }
   const SORTS = {
     rating: (a, b) => b.overall - a.overall,
     name: (a, b) => a.name.localeCompare(b.name),
@@ -2948,8 +2936,6 @@
      * real representation made the whole roster system invisible — the agent
      * who genuinely drives his moves, and the cut he takes out of them, is
      * the one worth naming. */
-    const rep = MG.agents ? MG.agents.agentOf(state.world, player, "player") : null;
-    const agent = rep ? rep.agent : null;
     const mine = player.clubId === c.id;
     const pc = posClass(player.pos);
     const intl = player.intl;
@@ -2976,7 +2962,11 @@
             <span class="trait-chip">${esc(player.mentality)}</span>
             ${player.homegrown ? '<span class="trait-chip">Homegrown</span>' : ""}
             ${intl && intl.caps ? `<span class="trait-chip gold">${esc(intl.nation)} · ${intl.caps} caps${intl.goals ? ` · ${intl.goals} gls` : ""}</span>` : ""}
-            ${agent ? `<span class="trait-chip${rep.rostered ? " gold" : ""}" title="${esc(agent.blurb)}${rep.rostered ? " — has signed him as a client" : ""}">${esc(agent.name)} · ${esc(agent.tier)} · ${rep.cutPct}%</span>` : ""}
+            <!-- The agent chip (agency, tier and his cut) used to sit here and
+                 is deliberately gone. It is backroom detail: the agent still
+                 works exactly as before behind the scenes — he rosters clients,
+                 drives the bidding wars and takes his cut — the manager simply
+                 does not get to read his terms off a player's profile. -->
             ${mentored ? '<span class="trait-chip" style="color:var(--accent);border-color:var(--accent)">Mentored</span>' : ""}
             ${listed ? '<span class="trait-chip" style="color:var(--bad);border-color:var(--bad)">Transfer listed</span>' : ""}
             ${player.season.injured > 0 ? `<span class="trait-chip" style="color:var(--bad);border-color:var(--bad)">Out ${Math.round(player.season.injured * 100)}%</span>` : ""}
@@ -2996,8 +2986,17 @@
         </div>
       </div>
 
-      <div class="muted" style="font-size:12px;margin:14px 0 2px">↓ scroll for raw attributes, durability and his full career</div>
-      ${attrGrid(player)}
+      <!-- WHY THERE IS NO RAW ATTRIBUTE GRID HERE ANY MORE.
+           HDR/FIT/STR/LF/RF/SPD/CRE/BAL/HGT/WGT/MEN/DEF-ATR used to print in
+           a block right here, directly under the six bars and the radar that
+           are BUILT FROM THOSE SAME NUMBERS. It read as a debug panel bolted
+           to a player card: the same player described twice, once in the
+           game's own language and once in the engine's. The six axes are the
+           presentation, and a profile that shows its own workings underneath
+           undercuts them. attrGrid() and its ATTR_ROWS table went with it
+           rather than being left dead at the top of the file; git history has
+           them if a debug view ever wants them back. -->
+      <div class="muted" style="font-size:12px;margin:14px 0 2px">↓ scroll for durability and his full career</div>
       ${durabilityHtml(player)}
       ${player.season.apps ? `<div class="muted" style="font-size:12px;margin-top:8px">This season: ${player.season.apps} apps, ${player.season.goals} goals, ${player.season.assists} assists.</div>` : ""}
       <div class="stat-grid" style="margin-top:12px">
