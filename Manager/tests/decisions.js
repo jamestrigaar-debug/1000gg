@@ -123,9 +123,9 @@ function primeClub(w, club, mode, mgr) {
  * and sell from them, which is realistic and does not affect what is asserted. */
 const MODES = [
   { name: "champion-rich", position: 1, cupRound: "W", promoted: false, relegated: false, confidence: 80, fans: 85, budget: 90, balance: 120, gf: 88, expiring: true },
-  { name: "midtable", position: 10, cupRound: "R4", promoted: false, relegated: false, confidence: 55, fans: 56, budget: 14, balance: 8, gf: 48, expiring: true },
+  { name: "midtable", position: 10, cupRound: "R4", promoted: false, relegated: false, confidence: 55, fans: 56, budget: 14, balance: 8, gf: 48, expiring: true, rep: "mid" },
   { name: "crisis-broke", position: 19, cupRound: "R1", promoted: false, relegated: true, confidence: 20, fans: 22, budget: 0.2, balance: -40, gf: 28, expiring: true },
-  { name: "promoted-poor", position: 2, cupRound: "R3", promoted: true, relegated: false, confidence: 66, fans: 74, budget: 6, balance: 2, gf: 61, expiring: false },
+  { name: "promoted-poor", position: 2, cupRound: "R3", promoted: true, relegated: false, confidence: 66, fans: 74, budget: 6, balance: 2, gf: 61, expiring: false, rep: "mid" },
   // A second-tier club that just missed out, for the cards gated on the climb.
   { name: "nearly-promoted", league: "Championship", position: 5, cupRound: "R3", promoted: false, relegated: false, confidence: 58, fans: 62, budget: 9, balance: 4, gf: 58, expiring: true },
 ];
@@ -134,10 +134,21 @@ let choicesRun = 0;
 const seenCards = new Set();
 const emptyOutcomes = [];
 
-// One world per situation, reused across every card.
+/* One world per situation, reused across every card.
+ *
+ * `rep` on a MODE picks a club by SIZE within the division rather than taking
+ * whichever one happens to come first in the array. That mattered as soon as a
+ * card was written for smaller clubs: the first Premier League club in the
+ * database is one of the giants, so a card gated on "not already a giant" — a
+ * rival poaching your best player, say — was eligible in none of the scripted
+ * situations and read as an unsatisfiable req when it fired perfectly well in a
+ * real world. A situation now says what size of club it is about. */
 const RIGS = MODES.map((mode) => {
   const { w, mgr } = freshWorld(`rig-${mode.name}`);
-  const club = w.clubs.find((c) => c.leagueId === (mode.league || "PL"));
+  const inLeague = w.clubs.filter((c) => c.leagueId === (mode.league || "PL"));
+  const club = mode.rep === "mid"
+    ? inLeague.slice().sort((a, b) => a.reputation - b.reputation)[Math.floor(inLeague.length / 2)]
+    : inLeague[0];
   MG.world.removeManager(w, club, "replaced");
   MG.world.appointManager(w, club, mgr, { quiet: true });
   w.playerClubId = club.id;
