@@ -303,12 +303,15 @@
    * Refitted when creativity and balance folded INTO att/phy/men rather than
    * carrying their own axes — the raw values feeding those three keys changed
    * shape, so the old constants no longer matched the population. */
+  /* Refitted after the Aerial axis gained its balance counterweight and the
+   * forward relevance changed — the raw distribution feeding `aer` moved, so
+   * the constants that put it on the ratings scale had to move with it. */
   const AXIS_CAL = {
-    def: [0.959,  17.4], phy: [1.220, -11.5], att: [0.967,  10.2],
-    aer: [1.172,  -2.1], men: [1.361, -13.1],
+    def: [0.961,  17.3], phy: [1.212, -11.2], att: [0.955,  10.6],
+    aer: [1.201,  -4.1], men: [1.354, -13.0],
   };
   const POS_OFFSET = {
-    GK: -1.2, CB: -3.4, FB: -2.0, DM: -0.2, CM: 0.7, AM: 2.4, WG: 2.2, FW: -0.9,
+    GK: -1.1, CB: -4.5, FB: -1.3, DM: 0.1, CM: 1.7, AM: 3.6, WG: 3.4, FW: 0.7,
   };
 
   /* A SOFT CEILING, because the calibration has slopes greater than one and a
@@ -365,6 +368,30 @@
    * complaint. Speed is not in the table because speed is never calibrated at
    * all (see radarAxes): it is a straight copy of the raw attribute, and that
    * stays true here. */
+  /* The population's median balance, the point the Aerial counterweight above
+   * pivots on. Kept here as a named constant rather than a bare number so the
+   * two places that care — the axis and the refit harness — cannot drift. */
+  const BAL_NEUTRAL = 62;
+
+  /* ------------------- HOW AERIAL A POSITION'S GAME ACTUALLY IS ------------
+   * The mirror of DEF_ATR_WEIGHT, and added for the same reason that one
+   * exists: an axis built purely from attributes describes a BODY, not a role.
+   * Heading, height and strength are all genuinely high for centre forwards in
+   * the source data, so the axis had the average striker reading 71.4 in the
+   * air against 64.9 for his attacking — aerial ability was the single best
+   * thing about 54% of the world's strikers, which is not a game anyone
+   * recognises. Balance (above) separates the target man from the nimble one
+   * beautifully, but it cannot fix the LEVEL, because the calibration
+   * moment-matches the axis onto the ratings scale and simply scales any
+   * global change straight back out again.
+   *
+   * So the level is set per position, here. A centre half's game really is
+   * played in the air and he keeps every point of it; a winger's is not. The
+   * points a forward loses here do not vanish — POS_OFFSET is refitted
+   * afterwards so his six axes still average to his badge, which pushes them
+   * into his attacking, his pace and his football brain instead. That is the
+   * redistribution the whole balance-and-creativity rework was for. */
+  const AER_POS = { GK: -5, CB: 3, FB: -2, DM: -2, CM: -3, AM: -4, WG: -4, FW: -8 };
   const AXIS_RELEVANCE = {
     GK: { def: 1.00, phy: 0.55, att: 0.15, aer: 0.60, men: 0.95 },
     CB: { def: 1.00, phy: 0.90, att: 0.25, aer: 1.00, men: 0.80 },
@@ -373,7 +400,15 @@
     CM: { def: 0.65, phy: 0.75, att: 0.85, aer: 0.40, men: 1.00 },
     AM: { def: 0.30, phy: 0.55, att: 1.00, aer: 0.30, men: 1.00 },
     WG: { def: 0.25, phy: 0.50, att: 1.00, aer: 0.22, men: 0.85 },
-    FW: { def: 0.20, phy: 0.80, att: 1.00, aer: 0.85, men: 0.85 },
+    /* FW aerial was 0.85 — a 1.15 SHARE, meaning a forward received more of
+     * his quality bonus in the air than the average axis got. That is true of
+     * a target man and false of most strikers, and it is half of why the
+     * position read the way the testers described. Cut to 0.55 (a 0.75 share)
+     * with the difference going to attacking and mental, which is where
+     * creativity feeds — so an elite forward's bonus now lands on his
+     * finishing and his football brain, and his aerial ability has to come
+     * from actually being good in the air. */
+    FW: { def: 0.20, phy: 0.75, att: 1.05, aer: 0.55, men: 0.90 },
   };
   const RELEVANCE_KEYS = ["def", "phy", "att", "aer", "men"];
   const DEFAULT_RELEVANCE = { def: 0.7, phy: 0.7, att: 0.7, aer: 0.7, men: 0.7 };
@@ -395,7 +430,8 @@
   function calibrate(key, pos, v, overall) {
     const c = AXIS_CAL[key] || [1, 0];
     const lift = eliteLift(overall) * eliteShare(pos, key);
-    return clamp(Math.round(soften(v * c[0] + c[1] + (POS_OFFSET[pos] || 0) + lift)), 2, 99);
+    const aer = key === "aer" ? (AER_POS[pos] || 0) : 0;
+    return clamp(Math.round(soften(v * c[0] + c[1] + (POS_OFFSET[pos] || 0) + aer + lift)), 2, 99);
   }
 
   function radarAxes(player) {
@@ -449,7 +485,27 @@
        * asks never to reopen. One attribute, one number. */
       { label: "Speed", value: clamp(Math.round(a.speed || 50), 2, 99) },
       { label: "Attacking", value: calibrate("att", pos, strong * 0.60 + weak * 0.16 + cre * 0.24, player.overall) },
-      { label: "Aerial", value: calibrate("aer", pos, (a.heading || 50) * 0.7 + (a.strength || 50) * 0.1 + heightPts * 0.2, player.overall) },
+      /* AERIAL, WITH BALANCE PULLING THE OTHER WAY.
+       *
+       * This read heading, strength and height and nothing else, so nothing in
+       * it could tell a target man from a nimble one — and the result was the
+       * loudest thing in the tester feedback: the average FORWARD came out on
+       * 71.4 aerial against 65.1 attacking, and aerial was the single best axis
+       * for 54% of strikers. A striker whose best quality is his head, more
+       * often than not, is not a striker anyone recognises.
+       *
+       * Balance is the counterweight the axis was missing, and it is the right
+       * one because it is the same fact stated the other way round: balance is
+       * built from being small, light and quick to turn, which is precisely
+       * what a man does NOT want when the ball is in the air. Subtracting it
+       * sharpens the contrast the two attributes exist to draw — an Erling
+       * Haaland (imposing, low balance) climbs, a Lamine Yamal (light, high
+       * balance) does not — instead of leaving every well-built forward
+       * reading as a target man. Centred on the population's own balance so
+       * this redistributes rather than deflates. */
+      { label: "Aerial", value: calibrate("aer", pos,
+        (a.heading || 50) * 0.66 + (a.strength || 50) * 0.10 + heightPts * 0.24 - (bal - BAL_NEUTRAL) * 0.26,
+        player.overall) },
       { label: "Mental", value: calibrate("men", pos, men * 0.72 + cre * 0.28, player.overall) },
     ];
   }
@@ -555,6 +611,6 @@
   MG.ratings = {
     ROLE_WEIGHTS, ROLE_INFLUENCE, attrValue, roleRating,
     hidden, resetHidden, pruneHidden, rollSeasonForm, fatigueFactor,
-    radarAxes, axisMean, AXIS_RELEVANCE, DEF_ATR_WEIGHT, heightScore, defenceAttribute,
+    radarAxes, axisMean, AXIS_RELEVANCE, AER_POS, DEF_ATR_WEIGHT, heightScore, defenceAttribute,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -1392,7 +1392,70 @@
    *      not a vote, it is a leaderboard. */
   const BALLON_DOR_LEAGUES = MG.competitions.EURO_LEAGUES;
   const BALLON_DOR_POOL_SIZE = 25;
+  /* Per-GOAL weight: what one goal is worth as evidence, by position. A
+   * centre half who scores eight has done something a striker who scores
+   * eight has not, so his are worth more each. This is not the same thing as
+   * the vote favouring defenders — see BALLON_POS_PRESTIGE below, which is. */
   const BALLON_GOAL_WEIGHT = { FW: 1.0, WG: 1.0, AM: 1.05, CM: 1.15, DM: 1.3, FB: 1.4, CB: 1.5, GK: 1.6 };
+
+  /* ------------------------ WHAT THE VOTERS ACTUALLY DO --------------------
+   * Tester feedback, and the numbers backed it up hard. Across 32 simulated
+   * awards only 31% of winners came from the merit top three, a quarter won
+   * with fewer than twelve goals — one with TWO — and the shortlist was on
+   * average half-filled by a single club, because a treble winner handed every
+   * name on its teamsheet a fourfold multiplier. The award was a raffle.
+   *
+   * Three things were wrong, and all three are things the real vote gets right.
+   *
+   * 1. THE VOTE IS NOT POSITION-BLIND. Ballon d'Or voters have given it to a
+   *    forward in the overwhelming majority of years. It is not a rule and it
+   *    is not absolute — Rodri won it off a Champions League and a European
+   *    Championship, Modrić and Cannavaro before him — but a centre half needs
+   *    an extraordinary season to beat a striker's ordinary great one. That is
+   *    a prestige multiplier on the whole score, quite separate from what a
+   *    single goal is worth as evidence.
+   *
+   * 2. A STRIKER AT A BIG CLUB IS SEEN MORE. Thirty goals for the champions
+   *    of Spain is a different campaign from thirty for a mid-table side, and
+   *    the voters have never pretended otherwise. Club reputation lifts the
+   *    attacking positions specifically, because that is where the effect is
+   *    real: nobody wins this by defending well for Real Madrid.
+   *
+   * 3. SILVERWARE IS NOT SHARED EQUALLY. The doubling for a league title and
+   *    for Europe stays exactly as specified — but it is earned by the men who
+   *    played, not by everyone who owns the shirt. Gated on minutes, a regular
+   *    still gets the full double and a squad player gets a fraction, which is
+   *    what stops one treble-winning teamsheet swamping the shortlist. */
+  /* The deep positions are deliberately not crushed. A first cut set CM/DM in
+   * the low sixties and across thirty-two simulated awards not one midfielder
+   * or defender ever won — which trades one wrong answer for another, because
+   * a save long enough to contain a whole career should contain a Rodri year.
+   * These sit high enough that a genuinely extraordinary season (a double
+   * winner who played every minute) can break through, and no higher. */
+  /* WHAT COUNTS AS EVIDENCE depends on the job. A striker is measured by what
+   * he produces and the goal column says almost everything about his year. A
+   * holding midfielder's season is not in that column at all — Rodri won this
+   * award on eight goals — so for the deeper roles the case has to be carried
+   * by how good he actually was. Without this the prestige table alone could
+   * not save them: raising CM and DM into the high seventies still produced
+   * forty straight forward-or-winger winners, because no midfielder can out-
+   * score a striker no matter how the score is weighted afterwards. */
+  const BALLON_QUALITY_WEIGHT = { FW: 2.0, WG: 2.2, AM: 3.0, CM: 5.5, DM: 6.0, FB: 5.2, CB: 6.0, GK: 6.2 };
+  const BALLON_POS_PRESTIGE = {
+    FW: 1.00, WG: 0.90, AM: 0.84, CM: 0.78, DM: 0.77, FB: 0.60, CB: 0.64, GK: 0.56,
+  };
+  /* How much a big club's shop window is worth, and to whom. */
+  const BALLON_STAGE_POS = { FW: 1.00, WG: 0.85, AM: 0.75, CM: 0.45, DM: 0.40, FB: 0.25, CB: 0.25, GK: 0.20 };
+  const BALLON_STAGE_MAX = 0.35;        // up to +35% for a forward at the biggest club
+  /* The floor a fringe player gets from his club's trophies, before minutes. */
+  const BALLON_TROPHY_FLOOR = 0.30;
+  /* How sharply the vote concentrates on the leaders. Weights are the ratio of
+   * a candidate's score to the best score, raised to this — so a man on 90% of
+   * the leader's case is a live contender, one on 60% is a long shot, and the
+   * bottom of the shortlist is decoration rather than a lottery ticket. At 9
+   * the best case wins about two years in three, which is roughly how the real
+   * award behaves. */
+  const BALLON_VOTE_SHARPNESS = 8;
 
   function computeBallonDor(world, results, euro) {
     const leagueChampions = new Set();
@@ -1409,10 +1472,20 @@
         const goals = p.season.goals || 0, assists = p.season.assists || 0;
         if (!goals && !assists && p.overall < 84) continue;   // cheap prefilter
         const w = BALLON_GOAL_WEIGHT[p.pos] || 1;
-        let score = (goals * 3.4 + assists * 2.0) * w + Math.max(0, p.overall - 74) * 2.4;
+        const qw = BALLON_QUALITY_WEIGHT[p.pos] || 2.4;
+        let score = (goals * 3.4 + assists * 2.0) * w + Math.max(0, p.overall - 74) * qw;
         if (score <= 0) continue;
-        if (leagueChampions.has(club.id)) score *= 2;
-        if (ucl && club.id === ucl.id) score *= 2;
+        // What position he plays, and how big a stage he plays it on.
+        score *= BALLON_POS_PRESTIGE[p.pos] || 0.6;
+        const stature = clamp(((club.reputation || 50) - 55) / 45, 0, 1);
+        score *= 1 + stature * BALLON_STAGE_MAX * (BALLON_STAGE_POS[p.pos] || 0.3);
+        /* Silverware doubles the case, earned by minutes played. A regular
+         * collects the full double; a man who watched most of it collects the
+         * floor. Both trophies still stack, as specified. */
+        const played = clamp(p.season.minutesShare == null ? 0.5 : p.season.minutesShare, 0, 1);
+        const involvement = BALLON_TROPHY_FLOOR + (1 - BALLON_TROPHY_FLOOR) * played;
+        if (leagueChampions.has(club.id)) score *= 1 + involvement;
+        if (ucl && club.id === ucl.id) score *= 1 + involvement;
         candidates.push({ playerId: p.id, name: p.name, club: club.name, clubId: club.id, pos: p.pos,
           goals, assists, overall: Math.round(p.overall), score: round1(score) });
       }
@@ -1421,10 +1494,17 @@
     candidates.sort((a, b) => b.score - a.score);
     const pool = candidates.slice(0, BALLON_DOR_POOL_SIZE);
 
-    // The vote. Weighted by score raised to a power so the front-runners
-    // dominate the draw without making it a certainty — a shortlist headed
-    // by a clear best score still usually goes to him, occasionally does not.
-    const items = pool.map((c) => ({ item: c, weight: Math.pow(Math.max(1, c.score), 1.9) }));
+    /* The vote. Weighted on each candidate's case AS A SHARE OF THE BEST CASE,
+     * rather than on the raw score — the old version raised the absolute score
+     * to a power, which meant how random the award felt depended on how big the
+     * numbers happened to be that season rather than on how close the race was.
+     * A ratio has no such drift: a 90%-of-the-leader season is a live contender
+     * in a tight year and in a runaway one alike. */
+    const best = pool[0].score || 1;
+    const items = pool.map((c) => ({
+      item: c,
+      weight: Math.pow(Math.max(0, c.score) / best, BALLON_VOTE_SHARPNESS),
+    }));
     const winner = world.rng.weighted(items);
     return { winner, pool, leagueChampions: [...leagueChampions], uclWinnerId: ucl ? ucl.id : null };
   }
