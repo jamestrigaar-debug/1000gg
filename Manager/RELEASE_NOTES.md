@@ -1,5 +1,138 @@
 # Football DNA Simulator — Manager
 
+## v0.9.14 · beta — the state of the club, and three men with a problem
+
+Both halves of the decisions panel, built for the two thirds of players
+on a phone.
+
+### The state of the club
+
+The pre-season hub already showed what the club *is* — its ratings, its
+best five, its brief. It never showed what **changed**, or where the
+squad is **exposed**, which is exactly what a manager wants before a
+window and exactly what took four screens and a good memory to assemble.
+
+Everything in the new panel is comparative or actionable: attack,
+midfield, defence and squad size each carry their year-on-year movement,
+the money shows what you can spend against the wage room you actually
+have, and underneath it names where you are short of bodies and what is
+about to go wrong — who is in the last year of a deal, how many are past
+32, whether the wage bill is over.
+
+A rating on its own is a number. A rating four points down on the side
+that finished fifth is a problem.
+
+### Three men with a problem
+
+Three storylines now arrive as decision cards instead of waiting to be
+found:
+
+- **A good player who barely played.** He has asked where he stands.
+  Promise him a start, tell him to earn it, or let him go.
+- **A player in the last year of his deal.** Do nothing and he leaves for
+  nothing next summer. Tie him down, cash in, or let it run.
+- **A reserve who has outgrown the reserves**, paired with the man in his
+  way. Promote him, move the incumbent on, or leave him where he is.
+
+Every one of these was discoverable already — by opening the squad,
+reading contract years, cross-referencing minutes and knowing what the
+reserves hold. That is four screens and a good memory, and on a handset a
+thing you have to go looking for is a thing that does not happen.
+
+Each is deliberately a *person*, not a statistic. "Your wage bill is
+high" is a number; "Marcus played nine games and wants to know why" is a
+season.
+
+Measured across 30 real pre-seasons: the minutes card is live in 87% of
+them, the contract card in 83%, and the blocked-reserve card in 33% —
+the last only firing when the deputy is genuinely close to the man ahead
+of him, so it stays a real selection call rather than a nudge.
+
+### Fixed
+
+- **Negative money read `£-10m`.** The sign was interpolated after the
+  pound sign in every branch of the formatter, so a club in the red — or
+  a wage room over budget — was written in a way nobody writes money.
+  Now `-£10m`, everywhere it appears.
+- The decision harness was building its test clubs with **no reserves at
+  all**, which made the whole tier invisible to it and read a perfectly
+  workable card as an unsatisfiable one. Its rigs are clubs five seasons
+  into a save, and a club five seasons in has reserves. It now stocks
+  them, and snapshots them between cards for the same reason it already
+  snapshotted the academy — otherwise one promotion empties the list
+  permanently for every later card in the same rig.
+
+## v0.9.12 · beta — the reserves, and an end to the summer clearout
+
+### A reserve team, run by the club
+
+The academy fed the first team *directly*: a boy was either ready for the
+senior squad at twenty or released at twenty-one, with nowhere in between
+for the ordinary case — the twenty-year-old who is genuinely promising
+and genuinely not ready. Meanwhile a fringe senior whose contract ran out
+simply walked, because the only alternative on offer was a first-team
+place he had not earned.
+
+Between them, those two facts were most of the turnover: every club spent
+every summer refilling a squad it had just emptied, out of the market
+rather than out of its own building.
+
+There is now a reserve tier, and it is how a real club is actually
+shaped. Graduates arrive **into it** rather than into the first team.
+Fringe players whose deals expire can drop **into it** rather than out of
+the club. Everyone in it trains, develops and is available — so when the
+first team is short, the staff look downstairs before they look at the
+market, at every club in the world.
+
+It is **invisible and board-run** on purpose. There is no reserves screen
+and no reserves decision. You see the group summarised on the YOUTH tab —
+size, average age and rating, the best of them — and you hear about
+promotions in your log. Adding a second squad list to manage would undo
+the thing handing the academy to the board was meant to achieve.
+
+### Being at the club is now worth something
+
+Development used to read *linearly* in minutes off a low floor, which
+said a young player who trained all year with the first team and did not
+get on the pitch progressed at under 40% of the rate of one who played
+every week. That is not how a footballer develops, and it would have made
+the reserves pointless before they existed — anyone out of the eleven was
+frozen.
+
+The floor comes up and the curve bends. A player simply **in** the setup
+banks a real share of the available progress. On top of that, minutes now
+**compound** rather than add — the gap between a bit-part season and a
+full one is far larger than the gap between no football and a little.
+Every week in the side is worth more than the week before it.
+
+| minutes share | before | after |
+|---|---|---|
+| none | 0.45 | **0.70** |
+| a quarter | 0.64 | **0.78** |
+| half | 0.82 | **0.96** |
+| every week | 1.20 | **1.55** |
+
+### The summer clearout
+
+Contracts ran 1–5 years on creation and 2–4 on renewal — a mean of about
+three, so roughly **a third of every squad in the world** reached the end
+of its deal every single summer, and a good share of those walked. Real
+contracts are longer than that, and clubs re-sign early. Terms are up by
+about a year across the board.
+
+Measured across the whole club (first team plus reserves — an internal
+promotion is not turnover), seasonal churn has gone from **24% to 21%**,
+inside the 12–25% band a settled real club lives in. Squads also stop
+grinding down below their target size, because the bodies that fill them
+increasingly come from inside.
+
+### Known, and not from this release
+
+The world's average rating drifts down about three points over twelve
+seasons. It predates this work — measured at 56.2 on the previous build
+against 56.6 now, so these changes slightly *slow* it — but it is real
+and it is on the list.
+
 ## v0.9.11 · beta — the Ballon d'Or stops being a raffle, and strikers stop heading everything
 
 Both from tester feedback, and both had numbers behind them once measured.
