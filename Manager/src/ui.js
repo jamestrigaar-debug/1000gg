@@ -23,12 +23,18 @@
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  /* The minus goes BEFORE the pound sign. It used to be interpolated after it,
+   * because every branch formatted the signed number straight into the string
+   * — so a club £10m in the red read "£-10m", and a negative wage room read
+   * the same. Nobody writes money that way. Formatted from the magnitude with
+   * the sign put back on the front. */
   const money = (m) => {
     const a = Math.abs(m);
-    if (a >= 1000) return `£${(m / 1000).toFixed(1)}bn`;
-    if (a >= 10) return `£${Math.round(m)}m`;
-    if (a >= 0.1) return `£${m.toFixed(1)}m`;
-    return `£${Math.round(m * 1000)}k`;
+    const sign = m < 0 ? "-" : "";
+    if (a >= 1000) return `${sign}£${(a / 1000).toFixed(1)}bn`;
+    if (a >= 10) return `${sign}£${Math.round(a)}m`;
+    if (a >= 0.1) return `${sign}£${a.toFixed(1)}m`;
+    return `${sign}£${Math.round(a * 1000)}k`;
   };
   const ordinal = (n) => { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
   /* Who is behind the cheque book is public knowledge in real football — this
@@ -198,6 +204,7 @@
     state.lastRow = ui.lastRow || null;
     state.lastBrief = ui.lastBrief || null;
     state.lastTopScorer = ui.lastTopScorer || null;
+    state.lastStory = ui.lastStory || null;
     state.lastMoveSummary = ui.lastMoveSummary || null;
     state.lastApproach = ui.lastApproach || null;
     state.sackReason = ui.sackReason || null;
@@ -682,6 +689,29 @@
       } : null;
       state.lastBrief = brief;
       state.lastReport = report;
+      /* THE SEASON AS A STORY. Everything below already existed and none of it
+       * was ever shown: the European campaign was computed, stored and
+       * discarded; the awards were decided every year and only ever surfaced
+       * on a tab nobody was sent to; the cup was one word at the top of the
+       * screen. Gathered here, once, while it is all still true — see
+       * world.js's playerSeason for why the timing matters. */
+      const hist = world.history[world.history.length - 1];
+      const aw = (hist && hist.awards) || {};
+      const boot = aw.goldenBoots ? aw.goldenBoots[leagueId] : null;
+      const bd = aw.ballonDor;
+      const myIds = new Set((summary.playerSeason ? summary.playerSeason.scorers : []).map((x) => x.id));
+      state.lastStory = {
+        season: summary.playerSeason || null,
+        // Honours that belong to THIS club, not the world's in general.
+        goldenBoot: boot && boot.club === c.name ? boot : null,
+        managerOfYear: aw.managerOfYear && aw.managerOfYear.club === c.name ? aw.managerOfYear : null,
+        ballonDor: bd && bd.winner ? bd.winner : null,
+        ballonDorMine: bd && bd.pool
+          ? bd.pool.map((x, i) => ({ ...x, rank: i + 1 })).filter((x) => x.clubId === c.id || myIds.has(x.playerId)).slice(0, 3)
+          : [],
+        europeWinners: hist ? hist.europe : null,
+        cupWinnerHere: hist && hist.cups ? hist.cups[c.country] : null,
+      };
       state.career.push({
         season: summary.season, year: summary.year, club: c.name,
         leagueName: MG.clubs.LEAGUES[leagueId].name,
@@ -1278,6 +1308,8 @@
         ${key.map((p) => pcard(p, { level: c.level })).join("")}
       </div>
 
+      ${stateOfClubHtml(c)}
+
       ${transferSummaryHtml({ title: "THIS SUMMER'S BUSINESS" })}
 
       ${youthGlanceHtml(c)}
@@ -1290,6 +1322,66 @@
           <div class="crow-body"><div class="nm">${esc(x.name)}</div><div class="muted" style="font-size:12px">reputation ${x.reputation}</div></div>
         </div>`).join("")}
       </div>` : ""}`;
+  }
+
+  /* ========================= STATE OF THE CLUB =============================
+   * The pre-season mirror of the season story, and the other half of what a
+   * phone needs. The hub already showed WHAT the club is — its ratings, its
+   * best five, its brief. What it never showed was what CHANGED, or where the
+   * squad is exposed, which is precisely the information a manager wants
+   * before a transfer window and precisely the information that took four
+   * screens and a good memory to assemble.
+   *
+   * Everything here is comparative or actionable. A rating on its own is a
+   * number; a rating four points down on the side that finished fifth is a
+   * problem. A squad list is a list; "no recognised left of your two centre
+   * halves" is a shopping instruction. */
+  function stateOfClubHtml(c) {
+    const last = c._lastRatings;
+    const r = c.ratings;
+    const needs = MG.players.squadNeeds(c.squad.filter((p) => !p.loan)).needs
+      .sort((a, b) => b.urgency - a.urgency).slice(0, 3);
+    const wageRoom = round1(c.finances.wageBudget - MG.clubs.wageBill(c));
+    const expiring = c.squad.filter((p) => !p.loan && p.contract && p.contract.years <= 1);
+    const ageing = c.squad.filter((p) => !p.loan && p.age >= 32);
+    const reserves = MG.youth && MG.youth.ensureReserves ? MG.youth.ensureReserves(c) : [];
+
+    // Year-on-year movement, only once there is a previous year to compare to.
+    const delta = (now, then) => {
+      if (then == null) return "";
+      const d = Math.round((now - then) * 10) / 10;
+      if (Math.abs(d) < 0.5) return `<span class="muted"> ·  level</span>`;
+      return ` <span class="${d > 0 ? "accent" : "bad"}">${d > 0 ? "▲" : "▼"}${Math.abs(d)}</span>`;
+    };
+
+    const risk = [];
+    if (expiring.length) {
+      risk.push(`<b class="${expiring.length >= 5 ? "bad" : "gold"}">${expiring.length}</b> in the final year of a deal${expiring.length ? ` — ${esc(expiring.slice(0, 2).map((p) => p.name).join(", "))}${expiring.length > 2 ? " and others" : ""}` : ""}`);
+    }
+    if (ageing.length >= 3) risk.push(`<b class="gold">${ageing.length}</b> players are 32 or older`);
+    if (wageRoom < 0) risk.push(`the wage bill is <b class="bad">${money(-wageRoom)} over</b> budget`);
+    if (c.mustSell) risk.push(`<b class="bad">the board needs a sale</b> before it will fund anything`);
+
+    return `<div class="panel">
+      <h3 class="muted">THE STATE OF THE CLUB</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">
+        ${last ? "How the side compares with the one that finished last season, and where it is exposed."
+               : "Where this squad stands, and where it is exposed, before the window opens."}
+      </div>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="sb-num">${Math.round(r.attack)}${delta(r.attack, last && last.attack)}</div><div class="sb-lab">Attack</div></div>
+        <div class="stat-box"><div class="sb-num">${Math.round(r.midfield)}${delta(r.midfield, last && last.midfield)}</div><div class="sb-lab">Midfield</div></div>
+        <div class="stat-box"><div class="sb-num">${Math.round(r.defence)}${delta(r.defence, last && last.defence)}</div><div class="sb-lab">Defence</div></div>
+        <div class="stat-box"><div class="sb-num">${c.squad.length}${delta(c.squad.length, last && last.squadSize)}</div><div class="sb-lab">Squad</div></div>
+        <div class="stat-box"><div class="sb-num ${c.finances.transferBudget > 0 ? "gold" : "muted"}">${money(c.finances.transferBudget)}</div><div class="sb-lab">To spend</div></div>
+        <div class="stat-box"><div class="sb-num ${wageRoom < 0 ? "bad" : ""}">${money(wageRoom)}</div><div class="sb-lab">Wage room</div></div>
+      </div>
+      ${needs.length ? `<div class="board-note" style="margin-top:8px">
+        <b>Short of bodies:</b> ${needs.map((n) => `${n.short} ${esc((MG.players.POSITIONS[n.pos] || {}).name || n.pos)}${n.short === 1 ? "" : "s"}`).join(", ")}.
+      </div>` : ""}
+      ${risk.length ? `<div class="muted" style="font-size:12px;margin-top:8px;line-height:1.7">⚠ ${risk.join("<br>⚠ ")}</div>` : ""}
+      ${reserves.length ? `<div class="muted" style="font-size:12px;margin-top:8px">${reserves.length} in the reserves, the best of them ${esc(reserves.slice().sort((a, b) => b.overall - a.overall)[0].name)} at ${Math.round(reserves.slice().sort((a, b) => b.overall - a.overall)[0].overall)}.</div>` : ""}
+    </div>`;
   }
 
   /* A quick look at the academy — not the full YOUTH tab, just the one or
@@ -1561,6 +1653,139 @@
     </div>`;
   }
 
+  /* ============================ THE SEASON STORY ===========================
+   * What the year was, not just where it finished.
+   *
+   * The end-of-season screen used to say two things: the league position and,
+   * in a single grey line, the cup round and the top scorer. Everything else
+   * that happened simply never reached the manager. The European campaign was
+   * simulated, stored on the club and thrown away unread. The Golden Boot, the
+   * Ballon d'Or shortlist and Manager of the Season were all decided every
+   * year and only ever appeared on a tab nobody was sent to. Thirty-eight
+   * results were recorded and never mentioned again. A save that runs twenty
+   * seasons should leave a manager with twenty stories; it was leaving him
+   * with twenty league positions.
+   *
+   * BUILT FOR A PHONE, because two thirds of the people playing are on one.
+   * That drives the shape more than anything else: short labelled rows rather
+   * than a table, one idea per line, the biggest news first and the detail
+   * folded away behind a summary the reader can ignore. Nothing here scrolls
+   * sideways and nothing needs a second column to make sense. */
+  const EURO_NAMES = { UCL: "Champions League", UEL: "Europa League", UECL: "Conference League" };
+  const EURO_ROUND = { W: "🏆 WON IT", F: "runners-up", SF: "semi-final", QF: "quarter-final",
+    R5: "last 16", R4: "last 32", R3: "group stage", R2: "group stage", R1: "group stage" };
+
+  /* A club name that fits a stat box on a phone. Drops the decorative suffix
+   * first ("Doncaster Rovers" -> "Doncaster") and only then cuts, so a label
+   * never breaks mid-word the way a blind slice(0, 12) did. */
+  const CLUB_NOISE = /\s+(FC|AFC|CF|SC|BC|United|Rovers|Wanderers|Albion|Athletic|County|Town|City|Hotspur)$/i;
+  function shortClub(name) {
+    let n = String(name || "");
+    while (n.length > 13 && CLUB_NOISE.test(n)) n = n.replace(CLUB_NOISE, "");
+    return n.length > 14 ? n.slice(0, 13).trimEnd() + "…" : n;
+  }
+
+  function storyRow(label, value, cls) {
+    return `<div class="crow" style="align-items:center">
+      <div class="muted" style="width:74px;flex:0 0 74px;font-size:11px;text-transform:uppercase;letter-spacing:.5px">${esc(label)}</div>
+      <div class="crow-body"><div class="${cls || ""}" style="font-size:13px">${value}</div></div>
+    </div>`;
+  }
+
+  function seasonStoryHtml() {
+    const st = state.lastStory, row = state.lastRow, c = club();
+    if (!st || !row) return "";
+    const s = st.season || {};
+    const parts = [];
+
+    /* 1. THE CAMPAIGNS — one line each, so a phone shows the whole year at a
+     *    glance without a scroll. */
+    const leagueLine = row.champion ? `<b class="gold">Champions of the ${esc(row.leagueName)}</b>`
+      : row.promoted ? `<b class="accent">Promoted</b> from the ${esc(row.leagueName)}${row.viaPlayoff ? " via the play-offs" : ""}`
+        : row.relegated ? `<b class="bad">Relegated</b> from the ${esc(row.leagueName)}`
+          : `${ordinal(row.position)} of ${row.fieldSize} in the ${esc(row.leagueName)}`;
+    parts.push(storyRow("League", `${leagueLine} · ${row.pts} pts`));
+
+    const cupR = s.cupRound || row.cupRound;
+    if (cupR && cupR !== "none") {
+      parts.push(storyRow("Cup", cupR === "W"
+        ? `<b class="gold">🏆 Won the cup</b>`
+        : `Out at the ${esc(cupLabel(cupR))}`));
+    }
+
+    if (s.europe && s.europe.comp) {
+      const nm = EURO_NAMES[s.europe.comp] || s.europe.comp;
+      const rd = EURO_ROUND[s.europe.round] || s.europe.round;
+      parts.push(storyRow("Europe", s.europe.round === "W"
+        ? `<b class="gold">🏆 Won the ${esc(nm)}</b>`
+        : `${esc(nm)} — ${esc(rd)}`, s.europe.round === "F" || s.europe.round === "SF" ? "accent" : ""));
+    }
+
+    /* 2. HONOURS — the individual awards, which never had a home on this
+     *    screen at all. Only the ones that belong to this club. */
+    const honours = [];
+    if (st.managerOfYear) honours.push(`<b class="gold">🏅 You are Manager of the Season.</b>`);
+    if (st.goldenBoot) honours.push(`<b class="gold">👟 ${esc(st.goldenBoot.name)}</b> wins the Golden Boot with ${st.goldenBoot.goals}.`);
+    for (const b of st.ballonDorMine || []) {
+      honours.push(b.rank === 1
+        ? `<b class="gold">🏆 ${esc(b.name)} wins the Ballon d'Or.</b>`
+        : `<span class="accent">${esc(b.name)}</span> finishes ${ordinal(b.rank)} in the Ballon d'Or.`);
+    }
+    /* The world's Ballon d'Or winner is context, not news, and it is only
+     * context worth printing if the manager is anywhere near that conversation.
+     * A League Two side being told who won it is noise on a small screen. */
+    const inBigLeague = MG.competitions.EURO_LEAGUES.includes(c.leagueId);
+    if (st.ballonDor && !(st.ballonDorMine || []).some((b) => b.rank === 1)
+        && (inBigLeague || (st.ballonDorMine || []).length)) {
+      honours.push(`<span class="muted">Ballon d'Or: ${esc(st.ballonDor.name)} (${esc(st.ballonDor.club)}).</span>`);
+    }
+
+    /* 3. THE PLAYERS — who actually produced the season. */
+    const scorers = (s.scorers || []).filter((x) => x.goals || x.assists);
+    const scorerRows = scorers.slice(0, 4).map((p) =>
+      `<div class="crow" data-player="${p.id}" style="cursor:pointer">
+        <div class="crow-body"><div class="nm">${esc(p.name)} <span class="ppos ${posClass(p.pos)}">${p.pos}</span></div></div>
+        <div class="muted" style="font-size:12px">${p.goals}g${p.assists ? ` · ${p.assists}a` : ""}</div>
+      </div>`).join("");
+
+    /* 4. THE NUMBERS, and the two results worth remembering. Read off the
+     *    match record, which now survives the whole season rather than the
+     *    last two thirds of it (see world.js advanceSeason). */
+    const ms = s.matches || [];
+    let best = null, worst = null;
+    for (const m of ms) {
+      const home = m.homeId === c.id;
+      const gf = home ? m.hg : m.ag, ga = home ? m.ag : m.hg;
+      const diff = gf - ga;
+      if (!best || diff > best.diff || (diff === best.diff && gf > best.gf)) best = { m, gf, ga, diff, opp: home ? m.awayName : m.homeName, home };
+      if (!worst || diff < worst.diff || (diff === worst.diff && ga > worst.ga)) worst = { m, gf, ga, diff, opp: home ? m.awayName : m.homeName, home };
+    }
+    const numbers = `<div class="stat-grid">
+      <div class="stat-box"><div class="sb-num">${row.won}<span class="muted" style="font-size:13px">-${row.drawn}-${row.lost}</span></div><div class="sb-lab">W-D-L</div></div>
+      <div class="stat-box"><div class="sb-num">${row.gf}<span class="muted" style="font-size:13px">:${row.ga}</span></div><div class="sb-lab">Goals</div></div>
+      ${best && best.diff > 0 ? `<div class="stat-box"><div class="sb-num accent">${best.gf}-${best.ga}</div><div class="sb-lab">Best — ${esc(shortClub(best.opp))}</div></div>` : ""}
+      ${worst && worst.diff < 0 ? `<div class="stat-box"><div class="sb-num bad">${worst.gf}-${worst.ga}</div><div class="sb-lab">Worst — ${esc(shortClub(worst.opp))}</div></div>` : ""}
+    </div>`;
+
+    /* Two points is noise on a rating that already carries a decimal. A riser
+     * is only worth a line if the manager would actually have noticed him. */
+    const riser = s.riser && s.riser.gain >= 2.5
+      ? `<div class="muted" style="font-size:12px;margin-top:8px">📈 <b class="accent">${esc(s.riser.name)}</b> (${esc(s.riser.pos)}, ${s.riser.age}) has come on this year — ${s.riser.was} to <b>${s.riser.overall}</b>.</div>`
+      : "";
+
+    return `<div class="panel">
+      <h3 class="muted" style="font-size:12px">THE SEASON</h3>
+      ${parts.join("")}
+      ${honours.length ? `<div style="margin-top:10px;font-size:13px;line-height:1.7">${honours.join("<br>")}</div>` : ""}
+      ${numbers}
+      ${riser}
+      ${scorerRows ? `<details style="margin-top:10px">
+        <summary class="muted" style="cursor:pointer;font-size:12px">Who scored them</summary>
+        <div style="margin-top:6px">${scorerRows}</div>
+      </details>` : ""}
+    </div>`;
+  }
+
   function resultHtml() {
     const row = state.lastRow, r = state.lastReport, c = club();
     if (!row) return `<div class="panel">The season was played, but your club was not in a simulated division.</div>
@@ -1603,8 +1828,9 @@
     return `
       <div class="panel">
         <div class="result-banner ${tone}">${esc(headline)}</div>
-        <div class="muted" style="font-size:13px">Cup run: <b>${esc(cupLabel(row.cupRound))}</b>${scorer ? ` · Top scorer: <b class="accent">${esc(scorer.name)}</b> with ${scorer.goals}` : ""}</div>
+        ${scorer ? `<div class="muted" style="font-size:13px">Top scorer: <b class="accent">${esc(scorer.name)}</b> with ${scorer.goals}</div>` : ""}
       </div>
+      ${seasonStoryHtml()}
       ${r ? `<div class="panel">
         <div class="stage-step">The verdict · ${esc(c.board.style)} board${c.focus ? ` · focus: ${esc(MG.clubs.FOCUS[c.focus].label)}` : ""}</div>
         <div class="muted" style="font-size:13px;margin-bottom:10px">The brief was: ${esc(state.lastBrief.summary || "—")}</div>
@@ -2209,6 +2435,16 @@
       ? Math.max(...players.map((p) => (p.scouted && p.scouted.ceiling) || p.potential)) : 0;
     const readyCount = players.filter((p) => p.overall >= level - 8).length;
     const nextOut = players.filter((p) => p.age >= MG.youth.PROMOTE_AGE).length;
+    /* The reserves, summarised. Same principle as the academy: the board runs
+     * it, the manager sees it. No promote button, because there is nothing for
+     * him to decide — the staff move a man up when he is ready. */
+    const reserves = (MG.youth.ensureReserves ? MG.youth.ensureReserves(c) : (c.reserves || [])).slice()
+      .sort((x, y) => y.overall - x.overall);
+    const rn = reserves.length || 1;
+    const resAvgAge = Math.round(reserves.reduce((t, p) => t + p.age, 0) / rn);
+    const resAvgOvr = Math.round(reserves.reduce((t, p) => t + p.overall, 0) / rn);
+    const resBest = reserves.length ? Math.round(reserves[0].overall) : 0;
+    const resTop = reserves.slice(0, 4);
     const gradeCounts = (() => {
       const order = ["Exceptional", "Promising", "Useful", "Limited"];
       const tally = {};
@@ -2265,6 +2501,27 @@
     </div>
 
     <div class="panel">
+      <h3 class="muted">THE RESERVES</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">
+        The tier between the academy and the first team, run by the club. Graduates come here rather than straight into
+        the squad, fringe players can drop back into it instead of leaving, and everyone in it keeps training — so when the
+        first team is short, the staff look here before they look at the market.
+      </div>
+      ${reserves.length ? `<div class="stat-grid">
+        <div class="stat-box"><div class="sb-num">${reserves.length}</div><div class="sb-lab">In the reserves</div></div>
+        <div class="stat-box"><div class="sb-num">${resAvgAge}</div><div class="sb-lab">Average age</div></div>
+        <div class="stat-box"><div class="sb-num">${resAvgOvr}</div><div class="sb-lab">Average rating</div></div>
+        <div class="stat-box"><div class="sb-num gold">${resBest}</div><div class="sb-lab">Best rated</div></div>
+      </div>
+      ${resTop.map((p) => `<div class="crow" data-player="${p.id}" style="cursor:pointer">
+        <div class="prating ${posClass(p.pos)}" style="width:34px;height:34px;font-size:14px">${Math.round(p.overall)}</div>
+        <div class="crow-body"><div class="nm">${esc(p.name)} <span class="ppos ${posClass(p.pos)}">${p.pos}</span></div>
+          <div class="muted" style="font-size:12px">${p.age}y · knocking on the door at ${Math.round(level - 4)}+</div></div>
+      </div>`).join("")}`
+      : `<div class="muted">Nobody in the reserves yet — the first graduates arrive once the academy has raised them.</div>`}
+    </div>
+
+    <div class="panel">
       <h3 class="muted">THE GROUP</h3>
       ${players.length ? `<div class="stat-grid">
         <div class="stat-box"><div class="sb-num">${players.length}</div><div class="sb-lab">Scholars</div></div>
@@ -2279,8 +2536,8 @@
         ${gradeCounts.map((g) => `<b>${g.n}</b> ${esc(g.label.toLowerCase())}`).join(" · ")}.
       </div>
       <div class="muted" style="font-size:12px;margin-top:6px">
-        The academy staff run this themselves: they promote anyone ready for the senior squad and release anyone who reaches
-        ${MG.youth.PROMOTE_AGE} without getting there. Both show up in your log when they happen.
+        The academy staff run this themselves: graduates move up to the reserves, and anyone who reaches
+        ${MG.youth.PROMOTE_AGE} without getting there is released. Both show up in your log when they happen.
       </div>`
       : `<div class="muted">The academy is empty — a new intake arrives at the end of the season.</div>`}
     </div>`;

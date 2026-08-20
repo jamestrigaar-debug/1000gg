@@ -376,10 +376,30 @@
         const affordableWage = clubWants && wage * 52 / 1000 <= club.finances.wageBudget * 0.34;
         const renew = clubWants && affordableWage && willRenew(world, club, p, rng);
         if (renew) {
-          p.contract.years = rng.int(2, 4);
+          /* Longer terms, and the single biggest lever on the turnover the
+           * testers reported. Deals used to run 1-5 years on creation and 2-4
+           * on renewal — a mean of about three, so roughly a THIRD of every
+           * squad in the world reached the end of its contract every summer,
+           * and a good share of those walked. Real contracts are longer than
+           * that and clubs re-sign early. Pushing the means up by a year cuts
+           * the annual expiry pool without changing who a club wants to keep. */
+          p.contract.years = rng.int(3, 5);
           p.contract.wage = wage;
           stillHere.push(p);
           if (isPlayerClub && req === "extend") news.push({ type: "contract", text: `Contract — ${p.name} renews for ${p.contract.years} years on £${wage}k a week, as you asked.`, clubId: club.id });
+        } else if (MG.youth && MG.youth.toReserves && p.age <= MG.youth.RESERVE_MAX_AGE
+            && p.overall >= (club.level != null ? club.level : 50) - 14) {
+          /* DOWN, NOT OUT. A young fringe player whose deal runs out used to
+           * leave the club entirely, because the only alternative on offer was
+           * a first-team place he had not earned — and that, multiplied across
+           * every club every summer, is most of the turnover the testers were
+           * seeing. He drops to the reserves instead, which is what a real club
+           * does with a twenty-two-year-old it still rates. He keeps developing
+           * and he is first in line the next time the squad is short. */
+          MG.youth.toReserves(world, club, p);
+          if (isPlayerClub) {
+            news.push({ type: "contract", text: `Contract — ${p.name} drops to the reserves rather than leaving; the club keeps faith in him.`, clubId: club.id });
+          }
         } else {
           p.clubId = null;
           /* Who let him go, and when. A club that has just declined to renew
@@ -1346,7 +1366,7 @@
         const p = pool.splice(idx, 1)[0];
         p._leftClubId = null; p._leftSeason = null;
         p.clubId = club.id;
-        p.contract = { years: rng.int(1, 3), wage: MG.players.expectedWage(p, club.leagueId) };
+        p.contract = { years: rng.int(2, 4), wage: MG.players.expectedWage(p, club.leagueId) };
         MG.players.recordMove(p, club.name, world.season);
         club.squad.push(p);
         /* Every arrival at the managed club is reported. This pass, the squad
@@ -1432,7 +1452,19 @@
         let n = have[pos] || 0;
         let g = 0;
         while (n < want && g++ < 4) {
-          // Academy first, same as every other door into the squad now.
+          /* DOWNSTAIRS BEFORE THE MARKET. Reserves first, then the academy,
+           * then a generated body. A club with a ready-made deputy in its own
+           * building does not go shopping for one, and this ordering is most
+           * of what stops the summer refilling a squad the club already had. */
+          const stepUp = MG.youth && MG.youth.readyFromReserves
+            ? MG.youth.readyFromReserves(world, club, pos) : null;
+          if (stepUp) {
+            n++;
+            if (club.id === world.playerClubId) {
+              news.push({ type: "youth", text: `RESERVES — ${stepUp.name} (${stepUp.pos}, ${stepUp.age}, ${Math.round(stepUp.overall)}) is moved up to cover the gap.`, clubId: club.id });
+            }
+            continue;
+          }
           const promoted = MG.youth ? MG.youth.promoteReadyForPos(world, club, pos) : null;
           if (promoted) {
             n++;
@@ -1487,8 +1519,16 @@
         // every summer, which dragged its own strength down and made it do the
         // same thing harder next year — the whole lower pyramid decayed.
         const level = club.level != null ? club.level : MG.clubs.playerLevelFor(club);
-        // Academy first — the board looks at its own kids before it looks at
-        // the market, same as everywhere else this function fills a gap.
+        // Reserves, then the academy — the board looks through its own building
+        // before it looks at the market, same as everywhere else here.
+        const stepUp = MG.youth && MG.youth.readyFromReserves
+          ? MG.youth.readyFromReserves(world, club, pos) : null;
+        if (stepUp) {
+          if (club.id === world.playerClubId) {
+            news.push({ type: "youth", text: `RESERVES — ${stepUp.name} (${stepUp.pos}, ${stepUp.age}, ${Math.round(stepUp.overall)}) is brought up to make up the numbers.`, clubId: club.id });
+          }
+          continue;
+        }
         const promoted = MG.youth ? MG.youth.promoteReadyForPos(world, club, pos) : null;
         if (promoted) {
           if (club.id === world.playerClubId) {

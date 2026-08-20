@@ -156,16 +156,36 @@
     const played = clamp(minutes, 0, 1);
     const curve = ageCurve(player.pos);
 
-    // The steep early years: a teenager with headroom moves fast if he plays.
+    /* BEING AT THE CLUB IS WORTH SOMETHING, AND PLAYING IS WORTH MUCH MORE.
+     *
+     * These curves used to read (0.45 + played * 0.75) — linear in minutes, off
+     * a low floor — which said a young player who trained all year with the
+     * first team and did not get on the pitch progressed at under 40% of the
+     * rate of one who played every week. That is not how a footballer develops,
+     * and in this game it had a second effect: it made the reserves pointless
+     * before they existed, because anyone not in the eleven was frozen.
+     *
+     * So the floor comes up and the curve bends. A player simply IN the setup —
+     * training daily, promoted into the group — banks a real share of the
+     * available progress. On top of that, minutes compound rather than add:
+     * the exponent means the difference between a bit-part season and a full
+     * one is far larger than the difference between no football and a bit,
+     * which is the shape the request asked for and the shape the real thing
+     * has. Every week in the side is worth more than the week before it. */
+    const MINUTES_EXP = 1.7;
+    const playedCurve = Math.pow(clamp(played, 0, 1), MINUTES_EXP);
+
+    // The steep early years: a teenager with headroom moves fast, and moves
+    // fastest of all if he is playing.
     if (age <= curve.grow - 1) {
       const base = headroom > 0 ? 1.6 + headroom * 0.14 : 0.2;
-      const gain = base * (0.45 + played * 0.75) * (1 + coach * 0.45) + rng.gauss() * 0.8;
+      const gain = base * (0.70 + playedCurve * 0.85) * (1 + coach * 0.45) + rng.gauss() * 0.8;
       return Math.max(-1, gain);
     }
     // Still improving, more slowly, into the start of the peak.
     if (age <= curve.grow + 3) {
       const base = headroom > 0 ? 0.7 + headroom * 0.08 : 0;
-      return base * (0.5 + played * 0.6) * (1 + coach * 0.3) + rng.gauss() * 0.7;
+      return base * (0.72 + playedCurve * 0.72) * (1 + coach * 0.3) + rng.gauss() * 0.7;
     }
     // The plateau: drifting either way, holding his level.
     if (age <= curve.peakEnd) return rng.gauss() * 0.7 - 0.15 + coach * 0.25;
@@ -664,7 +684,7 @@
       },
       mentality: raw.mentality,
       mentalityRating: footballIntelligence(raw.mentalityRating, overall),
-      contract: { years: rng.int(1, 5), wage: 0 },
+      contract: { years: rng.int(2, 5), wage: 0 },
     });
     p.career.seasons = estimateCareerSeasons(p.age);
     p.potential = rollPotential(rng, p.overall, p.age);
@@ -1001,7 +1021,7 @@
       attrs,
       mentality: rollMentalityTrait(rng, mentalityRating),
       mentalityRating,
-      contract: { years: rng.int(1, 5), wage: 0 },
+      contract: { years: rng.int(2, 5), wage: 0 },
     });
     p.career.seasons = estimateCareerSeasons(p.age);
     p.potential = rollPotential(rng, p.overall, p.age);
@@ -1099,7 +1119,7 @@
       attrs: genAttrs,
       mentality: rollMentalityTrait(rng, mentalityRating),
       mentalityRating,
-      contract: { years: rng.int(1, 4), wage: 0 },
+      contract: { years: rng.int(2, 4), wage: 0 },
       homegrown: !!opts.homegrown,
     });
     /* The other half of the discount: a player generated short of his peak has

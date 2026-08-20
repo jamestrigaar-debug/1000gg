@@ -632,6 +632,8 @@
     if (world._partialLeague) return world._earlySnapshot || null;   // already begun
     const club = world.clubById(world.playerClubId);
     if (!club) return null;
+    // A new season, so a new match record — see the note in advanceSeason.
+    world.playerMatches = [];
     ageSystems(world);
     const st = MG.competitions.beginLeague(world, club.leagueId);
     if (!st) return null;
@@ -679,8 +681,13 @@
     const seasonNews = [];
     const results = {};
     const carousel = [];
-    // Last season's match record is done with; this season writes its own.
-    world.playerMatches = [];
+    /* The match record is NOT cleared here. It used to be, and that quietly
+     * threw away the opening third of every season: beginSeason plays those
+     * weeks and records them, then this ran and wiped them before the rest of
+     * the campaign was played. A Premier League season came out of it holding
+     * 28 games of 38 — the ten the manager had actually already seen results
+     * for were the ten that vanished. Clearing belongs at the START of a
+     * season (see beginSeason), which is where it now happens. */
 
     /* ---- 1. every division, with a winter sacking window ---- */
     const midSeason = (leagueId, table) => {
@@ -956,6 +963,13 @@
      * problem the decision engine has to avoid everywhere, not just in the
      * SIGN/VETO cards themselves. */
     let clubTopScorer = null;
+    /* THE SEASON AS A STORY, captured in the same breath and for the same
+     * reason. The club's European campaign, its best scorers and the shape of
+     * its year all live on objects the summer is about to rewrite — the squad
+     * gets sold from, `_outcome` is deleted a few lines down — so anything the
+     * end-of-season screens want to TELL the manager has to be taken now,
+     * while it is still true. */
+    let playerSeason = null;
     if (world.playerClubId) {
       const pc = world.clubById(world.playerClubId);
       if (pc) {
@@ -964,6 +978,48 @@
             clubTopScorer = { name: p.name, goals: p.season.goals, playerId: p.id };
           }
         }
+        const scorers = pc.squad.slice()
+          .filter((p) => (p.season.goals || 0) > 0 || (p.season.assists || 0) > 0)
+          .sort((a, b) => (b.season.goals - a.season.goals) || (b.season.assists - a.season.assists))
+          .slice(0, 5)
+          .map((p) => ({ id: p.id, name: p.name, pos: p.pos, goals: p.season.goals || 0, assists: p.season.assists || 0 }));
+        /* WHO CAME OF AGE. Measured against a stamp taken at the previous
+         * summary, not against the start of this season — development is a
+         * SUMMER pass (transfers.developSquads), so a player's rating does not
+         * move between kick-off and the final whistle at all, and comparing
+         * across those two points would report a gain of zero for everybody,
+         * forever. Year on year is the interval that actually contains the
+         * change, and it is the one a manager thinks in: the boy who was 68
+         * last May and is 74 this one. Nobody rises in the first season of a
+         * save, because there is no earlier stamp to measure from — which is
+         * correct rather than a gap. */
+        let riser = null;
+        for (const p of pc.squad) {
+          const gain = p._lastSeasonOverall != null ? p.overall - p._lastSeasonOverall : 0;
+          if (gain > 0.9 && (!riser || gain > riser.gain)) {
+            riser = {
+              id: p.id, name: p.name, pos: p.pos, age: p.age,
+              gain: round1(gain), overall: Math.round(p.overall),
+              was: Math.round(p._lastSeasonOverall),
+            };
+          }
+        }
+        for (const p of pc.squad) p._lastSeasonOverall = p.overall;
+        /* And the club's own shape, for the same year-on-year comparison the
+         * pre-season briefing makes: "your defence is four points weaker than
+         * the side that finished fifth" is a sentence a manager can act on,
+         * where a bare rating is only a number. Stamped BEFORE the summer
+         * rewrites the squad, so next pre-season compares like with like. */
+        pc._lastRatings = {
+          attack: round1(pc.ratings.attack), midfield: round1(pc.ratings.midfield),
+          defence: round1(pc.ratings.defence), squadSize: pc.squad.length,
+        };
+        playerSeason = {
+          europe: (pc._outcome && pc._outcome.europe) || null,
+          cupRound: pc._outcome ? pc._outcome.cupRound : null,
+          scorers, riser,
+          matches: (world.playerMatches || []).slice(),
+        };
       }
     }
 
@@ -1065,6 +1121,7 @@
       carousel,
       awards,
       clubTopScorer,
+      playerSeason,
       transferCount: window.deals,
       contestedDeals: window.contested || 0,
       transferRejections: window.rejections || 0,

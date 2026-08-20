@@ -128,6 +128,9 @@
     for (const c of world.clubs) {
       for (const p of c.squad) if (p.id > maxPlayerId) maxPlayerId = p.id;
       if (c.academy) for (const p of c.academy.players) if (p.id > maxPlayerId) maxPlayerId = p.id;
+      // The reserves are people too — miss them here and the very next player
+      // the world mints collides with one of them.
+      if (c.reserves) for (const p of c.reserves) if (p.id > maxPlayerId) maxPlayerId = p.id;
     }
     MG.players.setNextId(maxPlayerId + 1);
     let maxManagerId = 0;
@@ -178,6 +181,7 @@
         lastRow: uiState.lastRow || null,
         lastBrief: uiState.lastBrief || null,
         lastTopScorer: uiState.lastTopScorer || null,
+        lastStory: uiState.lastStory || null,
         lastMoveSummary: uiState.lastMoveSummary || null,
         lastApproach: uiState.lastApproach || null,
         sackReason: uiState.sackReason || null,
@@ -214,6 +218,7 @@
     for (const club of world.clubs) {
       for (const p of club.squad) fix(p);
       if (club.academy && club.academy.players) for (const p of club.academy.players) fix(p);
+      if (club.reserves) for (const p of club.reserves) fix(p);
     }
   }
 
@@ -236,6 +241,7 @@
         lastRow: u.lastRow || null,
         lastBrief: u.lastBrief || null,
         lastTopScorer: u.lastTopScorer || null,
+        lastStory: u.lastStory || null,
         lastMoveSummary: u.lastMoveSummary || null,
         lastApproach: u.lastApproach || null,
         sackReason: u.sackReason || null,

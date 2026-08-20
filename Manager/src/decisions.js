@@ -131,6 +131,64 @@
           .slice(0, 2);
       })(),
 
+      /* ------------------------- PLAYER STORYLINES -------------------------
+       * Three men in the building whose situation is about to become the
+       * manager's problem, surfaced as cards rather than left for him to go
+       * and find. That distinction is the whole point on a phone: everything
+       * below is discoverable today by opening the squad, reading contract
+       * years, cross-referencing minutes and knowing what the reserves hold —
+       * which is four screens and a good memory. Two thirds of the people
+       * playing this are on a handset, and a thing you have to go looking for
+       * on a handset is a thing that does not happen.
+       *
+       * Each is deliberately a PERSON, not a statistic. "Your wage bill is
+       * high" is a number; "Marcus played nine games and wants to know why"
+       * is a season. */
+
+      /* Good enough to play, and barely did. p.lastLoad is last season's
+       * minutes share, stamped before the counters reset (world.js) — reading
+       * p.season here would find a freshly-zeroed record for everybody. */
+      unhappy: (() => {
+        const level = club.level != null ? club.level : 55;
+        return club.squad
+          .filter((p) => !p.loan && (p.lastLoad || 0) < 0.30 && p.overall >= level - 4
+            && p.age <= 32 && (p.season.injured || 0) < 0.4)
+          .sort((a, b) => b.overall - a.overall)[0] || null;
+      })(),
+
+      /* Into the last year of his deal and worth keeping. The CONTRACTS tab
+       * lists everyone expiring; this picks out the one who actually matters
+       * and makes it a decision. */
+      lastYear: (() => {
+        const level = club.level != null ? club.level : 55;
+        return club.squad
+          .filter((p) => !p.loan && p.contract && p.contract.years <= 1 && p.overall >= level - 3)
+          .sort((a, b) => b.overall - a.overall)[0] || null;
+      })(),
+
+      /* A reserve who has outgrown the reserves, paired with the man standing
+       * in his way. Only fires when the deputy is genuinely close to the
+       * incumbent, so this is a real selection call rather than a nudge to
+       * promote somebody who is not ready. */
+      blocked: (() => {
+        if (!MG.youth || !MG.youth.ensureReserves) return null;
+        const res = MG.youth.ensureReserves(club);
+        if (!res.length) return null;
+        let best = null;
+        for (const kid of res) {
+          const ahead = club.squad
+            .filter((p) => !p.loan && p.pos === kid.pos)
+            .sort((a, b) => a.overall - b.overall)[0];
+          if (!ahead) continue;
+          // He must be pushing the weakest man in his position, and that man
+          // must not simply be better than him.
+          const gap = ahead.overall - kid.overall;
+          if (gap > 4) continue;
+          if (!best || gap < best.gap) best = { kid, ahead, gap: round1(gap) };
+        }
+        return best;
+      })(),
+
       /* THE SEASON SO FAR, present only in the early-season window — the
        * real table, the real form, the real injury list, a third of the way
        * through (world.beginSeason). Every other window sees `early: null`,
@@ -228,6 +286,32 @@
       fans(n, reason) { MG.clubs.fansReact(club, n, reason); },
       clubRep(n) { MG.clubs.adjustReputation ? MG.clubs.adjustReputation(club, n) : (club.reputation = clamp(club.reputation + n, 1, 99)); },
       flag(name, seasons) { club.flags[name] = seasons || 2; },
+      /* One named player, rather than the whole dressing room. The storyline
+       * cards are all about an individual, and shiftMorale's filter form is
+       * clumsy for a party of one. */
+      moraleOne(player, n) {
+        if (!player) return;
+        player.morale = clamp((player.morale == null ? 60 : player.morale) + n, 5, 100);
+      },
+      /** Put him on the transfer list — the same list the market reads. */
+      list(player) {
+        if (!player) return;
+        club.transferList = club.transferList || [];
+        if (!club.transferList.includes(player.id)) club.transferList.push(player.id);
+      },
+      /** A new deal, without going near the board's renewal logic. */
+      extend(player, years) {
+        if (!player || !player.contract) return;
+        player.contract.years = Math.max(player.contract.years, years || 3);
+      },
+      /** Reserve to first team, through youth.js so the bookkeeping matches
+       *  every other route up (morale, clubId, career record). */
+      promoteReserve(player) {
+        if (!player || !MG.youth || !MG.youth.fromReserves) return;
+        const res = MG.youth.ensureReserves(club);
+        if (!res.includes(player)) return;
+        MG.youth.fromReserves(world, club, player);
+      },
       money(n) {
         const a = Math.abs(n);
         if (a >= 10) return `£${Math.round(a)}m`;
@@ -239,6 +323,84 @@
 
   /* ---------------------------- PRE-SEASON CARDS --------------------------- */
   const PRESEASON = [
+    /* ---- DRESSING ROOM: the three storylines (see the context above) ---- */
+    {
+      id: "pre_unhappy", category: "DRESSING ROOM", weight: 10, req: (c) => !!c.unhappy,
+      text: (c) => `${c.unhappy.name} played ${Math.round((c.unhappy.lastLoad || 0) * 100)}% of the football available to him last season, and he is good enough to expect more. He has asked where he stands.`,
+      choices: (c) => [
+        { label: "Promise him a starting place", detail: "He believes you. Now you have to mean it.",
+          fx: (api) => {
+            api.moraleOne(c.unhappy, 18);
+            api.morale(-3, (p) => p.id !== c.unhappy.id && p.pos === c.unhappy.pos);
+            return `${c.unhappy.name} is told he starts. The others in his position heard about it within the hour.`;
+          } },
+        { label: "Tell him to earn it", detail: "Honest, and he may not like it.",
+          fx: (api) => {
+            api.moraleOne(c.unhappy, -10);
+            api.form(1);
+            return `${c.unhappy.name} is told the shirt is not his by right. He trains like a man with a point to prove.`;
+          } },
+        { label: "Let him go", detail: "List him. Someone will take him.",
+          fx: (api) => {
+            api.list(c.unhappy);
+            api.morale(2);
+            return `${c.unhappy.name} is made available. The dressing room reads it as a manager who will not carry a sulk.`;
+          } },
+      ],
+    },
+    {
+      id: "pre_last_year", category: "BOARDROOM", weight: 10,
+      req: (c) => !!c.lastYear && (!c.unhappy || c.lastYear.id !== c.unhappy.id),
+      text: (c) => `${c.lastYear.name} (${c.lastYear.pos}, ${c.lastYear.age}) is into the last year of his contract. Do nothing and he leaves for nothing next summer.`,
+      choices: (c) => [
+        { label: "Tie him down now", detail: `The board will have to find the wages.`,
+          fx: (api) => {
+            const cost = Math.max(0.4, Math.round(c.lastYear.overall / 12) / 2);
+            api.extend(c.lastYear, 3);
+            api.wage(-cost);
+            api.moraleOne(c.lastYear, 12);
+            return `${c.lastYear.name} signs on for three more years. It costs about ${api.money(cost)} a season off the wage room.`;
+          } },
+        { label: "Cash in while he has value", detail: "A fee now beats nothing later.",
+          fx: (api) => {
+            api.list(c.lastYear);
+            api.moraleOne(c.lastYear, -8);
+            return `${c.lastYear.name} is listed. Better a fee this summer than a free transfer next.`;
+          } },
+        { label: "Let it run", detail: "Keep him for the season and take the loss.",
+          fx: (api) => {
+            api.moraleOne(c.lastYear, -4);
+            api.fans(-1, `${c.lastYear.name} was left to run down his contract`);
+            return `Nothing is offered. ${c.lastYear.name} plays out his deal, and his agent starts taking calls.`;
+          } },
+      ],
+    },
+    {
+      id: "pre_blocked", category: "YOUTH", weight: 9, req: (c) => !!c.blocked,
+      text: (c) => `${c.blocked.kid.name} (${c.blocked.kid.pos}, ${c.blocked.kid.age}) has outgrown the reserves — the staff rate him at ${Math.round(c.blocked.kid.overall)}, against ${Math.round(c.blocked.ahead.overall)} for ${c.blocked.ahead.name} ahead of him.`,
+      choices: (c) => [
+        { label: `Promote ${c.blocked.kid.name.split(" ").slice(-1)[0]}`, detail: "Into the squad, and into the argument for a place.",
+          fx: (api) => {
+            api.promoteReserve(c.blocked.kid);
+            api.moraleOne(c.blocked.ahead, -8);
+            api.youth(0.05);
+            return `${c.blocked.kid.name} is moved up to the first-team squad. ${c.blocked.ahead.name} knows exactly what it means.`;
+          } },
+        { label: `Move ${c.blocked.ahead.name.split(" ").slice(-1)[0]} on`, detail: "Clear the path properly.",
+          fx: (api) => {
+            api.promoteReserve(c.blocked.kid);
+            api.list(c.blocked.ahead);
+            api.youth(0.08);
+            return `${c.blocked.kid.name} steps up and ${c.blocked.ahead.name} is listed. The path is clear, and there is no safety net.`;
+          } },
+        { label: "Leave him where he is", detail: "Another year of reserve football.",
+          fx: (api) => {
+            api.moraleOne(c.blocked.kid, -6);
+            api.moraleOne(c.blocked.ahead, 5);
+            return `${c.blocked.kid.name} stays in the reserves. He is not the only one who thinks he is ready.`;
+          } },
+      ],
+    },
     /* ---- TACTICS ---- */
     {
       id: "pre_system", category: "TACTICS", weight: 10,

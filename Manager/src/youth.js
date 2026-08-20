@@ -236,20 +236,127 @@
     return club.board && club.board.style === "Patient" ? "mentality" : "balanced";
   }
 
+  /* ============================ THE RESERVES ===============================
+   * The tier the club was missing, and the reason a squad used to be either
+   * "good enough to play" or "gone".
+   *
+   * The academy fed the first team DIRECTLY: a boy was either ready for the
+   * senior squad at twenty or released at twenty-one, and there was nowhere in
+   * between for the ordinary case — the twenty-year-old who is genuinely
+   * promising and genuinely not ready. Meanwhile a fringe senior whose contract
+   * ran out simply walked, because the only alternative on offer was a first-
+   * team place he had not earned. Between them those two facts are most of the
+   * turnover the testers complained about: every club spent every summer
+   * refilling a squad it had just emptied, out of a market rather than out of
+   * its own building.
+   *
+   * A reserve list fixes both, and it is how a real club is actually shaped.
+   * Prospects graduate INTO it rather than into the first team. Fringe players
+   * whose deals expire can drop INTO it rather than out of the club. Everyone
+   * in it trains, develops and is available — so when the first team needs a
+   * body, the club looks downstairs before it looks at the market.
+   *
+   * INVISIBLE on purpose. There is no reserves screen and no reserves
+   * decision: the board runs this exactly as it runs the academy, and the
+   * manager sees the group summarised on the YOUTH tab and hears about
+   * promotions in his log. Adding a second squad list to manage would undo the
+   * very thing handing the academy to the board was meant to achieve. */
+  const RESERVE_TARGET = 10;        // the size the board keeps it around
+  const RESERVE_MAX_AGE = 23;       // past this he is not a prospect, he is a squad player or gone
+
+  function ensureReserves(club) {
+    if (!club.reserves) club.reserves = [];
+    return club.reserves;
+  }
+
+  /** Move a player into the reserves. Used by the academy and by transfers.js
+   *  when a young fringe player's contract runs out. */
+  function toReserves(world, club, p) {
+    const res = ensureReserves(club);
+    p.academy = false;
+    p.reserve = true;
+    p.clubId = club.id;
+    if (!p.contract || p.contract.years <= 0) {
+      p.contract = { years: 2, wage: Math.max(1, Math.round((p.contract && p.contract.wage) || 1)) };
+    }
+    if (MG.tactics && MG.tactics.initMorale) MG.tactics.initMorale(p);
+    res.push(p);
+    return p;
+  }
+
+  /** Into the first team. */
+  function fromReserves(world, club, p) {
+    const res = ensureReserves(club);
+    const i = res.indexOf(p);
+    if (i >= 0) res.splice(i, 1);
+    p.reserve = false;
+    p.clubId = club.id;
+    MG.players.recordMove(p, club.name, world ? world.season : null);
+    if (MG.tactics && MG.tactics.initMorale) MG.tactics.initMorale(p);
+    club.squad.push(p);
+    return p;
+  }
+
+  /** Is he ready for the senior squad? */
+  function reserveReady(club, p) {
+    const level = club.level != null ? club.level : 50;
+    return p.overall >= level - 4 || (p.age >= RESERVE_MAX_AGE && p.overall >= level - 8);
+  }
+
+  /** The best reserve who can fill a given position, promoted. Read by
+   *  transfers.js's topUpSquads BEFORE it looks at the academy or the market. */
+  function readyFromReserves(world, club, pos) {
+    const res = ensureReserves(club);
+    const options = res.filter((p) => p.pos === pos).sort((a, b) => b.overall - a.overall);
+    if (!options.length) return null;
+    return fromReserves(world, club, options[0]);
+  }
+
+  /* A season in the reserves. They age, they train and they develop — see the
+   * development floor in players.js, which is the other half of this: being AT
+   * a club is now worth real progress even without first-team minutes, so a
+   * reserve is a player getting better rather than a player parked. */
+  function developReserves(world, club) {
+    const res = ensureReserves(club);
+    if (!res.length) return { promoted: [], released: [] };
+    const manager = world.managerById ? world.managerById(club.managerId) : null;
+    const coaching = MG.managers.coachingQuality(manager, club);
+    const promoted = [], released = [], keep = [];
+    for (const p of res) {
+      p.age++;
+      /* Reserve football: real training, a handful of senior minutes. Passed as
+       * a small minutes share rather than zero, because the floor in
+       * developmentDelta is what carries him and this is the top-up. */
+      const delta = MG.players.developmentDelta(world.rng, p, coaching, 0.18);
+      MG.players.applyDevelopment(p, delta);
+      p.value = MG.players.marketValue(p);
+      if (p.contract) p.contract.years--;
+      if (reserveReady(club, p)) { promoted.push(p); continue; }
+      if (p.age > RESERVE_MAX_AGE) { released.push(p); continue; }
+      keep.push(p);
+    }
+    club.reserves = keep;
+    // Promotions happen after the walk so the array is not mutated under it.
+    for (const p of promoted) fromReserves(world, club, p);
+    for (const p of released) { p.reserve = false; p.clubId = null; p._leftClubId = club.id; p._leftSeason = world.season; }
+    return { promoted, released };
+  }
+
   function autoManage(world, club) {
     const a = ensure(club);
     a.focus = boardFocus(club);
     const level = club.level != null ? club.level : 50;
-    const keep = [], promoted = [], released = [];
+    const res = ensureReserves(club);
+    const keep = [], graduated = [], released = [];
     for (const p of a.players) {
       const ready = p.overall >= level - 8 || p.potential >= level + 4;
-      if (p.age >= PROMOTE_AGE - 1 && ready) {
-        p.academy = false;
-        p.clubId = club.id;
-        MG.players.recordMove(p, club.name, world.season);
-        MG.tactics.initMorale(p);
-        club.squad.push(p);
-        promoted.push(p);
+      /* Graduation goes to the RESERVES, not to the first team. The bar comes
+       * down accordingly — the question is no longer "is he a senior player
+       * already?" but "is he worth keeping on at the club?", which is a much
+       * lower and much more realistic hurdle for a twenty-year-old. */
+      if (p.age >= PROMOTE_AGE - 1 && (ready || res.length < RESERVE_TARGET)) {
+        toReserves(world, club, p);
+        graduated.push(p);
         continue;
       }
       // Aged out and never made it — released, wherever he is.
@@ -257,7 +364,7 @@
       keep.push(p);
     }
     a.players = keep;
-    return { promoted, released };
+    return { graduated, released };
   }
 
   /** The whole academy year, for every club. Returns news for the player's. */
@@ -265,15 +372,28 @@
     const news = [];
     for (const club of world.clubs) {
       develop(world, club);
+      /* Order matters: the reserves have their year FIRST, so anyone ready
+       * steps up before this summer's academy graduates arrive to replace him.
+       * Run the other way round a boy would graduate into the reserves and be
+       * assessed for the first team in the same breath, having trained for
+       * exactly no time at all. */
+      const res = developReserves(world, club);
       const moved = autoManage(world, club);
       const isPlayerClub = club.id === world.playerClubId;
+      if (isPlayerClub && res.promoted.length) {
+        news.push({
+          type: "youth",
+          text: `RESERVES — ${res.promoted.map((p) => `${p.name} (${p.pos}, ${p.age}, ${Math.round(p.overall)})`).join(", ")} step${res.promoted.length === 1 ? "s" : ""} up to the first-team squad.`,
+          clubId: club.id,
+        });
+      }
       /* The board runs the academy now, so the manager has to be TOLD what it
        * did — a boy appearing in the senior squad with no explanation is the
        * "the game moved on without you" failure the log exists to prevent. */
-      if (isPlayerClub && moved.promoted.length) {
+      if (isPlayerClub && moved.graduated.length) {
         news.push({
           type: "youth",
-          text: `ACADEMY — the staff promote ${moved.promoted.map((p) => `${p.name} (${p.pos}, ${p.age})`).join(", ")} to the first-team squad.`,
+          text: `ACADEMY — ${moved.graduated.map((p) => `${p.name} (${p.pos}, ${p.age})`).join(", ")} graduate${moved.graduated.length === 1 ? "s" : ""} to the reserves.`,
           clubId: club.id,
         });
       }
@@ -310,5 +430,6 @@
   MG.youth = {
     FOCUS, FOCUS_KEYS, POOL_TARGET, PROMOTE_AGE,
     ensure, intake, develop, promote, promoteReadyForPos, release, autoManage, boardFocus, runSeason, grade, makeProspect,
+    RESERVE_TARGET, RESERVE_MAX_AGE, ensureReserves, toReserves, fromReserves, readyFromReserves, developReserves, reserveReady,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);
