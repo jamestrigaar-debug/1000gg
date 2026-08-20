@@ -80,6 +80,30 @@ function primeClub(w, club, mode, mgr) {
   const forward = club.squad.find((p) => p.pos === "FW") || club.squad[0];
   if (forward) forward.season.goals = 11;
 
+  /* A STOCKED RESERVE LIST. Every rig is a club five seasons into a save
+   * (see w.season above), and a club five seasons in has reserves — the
+   * academy has been graduating into them all that time. Leaving the list
+   * empty made the whole tier invisible to the harness, and any card written
+   * about it read as an unsatisfiable req when it fires perfectly well in a
+   * real world. Two are pitched just under the weakest man in their position
+   * so the "he has outgrown the reserves" card has something to talk about. */
+  if (MG.youth && MG.youth.ensureReserves) {
+    const res = MG.youth.ensureReserves(club);
+    if (!res.length) {
+      const level = club.level != null ? club.level : 60;
+      for (const pos of ["CB", "CM"]) {
+        const weakest = club.squad.filter((p) => p.pos === pos).sort((a, b) => a.overall - b.overall)[0];
+        const target = weakest ? weakest.overall - 2 : level - 6;
+        const kid = MG.players.generate(w.rng, {
+          league: club.leagueId, pos, target, spread: 2, age: 20,
+        });
+        kid.clubId = club.id;
+        kid.reserve = true;
+        res.push(kid);
+      }
+    }
+  }
+
   // A veteran on his last legs, and a genuine prospect with headroom.
   const vet = club.squad.slice().sort((a, b) => b.age - a.age)[0];
   if (vet) vet.age = 35;
@@ -166,6 +190,11 @@ const snap = (club) => JSON.stringify({
   modifiers: club.modifiers, facilities: club.facilities, flags: club.flags,
   tacticalStyle: club.tacticalStyle, xi: club.xi, ratings: club.ratings,
   academy: club.academy,
+  // The reserves for exactly the reason the academy is here: a card that
+  // promotes a reserve would otherwise empty the list permanently for every
+  // later card in the same rig.
+  reserves: club.reserves,
+  transferList: club.transferList,
 });
 function restore(club, saved) {
   const s = JSON.parse(saved);
