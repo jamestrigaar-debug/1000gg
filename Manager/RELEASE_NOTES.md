@@ -1,5 +1,96 @@
 # Football DNA Simulator — Manager
 
+## v0.9.11 · beta — the Ballon d'Or stops being a raffle, and strikers stop heading everything
+
+Both from tester feedback, and both had numbers behind them once measured.
+
+### 1. The Ballon d'Or was close to random
+
+Across 32 simulated awards only **31% of winners came from the merit top
+three**. A quarter won with fewer than twelve goals — one with **two**.
+Winners were arriving from 21st, 23rd, even 25th on the shortlist. And a
+treble-winning club filled half the shortlist on its own, because the
+doubling for a league title and for Europe was handed to every name on
+the teamsheet.
+
+Three things were wrong, and all three are things the real vote gets
+right.
+
+**The vote is not position-blind.** Voters have given it to a forward in
+the overwhelming majority of years. Position prestige now multiplies the
+whole case — separately from what a single goal is worth as evidence,
+which still favours the defender who scores eight.
+
+**A striker at a big club is seen more.** Thirty goals for the champions
+of Spain is a different campaign from thirty for a mid-table side. Club
+reputation now lifts the attacking positions specifically, because that
+is where the effect is real — nobody wins this by defending well for
+Real Madrid.
+
+**Silverware is earned by the men who played.** The 2× for the league and
+2× for Europe stay exactly as specified, and still stack — but they are
+gated on minutes. A regular collects the full double; a squad player
+collects a fraction. That is what stops one teamsheet swamping the
+shortlist.
+
+The vote itself is now weighted on each candidate's case *as a share of
+the best case* rather than on the raw score, so how random the award
+feels no longer depends on how big the numbers happened to be that
+season.
+
+| | before | after |
+|---|---|---|
+| winner from merit top 3 | 31% | **80%** |
+| winners under 12 goals | 25% | **0%** |
+| median winner's goals | 22 | **26** |
+| lowest winner's goals | 2 | **13** |
+
+Position split now runs forwards 68%, wingers 18%, attacking mids 13% —
+and central midfield 3%, which is the point. A first cut crushed the deep
+roles so hard that across forty awards not one midfielder or defender
+ever won, and that trades one wrong answer for another: a save long
+enough to hold a career should hold a Rodri year. What lets them back in
+is recognising that **a holding midfielder's season is not in the goal
+column at all** — Rodri won his on eight goals — so for the deeper roles
+the case is carried by how good he actually was rather than by what he
+produced.
+
+### 2. Aerial was eating the strikers
+
+The average forward read **71.4 in the air against 64.9 for his
+attacking**, and aerial was the single best axis for **54% of the world's
+strikers**. A striker whose standout quality is his head, more often than
+not, is not a striker anyone recognises.
+
+Balance is now the counterweight the axis was missing, and it is the
+right one because it is the same fact stated backwards: balance is built
+from being small, light and quick to turn, which is exactly what a man
+does not want when the ball is in the air.
+
+That fixed the *shape* — but not the level, because the calibration
+moment-matches each axis onto the ratings scale and quietly scaled the
+whole change straight back out. So the level is now set per position too,
+mirroring how the Defending axis has always worked. A centre half's game
+really is played in the air and he keeps every point of it; a winger's is
+not. The points a forward loses do not vanish — the per-position
+calibration is refitted afterwards, so his six axes still average to his
+badge and the difference lands on his attacking, his pace and his
+football brain instead.
+
+| | ATT | AER |
+|---|---|---|
+| Haaland (195cm) | 96 | **91** |
+| Kane (188cm) | 95 | **82** |
+| Mbappé (182cm) | 95 | **67** |
+| Vinícius (176cm) | 95 | **56** |
+| Yamal (180cm, light) | 96 | **43** |
+| van Dijk (CB) | 76 | **95** |
+
+Forwards now average ATT 66.5 against AER 65.6, aerial is the best axis
+for 22% of them rather than 54% — those are the genuine target men — and
+centre halves dominate the air at 74.0 as they should. Players 175cm and
+under reading 70+ in the air have gone from 4% of the world to none.
+
 ## v0.9.10 · beta — real attributes for the foreign leagues
 
 ### Non-Premier-League squads stop being interpolations
