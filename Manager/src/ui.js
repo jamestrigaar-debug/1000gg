@@ -1783,8 +1783,9 @@
    * a phone in one screen without scrolling to a tab: the two months just
    * gone, then the table around you, then the cup and Europe while both are
    * still live, then the treatment room. */
-  const formHtml = (s) => (s || "").split("").map((r) =>
-    `<span class="form-pip ${r === "W" ? "w" : r === "D" ? "d" : "l"}">${r}</span>`).join("");
+  /* formHtml (a row of W/D/L pips) lived here. The review's results card now
+   * lists every match in the block with its own score, so a compressed form
+   * strip beside it was the same information said twice — see matchRow. */
 
   /* A European round is named for how many clubs are left in it, not for how
    * many rounds the FA Cup happens to have. The shared label table calls a
@@ -1861,16 +1862,16 @@
     const fat = p.squad.fatigue;
     const fatCls = fat >= 45 ? "bad" : fat >= 22 ? "warn" : "accent";
     const posCls = p.board.vsTarget >= 2 ? "accent" : p.board.vsTarget <= -3 ? "bad" : "gold";
-    const shown = p.fixtures.slice(0, 3);
-    const more = p.fixtures.length - shown.length;
+    // The fixture list IS the block story before it has happened — the whole
+    // run of games, not three of them and a promise of more.
     return `
       <div class="kicker">WHAT'S COMING UP</div>
       <h2>${p.fixtures.length} ${p.fixtures.length === 1 ? "game" : "games"}${p.cup || p.euro ? ` <span class="muted" style="font-weight:400">and ${p.cup && p.euro ? "two ties" : "a tie"}</span>` : ""}</h2>
-      <div class="fix-list">${shown.map(fixtureRow).join("") || `<div class="muted">No league football in this block.</div>`}</div>
-      <div class="muted" style="font-size:11px;margin-top:5px">
-        ${more > 0 ? `+ ${more} more` : ""}${p.cup ? `${more > 0 ? " · " : ""}🏆 ${esc(p.cup.name)} ${esc(cupLabel(p.cup.round))}` : ""}${p.euro ? ` · ★ ${esc(p.euro.comp)} ${esc(euroRoundLabel(p.euro.round))}` : ""}
-      </div>
-      <div class="glance3">
+      <div class="fix-list full">${p.fixtures.map(fixtureRow).join("") || `<div class="muted">No league football in this block.</div>`}</div>
+      ${p.cup || p.euro ? `<div class="muted" style="font-size:11px;margin-top:7px">
+        ${p.cup ? `🏆 ${esc(p.cup.name)} ${esc(cupLabel(p.cup.round))}` : ""}${p.euro ? `${p.cup ? " · " : ""}★ ${esc(p.euro.comp)} ${esc(euroRoundLabel(p.euro.round))}` : ""}
+      </div>` : ""}
+      <div class="glance3" style="margin-top:14px">
         <div><b class="accent">${p.squad.available}</b><span>FIT OF ${p.squad.size}</span></div>
         <div><b class="${fatCls}">${fat}%</b><span>WORKED</span></div>
         <div><b class="${posCls}">${p.board.position ? ordinal(p.board.position) : "—"}</b><span>${p.board.target ? `V ${ordinal(p.board.target)} ASKED` : "NOT KICKED OFF"}</span></div>
@@ -1958,6 +1959,43 @@
 
   const REVIEW_CARDS = ["results", "people", "mood"];
 
+  /* A goal, and whoever teed it up. Old saves made before scorers were
+   * tracked carry a real score with no names behind it — that reads as
+   * "not recorded", never as a scoreless match it wasn't. */
+  function scorerLine(s) {
+    return `<div class="drill-row" style="padding-left:0">⚽ <b>${esc(s.name)}</b>${s.assist ? ` <span class="muted">assist: ${esc(s.assist)}</span>` : ""}</div>`;
+  }
+  function scorersFor(list, goals) {
+    if (list && list.length) return list.map(scorerLine).join("");
+    if (!goals) return `<div class="muted drill-row" style="padding-left:0">No goals.</div>`;
+    return `<div class="muted drill-row" style="padding-left:0">Scorers not recorded.</div>`;
+  }
+
+  /* One match, one line, folded open for the scorers — "click on the game
+   * to see the specific scorers" is a <details> element and nothing more. */
+  function matchRow(m, c) {
+    const home = m.homeId === c.id;
+    const us = home ? m.hg : m.ag, them = home ? m.ag : m.hg;
+    const res = us > them ? "w" : us === them ? "d" : "l";
+    const oppName = home ? m.awayName : m.homeName;
+    return `<details class="match-row">
+      <summary>
+        <span class="mr-res ${res}">${res.toUpperCase()}</span>
+        <span class="mr-ha ${home ? "h" : "a"}">${home ? "H" : "A"}</span>
+        <span class="mr-opp">${esc(oppName)}</span>
+        <span class="mr-score">${m.hg}-${m.ag}</span>
+        ${m.derby ? `<span class="tag derby">DERBY</span>` : ""}
+        ${m.upset ? `<span class="tag hard">UPSET</span>` : ""}
+      </summary>
+      <div class="mr-scorers">
+        <div class="mr-team-label">${esc(m.homeName)}</div>
+        ${scorersFor(m.homeScorers, m.hg)}
+        <div class="mr-team-label">${esc(m.awayName)}</div>
+        ${scorersFor(m.awayScorers, m.ag)}
+      </div>
+    </details>`;
+  }
+
   function reviewResultsHtml(e, c) {
     const blockRes = e.blockMatches || [];
     const w = blockRes.filter((m) => (m.homeId === c.id ? m.hg > m.ag : m.ag > m.hg)).length;
@@ -1967,20 +2005,18 @@
     const ga = blockRes.reduce((t, m) => t + (m.homeId === c.id ? m.ag : m.hg), 0);
     const was = e.wasPosition, now = e.position;
     const moved = was && now ? was - now : 0;
+    // The scoreline and the table move are the glance; the match list below
+    // is the block story itself, and gets the space — every game the club
+    // played, tap any of them for who actually scored it.
     return `
       <div class="kicker rev">THESE TWO MONTHS</div>
       <h2>${w}W ${d}D ${l}L</h2>
       <div class="rev-move">
         ${was ? `<span class="muted">${ordinal(was)}</span> <span class="mv ${moved > 0 ? "up" : moved < 0 ? "down" : "flat"}">${moved > 0 ? "▲" : moved < 0 ? "▼" : "—"}</span> ` : ""}
         <b class="${moved > 0 ? "accent" : moved < 0 ? "bad" : "gold"}">${now ? ordinal(now) : "—"}</b>
-        <span class="muted" style="font-size:12px"> · ${gf} scored, ${ga} conceded</span>
+        <span class="muted" style="font-size:12px"> · ${gf}-${ga} · ${e.pts} pts, ${e.ppg} ppg</span>
       </div>
-      <div style="margin:12px 0 4px">${formHtml(e.blockForm)}</div>
-      <div class="glance3" style="margin-top:14px">
-        <div><b>${e.played}</b><span>PLAYED</span></div>
-        <div><b>${e.pts}</b><span>POINTS</span></div>
-        <div><b>${e.ppg}</b><span>PER GAME</span></div>
-      </div>
+      <div class="match-list">${blockRes.length ? blockRes.map((m) => matchRow(m, c)).join("") : `<div class="muted" style="margin-top:8px">No league football in this block.</div>`}</div>
       ${(e.cup || e.europe) ? `<div class="glance-folds"><div class="drill-row" style="padding-left:0">
         ${e.cup ? `<span class="muted">${esc(e.cup.name)}: <b class="${e.cup.alive ? "gold" : "muted"}">${e.cup.won ? "WON IT" : e.cup.alive ? "still in" : "out"}</b></span>` : ""}
         ${e.europe ? `<span class="muted">${esc(e.europe.comp)}: <b class="${e.europe.alive ? "gold" : "muted"}">${e.europe.won ? "WON IT" : e.europe.alive ? "still in" : "out"}</b></span>` : ""}

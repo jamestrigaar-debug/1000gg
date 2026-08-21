@@ -432,18 +432,25 @@
     return total > 0 ? (young / total) * 100 : 0;
   }
 
-  /** Hand out `goals` goals (and assists) from a selection. */
+  /** Hand out `goals` goals (and assists) from a selection. Returns who
+   *  scored each one and who, if anyone, teed it up — the managed club keeps
+   *  this on its own matches so the block review can name names, not just
+   *  the scoreline. */
   function attributeGoals(rng, selection, goals) {
+    const scorers = [];
     for (let i = 0; i < goals; i++) {
       const scorer = rng.weighted(selection.goalPicker);
       if (!scorer) continue;
       scorer.season.goals++;
       // Roughly two in three goals are assisted, and never by the scorer.
+      let assister = null;
       if (rng.chance(0.66)) {
-        const assister = rng.weighted(selection.assistPicker.filter((a) => a.item.id !== scorer.id));
+        assister = rng.weighted(selection.assistPicker.filter((a) => a.item.id !== scorer.id));
         if (assister) assister.season.assists++;
       }
+      scorers.push({ id: scorer.id, name: scorer.name, assist: assister ? assister.name : null });
     }
+    return scorers;
   }
 
   /** Bank a match's worth of appearances across the selection. */

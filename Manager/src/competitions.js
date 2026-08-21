@@ -164,17 +164,17 @@
       recordResult(st.table[home.id], res.homeGoals, res.awayGoals);
       recordResult(st.table[away.id], res.awayGoals, res.homeGoals);
       const hs = world.selection(home.id), as = world.selection(away.id);
-      MG.match.attributeGoals(rng, hs, res.homeGoals);
-      MG.match.attributeGoals(rng, as, res.awayGoals);
+      const homeScorers = MG.match.attributeGoals(rng, hs, res.homeGoals);
+      const awayScorers = MG.match.attributeGoals(rng, as, res.awayGoals);
       MG.match.recordAppearances(rng, hs);
       MG.match.recordAppearances(rng, as);
       world.recordManagerResult(home.id, res.homeGoals, res.awayGoals);
       world.recordManagerResult(away.id, res.awayGoals, res.homeGoals);
       /* The engine already knows WHY this result happened — how many chances
-       * each side deserved, whether it was an upset, whether it was a derby —
-       * and used to throw all of it away the moment the score was recorded.
-       * Keeping it for the managed club is what lets the season be explained
-       * back rather than just tallied. */
+       * each side deserved, whether it was an upset, whether it was a derby,
+       * who actually scored — and used to throw all of it away the moment the
+       * score was recorded. Keeping it for the managed club is what lets the
+       * season be explained back rather than just tallied. */
       if (world.playerClubId === home.id || world.playerClubId === away.id) {
         world.recordPlayerMatch({
           round: i + 1, competition: league.name,
@@ -182,6 +182,7 @@
           hg: res.homeGoals, ag: res.awayGoals,
           homeXG: res.homeXG, awayXG: res.awayXG,
           upset: res.upset, derby,
+          homeScorers, awayScorers,
         });
       }
     }
