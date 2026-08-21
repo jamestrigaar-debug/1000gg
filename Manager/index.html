@@ -499,15 +499,24 @@
   }
   .shirt-kit::before { left: -8px; border-right: 0; }
   .shirt-kit::after { right: -8px; border-left: 0; }
-  .shirt-kit.elite { background: linear-gradient(180deg, #4a2a6b, #2e1a44); border-color: var(--rare); }
-  .shirt-kit.good  { background: linear-gradient(180deg, #12603c, #0c4229); border-color: var(--accent); }
-  .shirt-kit.ok    { background: linear-gradient(180deg, #5c5416, #3d380f); border-color: var(--gold); }
-  .shirt-kit.poor  { background: linear-gradient(180deg, #5e1f27, #3f151b); border-color: var(--bad); }
-  .shirt-badge { font-weight: 900; font-size: 17px; letter-spacing: -.5px; position: relative; z-index: 1; }
-  .shirt-kit.elite .shirt-badge { color: #e3c9ff; }
-  .shirt-kit.good  .shirt-badge { color: #8dffc6; }
-  .shirt-kit.ok    .shirt-badge { color: #ffef9a; }
-  .shirt-kit.poor  .shirt-badge { color: #ffc2c8; }
+  /* POSITION COLOURS, the same four the rest of the game uses — red forward,
+     blue defender, green midfield, gold keeper. A kit is the one place a
+     position colour most obviously belongs, and grading it by QUALITY instead
+     made a good side read as eleven purple shirts that told you nothing about
+     who played where. Quality is the ring, at the two tails only, exactly as
+     .prating has always done it. */
+  .shirt-kit.attack   { background: linear-gradient(180deg, #f0505d, #b8323e); border-color: #ff8790; }
+  .shirt-kit.defence  { background: linear-gradient(180deg, #3f86f3, #1f56b0); border-color: #7fb2ff; }
+  .shirt-kit.midfield { background: linear-gradient(180deg, #17d193, #0a9163); border-color: #4de0b4; }
+  .shirt-kit.keeper   { background: linear-gradient(180deg, #f7cf5a, #c99a15); border-color: #ffe9a3; }
+  .shirt-kit.empty-kit { background: linear-gradient(180deg, #1b4b32, #113322); }
+  .shirt-badge { font-weight: 900; font-size: 17px; letter-spacing: -.5px;
+    position: relative; z-index: 1; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.45); }
+  .shirt-kit.keeper .shirt-badge { color: #2a1c00; text-shadow: none; }
+  /* Only the outliers light up, so a settled XI still reads quietly. */
+  .shirt-kit.rtier-elite { box-shadow: 0 0 0 2px var(--gold), 0 0 9px rgba(245,197,66,.5); }
+  .shirt-kit.rtier-poor { box-shadow: 0 0 0 2px var(--bad); }
+
   .cond { position: absolute; top: -3px; right: -11px; width: 9px; height: 9px;
     border-radius: 50%; border: 2px solid #04120b; z-index: 2; }
   .cond.fresh { background: var(--accent); }
@@ -544,10 +553,10 @@
     border: 1px solid var(--line); color: var(--txt); font-family: inherit; cursor: pointer; }
   .bench-man:hover { border-color: var(--accent); }
   .bench-ovr { font-weight: 900; font-size: 14px; }
-  .bench-ovr.elite { color: var(--rare); }
-  .bench-ovr.good { color: var(--accent); }
-  .bench-ovr.ok { color: var(--gold); }
-  .bench-ovr.poor { color: var(--bad); }
+  .bench-ovr.attack { color: #ff8790; }
+  .bench-ovr.defence { color: #7fb2ff; }
+  .bench-ovr.midfield { color: #4de0b4; }
+  .bench-ovr.keeper { color: #f5c542; }
   .bench-name { font-size: 10px; font-weight: 700; max-width: 62px; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
   .bench-pos { font-size: 8.5px; color: var(--muted); font-weight: 800; }
@@ -578,25 +587,19 @@
     border: 1px solid var(--line); color: var(--txt); font-family: inherit; cursor: pointer; }
   .bench-man:hover { border-color: var(--accent); }
   .bench-ovr { font-weight: 900; font-size: 13px; }
-  .bench-ovr.elite { color: var(--rare); }
-  .bench-ovr.good { color: var(--accent); }
-  .bench-ovr.ok { color: var(--gold); }
-  .bench-ovr.poor { color: var(--bad); }
+  .bench-ovr.attack { color: #ff8790; }
+  .bench-ovr.defence { color: #7fb2ff; }
+  .bench-ovr.midfield { color: #4de0b4; }
+  .bench-ovr.keeper { color: #f5c542; }
   .bench-name { font-size: 10px; font-weight: 700; max-width: 58px; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
   .bench-pos { font-size: 8.5px; color: var(--muted); font-weight: 800; }
 
+  /* Left over from the row-based team sheet: two 620px blocks, sized for the
+     old chips and the .pitch/.pitch-row markup that no longer exists. They sat
+     BELOW the real breakpoint in the file, so on a phone they quietly won and
+     the new sizing never applied. */
   @media (max-width: 620px) {
-    .pitch-grass { aspect-ratio: 5 / 7; }
-    .shirt { width: 58px; padding: 3px 1px 2px; border-radius: 7px; }
-    .shirt-badge { font-size: 13px; }
-    .shirt-name { font-size: 9.5px; max-width: 54px; }
-    .shirt-role { font-size: 8px; }
-  }
-  @media (max-width: 620px) {
-    .pitch { padding: 8px 6px; }
-    .pitch-rows { gap: 5px; }
-    .pitch-row { gap: 4px; }
     .log-entry { font-size: 11px; padding: 3px 6px; }
   }
   .chooser { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; max-height: 300px; overflow-y: auto; }
