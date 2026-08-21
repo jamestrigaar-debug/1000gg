@@ -381,12 +381,36 @@
   .board-say { margin-top: 9px; padding: 8px 10px; background: var(--bg2); border-radius: 8px;
     border-left: 2px solid var(--accent2); font-size: 12.5px; font-style: italic; color: var(--txt); }
 
-  /* Form over the two months just played — the block report's headline. */
-  .form-pip { display: inline-block; width: 16px; height: 16px; line-height: 16px; text-align: center;
-    border-radius: 3px; font-size: 10px; font-weight: 700; margin-right: 2px; color: #05110a; }
-  .form-pip.w { background: var(--accent); }
-  .form-pip.d { background: var(--gold, #d8b24a); }
-  .form-pip.l { background: var(--bad); color: #fff; }
+  /* The block story: every match the club played, its score, and — tap the
+     row — who actually scored it. This is the results card's main content
+     now, not a footnote under a form strip, so it gets the room. */
+  .match-list { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 2px; }
+  .match-row { margin: 0; background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; }
+  .match-row summary { display: flex; align-items: center; gap: 8px; padding: 9px 0; cursor: pointer;
+    list-style: none; font-size: 13px; }
+  .match-row summary::-webkit-details-marker { display: none; }
+  .match-row summary::after { content: "▸"; color: var(--muted); font-size: 10px; margin-left: auto; flex-shrink: 0; }
+  .match-row[open] summary::after { content: "▾"; }
+  .mr-res { display: inline-block; width: 20px; height: 20px; line-height: 20px; text-align: center;
+    border-radius: 5px; font-size: 10.5px; font-weight: 800; flex-shrink: 0; color: #05110a; }
+  .mr-res.w { background: var(--accent); }
+  .mr-res.d { background: var(--gold, #d8b24a); }
+  .mr-res.l { background: var(--bad); color: #fff; }
+  .mr-ha { width: 16px; height: 16px; line-height: 16px; text-align: center; border-radius: 4px;
+    font-size: 9px; font-weight: 800; flex-shrink: 0; }
+  .mr-ha.h { background: var(--accent2); color: #05131f; }
+  .mr-ha.a { background: var(--card2); color: var(--muted); border: 1px solid var(--line); }
+  .mr-opp { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mr-score { font-weight: 800; font-size: 13.5px; flex-shrink: 0; }
+  .mr-scorers { padding: 0 0 10px 28px; }
+  .mr-team-label { font-size: 9.5px; letter-spacing: .8px; color: var(--muted); font-weight: 800; margin-top: 7px; }
+  .mr-team-label:first-child { margin-top: 0; }
+
+  /* The what's-coming-up card's fixture list, at full length and full width —
+     it is the block's whole story before it happens, not three rows and a
+     count of the rest. */
+  .fix-list.full .fix { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+  .fix-list.full .fix:last-child { border-bottom: 0; }
 
   /* ---------- Tier 1: career dashboard ---------- */
   .tier-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted);
