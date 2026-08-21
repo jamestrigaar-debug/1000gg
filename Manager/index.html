@@ -336,36 +336,100 @@
   .dash { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 780px) { .dash { grid-template-columns: 1fr; } }
 
-  /* ---------- Tactics ---------- */
-  .pitch { background:
-      linear-gradient(180deg, #0c3320, #082516);
-    border: 1px solid var(--line); border-radius: 12px; padding: 12px; position: relative; }
-  .pitch-rows { display: flex; flex-direction: column-reverse; gap: 8px; }
-  /* nowrap is what keeps a back four looking like a back four. Wrapping turned
-     every line into a stack on a phone, so the shape — the entire point of the
-     screen — was invisible on the device most people play on. */
-  .pitch-row { display: flex; justify-content: center; gap: 6px; flex-wrap: nowrap; }
+  /* ---------- Tactics: the pitch ----------
+     Eleven players standing where they play. The grass keeps the same dark
+     green the rest of the game is built from — this is a team sheet drawn on
+     a pitch, not a different game's screen bolted on. Shirts are absolutely
+     positioned from the per-formation coords in tactics.js, so a back three
+     looks like a back three on a phone as well as a desktop. */
+  .pitch-wrap { margin: 8px 0 10px; }
+  .pitch-grass {
+    position: relative; width: 100%; aspect-ratio: 3 / 4; border-radius: 12px;
+    border: 1px solid var(--line); overflow: hidden;
+    background:
+      repeating-linear-gradient(180deg, rgba(255,255,255,.017) 0 8%, transparent 8% 16%),
+      linear-gradient(180deg, #0d3722 0%, #082516 60%, #061c11 100%);
+  }
+  .pitch-grass > div[class^="mk-"] { position: absolute; border: 1px solid rgba(255,255,255,.10); }
+  .mk-halfway { left: 0; right: 0; top: 50%; height: 0; border-width: 1px 0 0 0 !important; }
+  .mk-centre { left: 50%; top: 50%; width: 22%; aspect-ratio: 1; transform: translate(-50%,-50%); border-radius: 50%; }
+  .mk-box { left: 21%; width: 58%; height: 17%; }
+  .mk-box.top { top: 0; border-top: 0 !important; }
+  .mk-box.bottom { bottom: 0; border-bottom: 0 !important; }
+  .mk-six { left: 36%; width: 28%; height: 7%; }
+  .mk-six.top { top: 0; border-top: 0 !important; }
+  .mk-six.bottom { bottom: 0; border-bottom: 0 !important; }
+
+  .shirt {
+    position: absolute; transform: translate(-50%,-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+    width: 68px; padding: 4px 2px 3px; border-radius: 9px; cursor: pointer;
+    background: rgba(4,18,11,.82); border: 1px solid var(--line);
+    color: var(--txt); font-family: inherit; line-height: 1.1;
+    transition: border-color .12s, transform .12s, background .12s;
+  }
+  .shirt:hover { border-color: var(--accent2); z-index: 3; }
+  .shirt.offrole { border-color: var(--gold); }
+  .shirt.misfit { border-color: var(--bad); }
+  .shirt.picked { border-color: var(--accent); background: rgba(0,208,108,.22);
+    transform: translate(-50%,-50%) scale(1.08); z-index: 4; }
+  .shirt.swapping { cursor: grab; }
+  .shirt.empty { opacity: .55; border-style: dashed; }
+  .shirt-top { display: flex; align-items: center; justify-content: center; gap: 4px; }
+  .shirt-badge { font-weight: 900; font-size: 15px; letter-spacing: -.5px; }
+  .shirt-badge.elite { color: var(--rare); }
+  .shirt-badge.good { color: var(--accent); }
+  .shirt-badge.ok { color: var(--gold); }
+  .shirt-badge.poor { color: var(--bad); }
+  .shirt-name { font-size: 10.5px; font-weight: 700; max-width: 64px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .shirt-role { font-size: 8.5px; letter-spacing: .5px; font-weight: 800; color: var(--muted); }
+  /* Condition as a dot, never a number — a manager scans a pitch, he does not
+     read it. Grey is fine, amber is tiring, red is broken. */
+  .cond { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .cond.fresh { background: var(--accent); }
+  .cond.tired { background: var(--gold); }
+  .cond.cooked { background: #ff9f43; }
+  .cond.hurt { background: var(--bad); }
+  .cond.out { background: var(--bad); box-shadow: 0 0 0 2px rgba(255,107,122,.3); }
+
+  .plan-seg { margin-bottom: 6px; }
+  /* On the brief the pitch is a reference, not a control surface, so it sits
+     narrower and out of the way of the two levers above it. */
+  .sheet-fold .pitch-wrap { max-width: 340px; margin: 8px auto; }
+  .pitch-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11.5px; margin-bottom: 2px; }
+  .pitch-actions { gap: 6px; align-items: center; }
+  .pitch-hint { font-size: 11px; }
+
+  .bench { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+  .bench-lab { font-size: 10px; letter-spacing: 1.4px; color: var(--muted); font-weight: 800; margin-bottom: 6px; }
+  .bench-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+  .bench-man { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1px;
+    width: 62px; padding: 5px 2px; border-radius: 8px; background: var(--bg2);
+    border: 1px solid var(--line); color: var(--txt); font-family: inherit; cursor: pointer; }
+  .bench-man:hover { border-color: var(--accent); }
+  .bench-ovr { font-weight: 900; font-size: 13px; }
+  .bench-ovr.elite { color: var(--rare); }
+  .bench-ovr.good { color: var(--accent); }
+  .bench-ovr.ok { color: var(--gold); }
+  .bench-ovr.poor { color: var(--bad); }
+  .bench-name { font-size: 10px; font-weight: 700; max-width: 58px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .bench-pos { font-size: 8.5px; color: var(--muted); font-weight: 800; }
+
+  @media (max-width: 620px) {
+    .pitch-grass { aspect-ratio: 5 / 7; }
+    .shirt { width: 58px; padding: 3px 1px 2px; border-radius: 7px; }
+    .shirt-badge { font-size: 13px; }
+    .shirt-name { font-size: 9.5px; max-width: 54px; }
+    .shirt-role { font-size: 8px; }
+  }
   @media (max-width: 620px) {
     .pitch { padding: 8px 6px; }
     .pitch-rows { gap: 5px; }
     .pitch-row { gap: 4px; }
-    .slot { padding: 5px 3px; font-size: 10px; border-radius: 6px; }
-    .slot .slot-pos { font-size: 8px; letter-spacing: 0; margin-bottom: 0; }
-    .slot .slot-name { font-size: 10px; }
-    .slot .slot-flag { font-size: 8px; }
     .log-entry { font-size: 11px; padding: 3px 6px; }
   }
-  .slot { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 6px;
-    min-width: 0; flex: 1 1 0; max-width: 132px; text-align: center; cursor: pointer; font-size: 12px;
-    color: var(--txt); font-family: inherit; line-height: 1.3; }
-  .slot:hover { border-color: var(--accent2); }
-  .slot.warn { border-color: var(--gold); }
-  .slot.bad { border-color: var(--bad); }
-  .slot .slot-pos { font-size: 10px; line-height: 1.3; letter-spacing: 1px; color: var(--muted); margin-bottom: 1px; }
-  .slot .slot-name { font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .slot .slot-ovr { color: var(--accent); font-weight: 900; }
-  .slot .slot-flag { font-size: 10px; color: var(--gold); }
-  .slot .slot-flag.bad { color: var(--bad); }
   .chooser { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; max-height: 300px; overflow-y: auto; }
   .chooser-list { display: flex; flex-direction: column; gap: 6px; max-height: 56vh; overflow-y: auto; margin-top: 4px; }
   .chooser-list .pcard { margin-bottom: 0; }
