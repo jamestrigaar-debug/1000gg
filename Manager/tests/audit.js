@@ -20,7 +20,7 @@ const SEED = process.argv[3] || "audit";
 globalThis.window = globalThis;
 require(path.join(__dirname, "..", "..", "src", "data.js"));
 for (const f of ["rng", "names", "data_intl", "data_foreign", "data_cards", "players", "ratings", "international", "tactics", "clubs",
-  "network", "scouting", "managers", "match", "narrative", "youth", "competitions", "agents", "transfers", "ai",
+  "network", "scouting", "managers", "match", "narrative", "youth", "competitions", "blocks", "agents", "transfers", "ai",
   "world", "draft", "decisions", "endings"]) {
   require(path.join(__dirname, "..", "src", `${f}.js`));
 }
@@ -187,23 +187,30 @@ MG.world.appointManager(world, startClub, mgr, { quiet: true });
 world.playerClubId = startClub.id;
 auditWorld(world, "player appointed");
 
-/* Alternate the two ways a season can be played. The human game splits the
- * managed club's division in two — a third of it played, the early-season
- * decision window, then the rest (world.beginSeason -> advanceSeason) — while
- * everything else in the world runs in one pass. A split season that dropped,
- * duplicated or short-changed fixtures would produce a wrong league table
- * without breaking a single other invariant, so both paths are audited here
- * and the fixture count is checked explicitly below. */
+/* Alternate the two ways a season can be played. The human game plays it in
+ * five two-month blocks with a brief and a review around each (beginSeason to
+ * open the campaign, then playBlock, then advanceSeason to settle it), while a
+ * headless world runs the lot in one advanceSeason call. A blocked season that
+ * dropped, duplicated or short-changed fixtures would produce a wrong league
+ * table without breaking a single other invariant, so both paths are audited
+ * here and the fixture count is checked explicitly below. */
 let t0 = Date.now();
 for (let s = 1; s <= SEASONS; s++) {
   const split = s % 2 === 1;
   if (split) {
-    const snap = world.beginSeason();
-    check(snap != null, `season ${s}: beginSeason returned nothing despite a managed club`);
+    /* beginSeason opens the campaign and plays NONE of it — the manager is
+     * shown his brief before a ball is kicked, which is the whole point of the
+     * screen. Two blocks are then played by hand and advanceSeason settles the
+     * rest, so this path exercises a genuinely part-played world. */
+    check(world.beginSeason() == null, `season ${s}: beginSeason played football before the brief`);
+    const snap = world.playBlock();
+    check(snap != null, `season ${s}: playBlock returned nothing despite a managed club`);
     if (snap) {
-      check(snap.played > 0, `season ${s}: early snapshot has no games played`);
-      check(snap.position >= 1 && snap.position <= snap.fieldSize, `season ${s}: nonsense early position ${snap.position}`);
+      check(snap.played > 0, `season ${s}: block report has no games played`);
+      check(snap.position >= 1 && snap.position <= snap.fieldSize, `season ${s}: nonsense block position ${snap.position}`);
+      check(snap.block === 1 && snap.blocks === 5, `season ${s}: wrong block stamp ${snap.block}/${snap.blocks}`);
     }
+    world.playBlock();
   }
   const summary = world.advanceSeason();
 

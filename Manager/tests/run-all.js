@@ -24,6 +24,7 @@ const SUITE = [
   { name: "realism", file: "realism.js", blurb: "match engine against real-world rates" },
   { name: "decisions", file: "decisions.js", blurb: "every decision card renders and applies" },
   { name: "world", file: "run_world.js", blurb: "long-run world drift" },
+  { name: "saves", file: "saves.js", blurb: "a mid-season save resumes the same season" },
 ];
 
 const only = process.argv.slice(2);
