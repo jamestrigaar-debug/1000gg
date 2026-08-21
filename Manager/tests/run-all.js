@@ -21,6 +21,7 @@ const path = require("path");
 const HERE = __dirname;
 const SUITE = [
   { name: "audit", file: "audit.js", blurb: "structural invariants over 12 seasons" },
+  { name: "blocks", file: "blocks.js", blurb: "the five-block season, brief to review" },
   { name: "realism", file: "realism.js", blurb: "match engine against real-world rates" },
   { name: "decisions", file: "decisions.js", blurb: "every decision card renders and applies" },
   { name: "world", file: "run_world.js", blurb: "long-run world drift" },

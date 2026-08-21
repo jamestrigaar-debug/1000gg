@@ -121,7 +121,9 @@ function primeClub(w, club, mode, mgr) {
       target: (club.level || 70) - 6, spread: 3, age: w.rng.int(22, 30),
     });
     p.clubId = club.id;
-    p.career.clubs.push(club.name);
+    // Through the real recorder, not by poking the career object: career.clubs
+    // was a write-only duplicate of career.history and has been removed.
+    MG.players.recordMove(p, club.name, w.season);
     club.squad.push(p);
   }
   MG.clubs.refreshRatings(club);
