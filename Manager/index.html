@@ -237,9 +237,67 @@
   .hg { font-size: 9px; color: var(--accent); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; }
   .simming { text-align: center; padding: 40px 20px; color: var(--accent2); font-weight: 700; }
 
-  body.in-block #lastseason-label,
-  body.in-block #lower-tabs,
-  body.in-block #lastseason { display: none; }
+
+  /* ============================== THE DECK ================================
+     One card on screen at a time. The brief and the review are the two places
+     in the game where the manager is being ASKED something rather than shown
+     something, and a phone answers one question at a time or it answers none
+     of them properly.
+
+     Green for the brief (planning forward), blue for the review (reacting to
+     what happened) — the same language the two screens already spoke, now
+     carried by the card itself. */
+  .deck-prog { display: flex; gap: 4px; padding: 2px 2px 8px; }
+  .deck-prog i { flex: 1; height: 3px; border-radius: 3px; background: var(--line); cursor: pointer; }
+  .deck-prog i.done { background: var(--accent); }
+  .deck-prog i.now { background: var(--gold); }
+  .deck-head { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 8px; }
+  .deck-head .step { font-size: 9.5px; letter-spacing: 1.4px; color: var(--gold); font-weight: 800; }
+  .deck-head .of { font-size: 9.5px; letter-spacing: 1.2px; color: var(--muted); font-weight: 800; }
+
+  .deck .card {
+    background: linear-gradient(160deg, #123420, #0a2416);
+    border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    border-radius: 18px; padding: 18px 16px; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+    animation: deal .18s ease;
+  }
+  .deck.rev .card { border-left-color: var(--accent2); }
+  @keyframes deal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .deck .kicker { font-size: 9.5px; letter-spacing: 1.8px; font-weight: 800; color: var(--accent); margin-bottom: 8px; }
+  .deck .kicker.rev { color: var(--accent2); }
+  .deck .card h2 { font-size: 21px; line-height: 1.15; margin: 0 0 10px; font-weight: 900; }
+  .deck .card p { font-size: 13px; color: var(--muted); margin: 0; line-height: 1.45; }
+
+  /* An option is a whole row, thumb-sized, with its price printed on it. */
+  .opt { display: block; width: 100%; text-align: left; background: var(--bg2);
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 13px;
+    margin-bottom: 7px; color: var(--txt); font-family: inherit; cursor: pointer;
+    transition: border-color .12s, background .12s; }
+  .opt:hover { border-color: var(--accent2); }
+  .opt b { display: block; font-size: 13.5px; }
+  .opt span { font-size: 11px; color: var(--accent2); font-weight: 600; }
+  .opt.on { border-color: var(--accent); background: rgba(0,208,108,.12); box-shadow: inset 0 0 0 1px var(--accent); }
+
+  .glance3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin: 14px 0 4px; text-align: center; }
+  .glance3 b { display: block; font-size: 20px; line-height: 1.1; }
+  .glance3 span { font-size: 8.5px; letter-spacing: .8px; color: var(--muted); font-weight: 800; }
+  .glance-folds { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 4px; }
+  .glance-folds .drill summary,
+  .log-fold summary { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .glance-folds .drill summary::before,
+  .log-fold summary::before { order: -1; }
+  .glance-folds .drill summary > span:first-of-type,
+  .log-fold summary > span:first-of-type { margin-right: auto; }
+  .log-fold { margin-top: 10px; }
+  .glance-folds .drill { margin-top: 0; }
+
+  .rev-move { font-size: 16px; }
+  .rev-sub { font-size: 9px; letter-spacing: 1.4px; color: var(--muted); font-weight: 800;
+    margin: 14px 0 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+
+  .deck-foot { padding: 12px 0 0; }
+  .deck-foot .btn { width: 100%; }
+  .deck-hint { text-align: center; font-size: 10.5px; color: var(--muted); margin-top: 6px; min-height: 14px; }
 
   /* ---------- The block loop: the brief, then the review ----------
      Two screens that must never be mistaken for each other. The BRIEF plans
@@ -335,6 +393,59 @@
     margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
   .dash { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 780px) { .dash { grid-template-columns: 1fr; } }
+
+  /* ============================ THE APP SHELL =============================
+     Three fixed rows: a context bar, one scrolling body, a tab bar. Nothing
+     else on the career screen scrolls, so the manager always knows where he
+     is and what else there is — and the primary action of whatever screen he
+     is on is never below the fold, because the body is the only thing that
+     moves.
+
+     100dvh, not 100vh: on a phone the browser chrome collapses as you scroll
+     and vh does not follow it, which leaves the tab bar hanging behind the
+     address bar for the first swipe. */
+  .app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  .wrap:has(.app) { max-width: 100%; padding: 0; }
+
+  .topbar { flex: 0 0 auto; display: flex; align-items: center; gap: 9px;
+    padding: 7px 12px; background: linear-gradient(180deg, #0b2c1c, #082014);
+    border-bottom: 1px solid var(--line); }
+  .crest { width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--accent), #0a6b3a);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: 12px; color: #052211; letter-spacing: -.3px; }
+  .tb-main { flex: 1; min-width: 0; }
+  .tb-club { font-weight: 800; font-size: 14px; line-height: 1.15;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tb-sub { font-size: 10px; color: var(--muted); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .tb-pos { text-align: right; flex-shrink: 0; line-height: 1.1; }
+  .tb-pos b { font-size: 17px; display: block; color: var(--gold); }
+  .tb-pos span { font-size: 8px; letter-spacing: 1px; color: var(--muted); font-weight: 800; }
+
+  .app-body { flex: 1; overflow-y: auto; overflow-x: hidden;
+    -webkit-overflow-scrolling: touch; padding: 12px 12px 16px; }
+  .pane[hidden] { display: none; }
+
+  .tabbar { flex: 0 0 auto; display: flex; background: #071a10;
+    border-top: 1px solid var(--line); padding: 4px 0 max(6px, env(safe-area-inset-bottom)); }
+  .tabb { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    background: none; border: 0; color: var(--muted); font-family: inherit;
+    font-size: 8.5px; font-weight: 800; letter-spacing: .5px; padding: 3px 0;
+    cursor: pointer; position: relative; }
+  .tabb .ic { font-size: 17px; line-height: 1; }
+  .tabb.on { color: var(--accent); }
+  .nav-dot { position: absolute; top: 1px; right: 26%; width: 6px; height: 6px;
+    border-radius: 50%; background: var(--bad); }
+
+  /* The reference sub-nav, one row, scrolls sideways if it has to. */
+  #ref-seg { display: flex; flex-wrap: nowrap; gap: 5px; overflow-x: auto;
+    padding-bottom: 8px; scrollbar-width: none; }
+  #ref-seg::-webkit-scrollbar { display: none; }
+  #ref-seg button { flex: 0 0 auto; background: var(--card2); border: 1px solid var(--line);
+    color: var(--muted); border-radius: 8px; padding: 7px 13px; font-size: 10.5px;
+    font-weight: 800; letter-spacing: .6px; font-family: inherit; cursor: pointer; }
+  #ref-seg button.on { background: rgba(0,208,108,.14); border-color: var(--accent); color: var(--accent); }
 
   /* ---------- Tactics: the pitch ----------
      Eleven players standing where they play. The grass keeps the same dark
@@ -724,60 +835,58 @@
   </section>
 
   <!-- ------------------------------- CAREER ------------------------------ -->
+  <!-- ============================== THE CAREER ==============================
+       An app shell, not a page. A 52px context bar at the top, a scrolling
+       body, and a four-tab bar pinned to the bottom. The old header spent
+       nearly 600px — most of a phone screen — on board bars and a "last
+       season" panel before the manager reached anything he came for, and
+       carried two competing navigations with SQUAD in both meaning different
+       things. There is one navigation now, it is always reachable, and it
+       never moves. -->
   <section id="screen-career" class="screen">
-    <div class="career-head">
-      <div>
-        <div class="row" style="gap:10px;align-items:center">
-          <div class="career-club" id="career-club">—</div>
-          <div class="notif-wrap">
-            <button class="bell" id="notif-bell" title="What's happened at the club">🔔<span class="bell-badge" id="notif-badge" style="display:none">0</span></button>
-            <div id="notif-panel"></div>
-          </div>
+    <div class="app">
+
+      <!-- Who you are, where you stand, what is next. -->
+      <header class="topbar">
+        <div class="crest" id="club-crest">—</div>
+        <div class="tb-main">
+          <div class="tb-club" id="career-club">—</div>
+          <div class="tb-sub" id="tb-context"></div>
         </div>
-        <div class="muted"><span id="career-league"></span> · <span id="career-season"></span></div>
-        <div class="muted" id="career-manager" style="font-size:13px"></div>
-      </div>
-      <div class="conf-wrap">
-        <div class="conf-top"><span>Board confidence</span><span id="board-style">—</span></div>
-        <div class="conf-track"><i class="conf" id="confidence-bar" style="width:60%"></i></div>
-        <div class="muted" style="font-size:12px;margin-top:4px"><span id="confidence-value">60</span>/100 · <span id="board-brief"></span></div>
-        <div class="conf-top" style="margin-top:10px"><span>The supporters</span><span id="fans-mood">—</span></div>
-        <div class="conf-track"><i class="conf" id="fans-bar" style="width:56%"></i></div>
-        <div class="muted" style="font-size:12px;margin-top:4px"><span id="fans-value">56</span>/100 · <span id="fans-blurb"></span></div>
-      </div>
+        <div class="tb-pos" id="tb-pos-wrap"><b id="tb-pos">—</b><span id="tb-pos-lab">POSITION</span></div>
+        <div class="notif-wrap">
+          <button class="bell" id="notif-bell" title="What's happened at the club">🔔<span class="bell-badge" id="notif-badge" style="display:none">0</span></button>
+          <div id="notif-panel"></div>
+        </div>
+      </header>
+
+      <!-- The one scrolling region. Which tab is showing decides what is in it. -->
+      <main class="app-body" id="app-body">
+
+        <!-- SEASON: the decisions, and the log under them. -->
+        <div class="pane" id="pane-season">
+          <div id="stage"></div>
+          <div class="tier-label" id="log-label">The log</div>
+          <div id="logfeed"></div>
+        </div>
+
+        <!-- SQUAD / TACTICS / CLUB: reference. One pane, filled on demand. -->
+        <div class="pane" id="pane-ref" hidden>
+          <div class="seg" id="ref-seg"></div>
+          <div id="tab-body" class="table-scroll"></div>
+        </div>
+
+      </main>
+
+      <!-- Always know where you are and what else there is. -->
+      <nav class="tabbar" id="tabbar">
+        <button class="tabb on" data-nav="season"><span class="ic">⚽</span>SEASON</button>
+        <button class="tabb" data-nav="squad"><span class="ic">👥</span>SQUAD</button>
+        <button class="tabb" data-nav="tactics"><span class="ic">📋</span>TACTICS</button>
+        <button class="tabb" data-nav="club"><span class="ic">🏛</span>CLUB<i class="nav-dot" id="club-dot" hidden></i></button>
+      </nav>
+
     </div>
-
-    <!-- Last season — a compact reminder of where you stand -->
-    <div class="tier-label" id="lastseason-label">Last season</div>
-    <div id="lastseason"></div>
-
-    <!-- Reference — the table, your record and the wider world. Sits ABOVE the
-         decisions panel and to the left: squad, tactics and contracts used to
-         live down here too, but the pre-season hub carries all three as its own
-         sub-tabs now, so having them twice on one page was only ever a second
-         place to look. What is left is the three surfaces the hub does NOT
-         cover, plus the academy. Collapsed until asked for. -->
-    <div id="lower-tabs">
-      <div class="tabs" style="justify-content:flex-start">
-        <button class="tab" data-tab="squad">SQUAD</button>
-        <button class="tab" data-tab="table">TABLE</button>
-        <button class="tab" data-tab="career">CAREER</button>
-        <button class="tab" data-tab="world">WORLD</button>
-        <button class="tab" data-tab="youth">YOUTH</button>
-        <button class="tab" data-tab="awards">AWARDS</button>
-      </div>
-      <div class="muted" id="tab-hint" style="font-size:11px;margin:-6px 0 8px"></div>
-      <div id="tab-body" class="table-scroll"></div>
-    </div>
-
-    <!-- Decisions — the heart of the game, where almost everything happens -->
-    <div class="tier-label">Decisions</div>
-    <div id="stage"></div>
-
-    <!-- The log — always open, so you see what the board and the world did -->
-    <div class="tier-label">The log</div>
-    <div id="logfeed"></div>
-
   </section>
 
   <!-- ------------------------------- LEGACY ------------------------------ -->
