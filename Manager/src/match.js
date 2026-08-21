@@ -154,11 +154,11 @@
    * a flat profile. That keeps it usable for a neutral-venue cup tie, a
    * simulated friendly, or a future "what if" screen, and it means one profile
    * can be built once per season instead of once per match. */
-  function teamProfile(club, manager) {
+  function teamProfile(club, manager, comp) {
     const mods = manager ? MG.managers.matchModifiers(manager, club) : {
       attack: 0, midfield: 0, defence: 0, home: 1, quality: 0.5, fit: 1, variance: 1,
     };
-    const r = club.ratings;
+    const r = MG.clubs.ratingsFor ? MG.clubs.ratingsFor(club, comp) : club.ratings;
     // A goalkeeper is worth roughly a fifth of the defensive rating — enough
     // that an elite keeper behind an ordinary back four is worth buying.
     const defence = r.defence * 0.8 + r.keeper * 0.2;
@@ -166,7 +166,7 @@
      * function used to trigger it twice — once inside depthScore and once
      * inside teamMorale — for the same club, in the same call, producing the
      * same eleven both times. Picked once here and handed to both. */
-    const xi = MG.tactics ? MG.tactics.effectiveXI(club) : null;
+    const xi = MG.tactics ? MG.tactics.effectiveXI(club, comp) : null;
     return {
       id: club.id,
       name: club.name,

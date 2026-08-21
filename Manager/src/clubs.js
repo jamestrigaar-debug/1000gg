@@ -334,6 +334,25 @@
   /** Recompute the three unit ratings from the squad plus the fixed identity
    *  offset and whatever the manager's decisions did. Called after every
    *  transfer window and every development pass. */
+  /* The unit ratings for a club fielding its sheet for `comp`. The league
+   * side's ratings are the cached club.ratings; a cup or European side is
+   * computed on the spot, and only when the manager has actually named one —
+   * every AI club in the world auto-picks, so this costs nothing world-wide.
+   * Without it a cup team sheet would be a picture: the manager could name a
+   * side and the engine would field the league eleven regardless. */
+  function ratingsFor(club, comp) {
+    if (!comp || comp === "league" || !MG.tactics || !MG.tactics.planIds) return club.ratings;
+    if (!MG.tactics.planIds(club, comp)) return club.ratings;
+    const r = MG.tactics.xiRatings(club, comp);
+    const mod = (club.modifiers && club.modifiers.unit) || { attack: 0, midfield: 0, defence: 0 };
+    return {
+      attack: clamp(r.attack + club.identity.attack + mod.attack, 20, 99),
+      midfield: clamp(r.midfield + club.identity.midfield + mod.midfield, 20, 99),
+      defence: clamp(r.defence + club.identity.defence + mod.defence, 20, 99),
+      keeper: clamp(r.keeper, 20, 99),
+    };
+  }
+
   function refreshRatings(club) {
     // Ratings come from the ELEVEN on the pitch, not the whole squad — see
     // tactics.js. Picking a team is supposed to matter, and it cannot matter
@@ -1087,7 +1106,7 @@
   MG.clubs = {
     LEAGUES, LEAGUE_KEYS, PL_BANDS, ENGLISH_PYRAMID, leagueIdFor,
     BOARD_STYLES, BOARD_STYLE_KEYS, rollBoardStyle,
-    createClub, calibrateReputation, calibrateFacilities, calibrateIdentity, refreshRatings, clubStrength,
+    createClub, calibrateReputation, calibrateFacilities, calibrateIdentity, refreshRatings, ratingsFor, clubStrength,
     computeRevenue, wageBill, setBudgets, settleFinances, reinvestSurplus, OPERATING_COST_SHARE, operatingShare,
     LEAGUE_PLAYER_LEVEL, playerLevelFor,
     createBoard, standingIn, setSeasonTargets, describeTargets, evaluateSeason, wantsSacking,

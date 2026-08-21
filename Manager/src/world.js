@@ -411,7 +411,7 @@
       let p = world._profiles[key];
       if (!p) {
         const club = world.clubIndex[clubId];
-        p = MG.match.teamProfile(club, world.managerById(club.managerId));
+        p = MG.match.teamProfile(club, world.managerById(club.managerId), comp);
         const bonus = MG.clubs.focusBonus(club, comp);
         p.attack += bonus; p.midfield += bonus; p.defence += bonus;
         /* And how the side is set up for THIS block — push on, sit in, or the

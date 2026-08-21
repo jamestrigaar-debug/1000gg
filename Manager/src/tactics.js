@@ -31,31 +31,49 @@
     "4-4-2": {
       label: "4-4-2", blurb: "Two banks of four and a strike partnership. Nothing clever, hard to break.",
       slots: ["GK", "FB", "CB", "CB", "FB", "WG", "CM", "CM", "WG", "FW", "FW"],
+      /* Where each shirt stands, as percentages of the pitch: x across,
+       * y from the attacking end. Same order as `slots`. */
+      coords: [[50,93],[14,73],[37,78],[63,78],[86,73],[12,47],[38,51],[62,51],[88,47],[36,19],[64,19]],
       bias: { attack: 1, midfield: 0, defence: 1 },
     },
     "4-3-3": {
       label: "4-3-3", blurb: "Width and a front three. Commits bodies forward.",
       slots: ["GK", "FB", "CB", "CB", "FB", "CM", "CM", "CM", "WG", "FW", "WG"],
+      /* Where each shirt stands, as percentages of the pitch: x across,
+       * y from the attacking end. Same order as `slots`. */
+      coords: [[50,93],[14,73],[37,78],[63,78],[86,73],[28,53],[50,58],[72,53],[14,24],[50,15],[86,24]],
       bias: { attack: 3, midfield: 1, defence: -1 },
     },
     "4-2-3-1": {
       label: "4-2-3-1", blurb: "A double pivot behind a three. The modern default.",
       slots: ["GK", "FB", "CB", "CB", "FB", "DM", "DM", "WG", "AM", "WG", "FW"],
+      /* Where each shirt stands, as percentages of the pitch: x across,
+       * y from the attacking end. Same order as `slots`. */
+      coords: [[50,93],[14,73],[37,78],[63,78],[86,73],[36,59],[64,59],[14,35],[50,35],[86,35],[50,13]],
       bias: { attack: 1, midfield: 3, defence: 1 },
     },
     "3-5-2": {
       label: "3-5-2", blurb: "Wing-backs and a packed middle. Owns the centre, exposed wide.",
       slots: ["GK", "CB", "CB", "CB", "FB", "CM", "CM", "CM", "FB", "FW", "FW"],
+      /* Where each shirt stands, as percentages of the pitch: x across,
+       * y from the attacking end. Same order as `slots`. */
+      coords: [[50,93],[28,78],[50,81],[72,78],[10,51],[32,54],[50,58],[68,54],[90,51],[38,17],[62,17]],
       bias: { attack: 2, midfield: 4, defence: -2 },
     },
     "5-3-2": {
       label: "5-3-2", blurb: "A back five. Concede the ball and dare them to break you down.",
       slots: ["GK", "FB", "CB", "CB", "CB", "FB", "CM", "CM", "CM", "FW", "FW"],
+      /* Where each shirt stands, as percentages of the pitch: x across,
+       * y from the attacking end. Same order as `slots`. */
+      coords: [[50,93],[10,67],[30,79],[50,82],[70,79],[90,67],[30,51],[50,55],[70,51],[38,17],[62,17]],
       bias: { attack: -2, midfield: 0, defence: 5 },
     },
     "4-5-1": {
       label: "4-5-1", blurb: "Five across the middle and a lone striker. Suffocating, blunt.",
       slots: ["GK", "FB", "CB", "CB", "FB", "WG", "CM", "DM", "CM", "WG", "FW"],
+      /* Where each shirt stands, as percentages of the pitch: x across,
+       * y from the attacking end. Same order as `slots`. */
+      coords: [[50,93],[14,73],[37,78],[63,78],[86,73],[12,43],[35,47],[50,59],[65,47],[88,43],[50,15]],
       bias: { attack: -1, midfield: 4, defence: 2 },
     },
   };
@@ -208,15 +226,40 @@
     return xi;
   }
 
-  /** The XI a club will actually field: the manager's picked side if it is
-   *  still valid, otherwise the best available. */
-  function effectiveXI(club) {
+  /* THREE TEAM SHEETS, NOT ONE.
+   *
+   * A manager does not field the same side in the league, the cup and Europe,
+   * and until now the game made him: one club.xi, used everywhere. Rotation
+   * existed as a squad-wide dial with no way to say WHO gets rested and for
+   * WHICH competition. These are proper saved sides — a league eleven, a cup
+   * eleven and a European eleven — each of which is genuinely fielded in its
+   * own competition. A plan left unset falls back to the league side, and a
+   * league side left unset falls back to the best available, so a manager who
+   * never opens the screen still gets a sensible team.
+   *
+   * club.xi is kept as the league sheet so old saves and every existing caller
+   * keep working unchanged. */
+  const PLANS = ["league", "cup", "euro"];
+  const PLAN_LABEL = { league: "LEAGUE", cup: "CUP", euro: "EUROPE" };
+
+  /** The ids a club has named for a competition, or null for "not set". */
+  function planIds(club, comp) {
+    if (!comp || comp === "league") return club.xi || null;
+    return (club.xiPlans && club.xiPlans[comp]) || null;
+  }
+
+  /** The XI a club will actually field: the manager's picked side for this
+   *  competition if it is still valid, then his league side, then the best
+   *  available. */
+  function effectiveXI(club, comp) {
     const formationKey = club.formation || "4-4-2";
     const formation = FORMATIONS[formationKey] || FORMATIONS["4-4-2"];
-    if (club.xi && club.xi.length === formation.slots.length) {
-      const byId = {};
-      for (const p of club.squad) byId[p.id] = p;
-      const picked = club.xi.map((id) => byId[id] || null);
+    const byId = {};
+    let indexed = false;
+    for (const ids of [planIds(club, comp), planIds(club, "league")]) {
+      if (!ids || ids.length !== formation.slots.length) continue;
+      if (!indexed) { for (const p of club.squad) byId[p.id] = p; indexed = true; }
+      const picked = ids.map((id) => byId[id] || null);
       // A named side is only used while everyone in it is still at the club.
       // Injuries do NOT invalidate it — picking an unfit player is a decision
       // the manager is allowed to make, and to pay for.
@@ -225,17 +268,24 @@
     return autoPick(club, formationKey);
   }
 
-  /** Store a chosen XI. Pass an array of player ids in slot order. */
-  function setXI(club, ids) {
-    club.xi = ids ? ids.slice() : null;
+  /** Store a chosen XI for a competition. Pass player ids in slot order. */
+  function setXI(club, ids, comp) {
+    if (!comp || comp === "league") club.xi = ids ? ids.slice() : null;
+    else {
+      club.xiPlans = club.xiPlans || {};
+      if (ids) club.xiPlans[comp] = ids.slice();
+      else delete club.xiPlans[comp];
+    }
     MG.clubs.refreshRatings(club);
-    return club.xi;
+    return planIds(club, comp);
   }
 
   function setFormation(club, key) {
     if (!FORMATIONS[key]) return;
     club.formation = key;
-    club.xi = null;              // the old side no longer maps to the shape
+    // The old sides no longer map to the shape — all three of them.
+    club.xi = null;
+    club.xiPlans = null;
     MG.clubs.refreshRatings(club);
   }
 
@@ -243,10 +293,10 @@
    * Each slot contributes to the three units by the same weights players.js
    * uses, but now weighted by who is actually in that slot. The bench adds a
    * small tail so that depth still counts for something across a long season. */
-  function xiRatings(club) {
+  function xiRatings(club, comp) {
     const formationKey = club.formation || "4-4-2";
     const formation = FORMATIONS[formationKey] || FORMATIONS["4-4-2"];
-    const xi = effectiveXI(club);
+    const xi = effectiveXI(club, comp);
     const units = { attack: 0, midfield: 0, defence: 0 };
     const weights = { attack: 0, midfield: 0, defence: 0 };
     let keeper = 45;
@@ -287,24 +337,35 @@
 
   /** How well the picked side fits the shape — surfaced to the player so a bad
    *  team sheet is visible before it costs points, not after. */
-  function xiReport(club) {
+  function xiReport(club, comp) {
     const formationKey = club.formation || "4-4-2";
     const formation = FORMATIONS[formationKey] || FORMATIONS["4-4-2"];
-    const xi = effectiveXI(club);
+    const xi = effectiveXI(club, comp);
     const rows = xi.map((p, i) => {
       const slot = formation.slots[i];
-      if (!p) return { slot, player: null, fam: 0, warning: "empty" };
+      const at = (formation.coords && formation.coords[i]) || [50, 50];
+      if (!p) return { slot, player: null, fam: 0, warning: "empty", x: at[0], y: at[1] };
       const fam = familiarity(p.pos, slot);
+      const out = (p.season && p.season.outBlocks) || 0;
       return {
-        slot, player: p, fam,
+        slot, player: p, fam, x: at[0], y: at[1],
+        // What the shirt needs to say on a pitch: how well he fits it, how he
+        // is playing, and whether he is fit to be on it at all.
+        rating: Math.round(effectiveOverall(p, slot)),
         outOfPosition: fam < 0.9,
         injured: (p.season.injured || 0) > 0,
+        out,
+        fatigue: MG.blocks ? MG.blocks.fatigueOf(p) : 0,
         morale: p.morale == null ? 60 : p.morale,
         warning: fam < 0.7 ? "badly out of position" : fam < 0.9 ? "out of position" : null,
       };
     });
     const problems = rows.filter((r) => r.warning).length;
-    return { formation: formationKey, rows, problems, averageFamiliarity: round1(rows.reduce((t, r) => t + r.fam, 0) / rows.length * 100) };
+    return {
+      formation: formationKey, comp: comp || "league", rows, problems,
+      named: !!planIds(club, comp),
+      averageFamiliarity: round1(rows.reduce((t, r) => t + r.fam, 0) / rows.length * 100),
+    };
   }
 
   /* ------------------------- THE MATCHUP MATRIX ----------------------------
@@ -682,7 +743,7 @@
     PREDICT_RAMP, PREDICT_COST, systemKey, ageSystem, predictability, predictabilityLabel,
     FORMATIONS, FORMATION_KEYS, FAMILIARITY, familiarity,
     initMorale, effectiveOverall, teamMorale, shiftMorale, settleMorale,
-    autoPick, effectiveXI, setXI, setFormation, xiRatings, xiReport,
+    autoPick, effectiveXI, setXI, setFormation, xiRatings, xiReport, planIds, PLANS, PLAN_LABEL,
     MATCHUP, MATCHUP_XG, formationEdge, matchupLabel, backupsFor, depthScore,
     TRAINING_FOCUS, TRAINING_FOCUS_KEYS, formationFit, trainingFit, managerFit,
     synergyScore, developmentMultiplier, setTrainingFocus, autoTrainingFocus,

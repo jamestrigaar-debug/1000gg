@@ -59,6 +59,7 @@
     proposals: [], proposalChoices: [], proposalOutcomes: [],
     moveCards: [], moveChoices: [], moveOutcomes: [], lastMoveSummary: null, lastApproach: null,
     phase: null, earlySnapshot: null, preview: null, seasonBrief: null,
+    xiPlan: "league", xiMode: "view", xiPick: null,
     lastSeenNewsId: 0, notifOpen: false,
   };
   root.MG_STATE = state;
@@ -1764,6 +1765,14 @@
         <div class="plan-label" style="margin-top:12px">THE SQUAD <span class="muted">· who plays and who rests</span></div>
         <div class="plan-grid">${planCardsHtml(B.SQUAD_PLAN, B.SQUAD_KEYS, "squad", p.plan.squad)}</div>
         <div class="muted" style="font-size:11px;margin-top:10px">Currently in a ${esc(p.formation)}${p.plan.approach === "reshape" && p.plan.shape ? ` — switching to a ${esc(p.plan.shape)}` : ""}.</div>
+        <!-- The side itself, folded away. It belongs under "your plan" rather
+             than as a fifth question — the eleven you are sending out IS the
+             plan — but a full pitch open by default would double the length of
+             the brief on a phone. -->
+        <details class="drill sheet-fold"><summary><span class="accent">See the team sheet</span></summary>
+          ${pitchHtml(club(), "league", "view")}
+          <div class="muted" style="font-size:11px">Tap a player for his profile. Change the side in <b>TACTICS</b>.</div>
+        </details>
       </div>
 
       <button class="btn primary big sticky-go" id="block-play">PLAY ${esc(p.blockName)} ▶</button>`;
@@ -2545,13 +2554,6 @@
   function tacticsHtml() {
     const c = club();
     const formation = MG.tactics.FORMATIONS[c.formation];
-    const report = MG.tactics.xiReport(c);
-    // Group the eleven into rows by line so it reads like a team sheet.
-    const lineOf = (slot) => slot === "GK" ? 0 : (slot === "CB" || slot === "FB") ? 1
-      : (slot === "DM" || slot === "CM") ? 2 : slot === "AM" ? 3 : 4;
-    const rows = [[], [], [], [], []];
-    report.rows.forEach((r, i) => rows[lineOf(r.slot)].push({ r, i }));
-
     return `
       <div class="panel">
         <h3 class="muted">FORMATION</h3>
@@ -2574,14 +2576,8 @@
       ${synergyHtml(c)}
       ${scoutingHtml(c)}
       <div class="panel">
-        <h3 class="muted">STARTING XI · ${report.averageFamiliarity}% in position${report.problems ? ` · <span class="bad">${report.problems} misplaced</span>` : ""}</h3>
-        <div class="pitch"><div class="pitch-rows">
-          ${rows.map((line) => line.length ? `<div class="pitch-row">${line.map(({ r, i }) => slotHtml(r, i)).join("")}</div>` : "").join("")}
-        </div></div>
-        <div class="row" style="margin-top:10px">
-          <button class="btn tiny" id="auto-pick">AUTO-PICK BEST XI</button>
-          <span class="muted" style="font-size:12px">Tap a shirt to change who plays there.</span>
-        </div>
+        <h3 class="muted">THE TEAM SHEET</h3>
+        ${pitchControlsHtml(c, state.xiPlan, state.xiMode)}
       </div>
       ${matchupHtml(c)}
       ${depthHtml(c)}
@@ -2854,17 +2850,140 @@
     </div>`;
   }
 
-  function slotHtml(r, i) {
+  /* ======================== THE PITCH =====================================
+   * The team sheet as a team sheet: eleven players standing where they play,
+   * rather than eleven lines of text. This is the screen that makes a squad
+   * feel like people — you should be able to look at it and see YOUR side,
+   * recognise the shape, spot the tired man at right-back and tap him to find
+   * out how bad it is.
+   *
+   * Every shirt carries the four things worth knowing at a glance, and no
+   * more: how good he is IN THIS ROLE (not his overall — a winger at left-back
+   * is not an 84 there), what the role is, whether he is fit, and whether he
+   * belongs in the position. Anything else is one tap away on his profile. */
+  function condOf(r) {
+    if (r.out > 0) return { cls: "out", tip: `out ${r.out === 1 ? "one block" : `${r.out} blocks`}` };
+    if (r.injured) return { cls: "hurt", tip: "carrying a knock" };
+    if (r.fatigue >= 0.6) return { cls: "cooked", tip: "exhausted" };
+    if (r.fatigue >= 0.35) return { cls: "tired", tip: "tiring" };
+    return { cls: "fresh", tip: "fresh" };
+  }
+
+  /* GRADED AGAINST THE DIVISION, not against 99. On an absolute scale every
+   * player at a National League club reads red and every player at Manchester
+   * City reads purple, which tells a manager nothing about his own squad —
+   * the one thing the badge is for is spotting, at a glance, who is carrying
+   * the side and who is being carried. Against the level his division is
+   * actually played at, a 61 in the National League is a good player and a 61
+   * in the Premier League is a problem, which is true. */
+  function gradeOf(rating, level) {
+    const d = rating - level;
+    return d >= 10 ? "elite" : d >= 3 ? "good" : d >= -5 ? "ok" : "poor";
+  }
+
+  function shirtHtml(r, i, mode, level) {
     const p = r.player;
-    const cls = r.fam < 0.7 ? "bad" : r.fam < 0.9 ? "warn" : "";
-    return `<button class="slot ${cls}" data-slot="${i}">
-      <div class="slot-pos">${esc(r.slot)}</div>
-      <div class="slot-name">${p ? esc(p.name.split(" ").slice(-1)[0]) : "—"}</div>
-      <div><span class="slot-ovr">${p ? Math.round(p.overall) : "-"}</span> <span class="muted">${p ? esc(p.pos) : ""}</span></div>
-      ${r.warning ? `<div class="slot-flag ${r.fam < 0.7 ? "bad" : ""}">${esc(r.warning)}</div>` : ""}
-      ${r.injured ? `<div class="slot-flag bad">injured</div>` : ""}
+    const fam = r.fam < 0.7 ? "misfit" : r.fam < 0.9 ? "offrole" : "";
+    if (!p) {
+      return `<button class="shirt empty" data-slot="${i}" style="left:${r.x}%;top:${r.y}%">
+        <span class="shirt-badge">–</span><span class="shirt-name">EMPTY</span>
+        <span class="shirt-role">${esc(r.slot)}</span></button>`;
+    }
+    const cond = condOf(r);
+    const grade = gradeOf(r.rating, level);
+    const surname = p.name.split(" ").slice(-1)[0];
+    const title = `${p.name} — ${r.rating} in this role, ${cond.tip}${r.warning ? `, ${r.warning}` : ""}`;
+    return `<button class="shirt ${fam} ${mode === "swap" ? "swapping" : ""}" data-slot="${i}" data-pid="${p.id}"
+        title="${esc(title)}" aria-label="${esc(title)}" style="left:${r.x}%;top:${r.y}%">
+      <span class="shirt-top"><b class="shirt-badge ${grade}">${r.rating}</b><i class="cond ${cond.cls}"></i></span>
+      <span class="shirt-name">${esc(surname)}</span>
+      <span class="shirt-role">${esc(r.slot)}${r.warning ? " !" : ""}</span>
     </button>`;
   }
+
+  /** The pitch, its markings, and eleven players standing on it. */
+  function pitchHtml(c, comp, mode) {
+    const report = MG.tactics.xiReport(c, comp);
+    const level = MG.clubs.LEAGUE_PLAYER_LEVEL[c.leagueId] != null ? MG.clubs.LEAGUE_PLAYER_LEVEL[c.leagueId] : 55;
+    return `<div class="pitch-wrap">
+      <div class="pitch-grass" data-pitch="${esc(comp)}">
+        <div class="mk-halfway"></div><div class="mk-centre"></div>
+        <div class="mk-box top"></div><div class="mk-box bottom"></div>
+        <div class="mk-six top"></div><div class="mk-six bottom"></div>
+        ${report.rows.map((r, i) => shirtHtml(r, i, mode, level)).join("")}
+      </div>
+    </div>`;
+  }
+
+  /* Which sheet the manager is looking at, and what he is doing to it:
+   * "view" opens a profile when a shirt is tapped, "swap" changes who plays
+   * there. Two modes rather than two taps on every shirt, because opening a
+   * profile is what a manager does ten times more often than reshuffling. */
+  /* Both edits work on the sheet currently on screen, and both start from the
+   * ELEVEN THAT WOULD BE FIELDED rather than from whatever was stored — a cup
+   * sheet the manager has not named yet is showing his league side, and the
+   * first change he makes to it should keep the other ten men he can see. */
+  function currentIds(c) {
+    return MG.tactics.effectiveXI(c, state.xiPlan).map((p) => p && p.id);
+  }
+  function swapInXI(c, a, b) {
+    const ids = currentIds(c);
+    const t = ids[a]; ids[a] = ids[b]; ids[b] = t;
+    MG.tactics.setXI(c, ids, state.xiPlan);
+  }
+  function bringIn(c, slot, playerId) {
+    const ids = currentIds(c);
+    // If he is already on the pitch this is a swap, not a substitution.
+    const at = ids.indexOf(playerId);
+    if (at >= 0) { const t = ids[slot]; ids[slot] = ids[at]; ids[at] = t; }
+    else ids[slot] = playerId;
+    MG.tactics.setXI(c, ids, state.xiPlan);
+  }
+
+  function pitchControlsHtml(c, comp, mode) {
+    const T = MG.tactics;
+    const report = T.xiReport(c, comp);
+    const inherited = comp !== "league" && !report.named;
+    return `
+      <div class="seg plan-seg">${T.PLANS.map((k) => `
+        <button class="${k === comp ? "on" : ""}" data-xiplan="${k}">${esc(T.PLAN_LABEL[k])}</button>`).join("")}</div>
+      <div class="pitch-meta">
+        <span class="${report.problems ? "bad" : "accent"}">${report.averageFamiliarity}% in position</span>
+        ${report.problems ? `<span class="bad">${report.problems} misplaced</span>` : ""}
+        ${inherited ? `<span class="muted">using your league side</span>` : ""}
+      </div>
+      ${pitchHtml(c, comp, mode)}
+      <div class="row pitch-actions">
+        <button class="btn tiny ${mode === "swap" ? "primary" : ""}" id="xi-mode">${mode === "swap" ? "DONE SWAPPING" : "CHANGE THE SIDE"}</button>
+        <button class="btn tiny" id="auto-pick">AUTO-PICK</button>
+        ${inherited ? "" : `<button class="btn tiny ghost" id="xi-clear">RESET</button>`}
+        <span class="muted pitch-hint">${mode === "swap" ? "Tap two shirts to swap them, or a shirt then a sub below." : "Tap a player to open his profile."}</span>
+      </div>
+      ${mode === "swap" ? benchHtml(c, comp) : ""}`;
+  }
+
+  /* The men not on the pitch. Only shown while swapping — a bench nobody
+   * asked for is just the squad list again, and that already has a tab. */
+  function benchHtml(c, comp) {
+    const xi = new Set(MG.tactics.effectiveXI(c, comp).filter(Boolean).map((p) => p.id));
+    const level = MG.clubs.LEAGUE_PLAYER_LEVEL[c.leagueId] != null ? MG.clubs.LEAGUE_PLAYER_LEVEL[c.leagueId] : 55;
+    const rest = c.squad.filter((p) => !xi.has(p.id))
+      .sort((a, b) => b.overall - a.overall).slice(0, 12);
+    if (!rest.length) return "";
+    return `<div class="bench">
+      <div class="bench-lab">THE REST OF THE SQUAD</div>
+      <div class="bench-row">${rest.map((p) => {
+        const out = (p.season && p.season.outBlocks) || 0;
+        const cond = condOf({ out, injured: (p.season.injured || 0) > 0, fatigue: MG.blocks ? MG.blocks.fatigueOf(p) : 0 });
+        return `<button class="bench-man" data-bench="${p.id}">
+          <span class="bench-ovr ${gradeOf(Math.round(p.overall), level)}">${Math.round(p.overall)}</span>
+          <span class="bench-name">${esc(p.name.split(" ").slice(-1)[0])}</span>
+          <span class="bench-pos">${esc(p.pos)}</span><i class="cond ${cond.cls}"></i>
+        </button>`;
+      }).join("")}</div>
+    </div>`;
+  }
+
 
   /* Which places mean something in a given division. The English pyramid is
    * the interesting one: two automatic promotions (one out of the National
@@ -3256,8 +3375,45 @@
     for (const b of document.querySelectorAll("[data-trainfocus]")) {
       b.addEventListener("click", () => { MG.tactics.setTrainingFocus(c, b.dataset.trainfocus); render(); });
     }
-    for (const b of document.querySelectorAll("[data-slot]")) {
-      b.addEventListener("click", () => openSlotChooser(Number(b.dataset.slot)));
+    /* THE PITCH. In view mode a shirt opens the man's profile, which is what
+     * a manager wants ten times more often than reshuffling. In swap mode the
+     * first tap selects and the second swaps — a shirt with a shirt, or a
+     * shirt with somebody off the bench. */
+    for (const b of document.querySelectorAll("[data-xiplan]")) {
+      b.addEventListener("click", () => { state.xiPlan = b.dataset.xiplan; state.xiPick = null; render(); });
+    }
+    const modeBtn = $("xi-mode");
+    if (modeBtn) modeBtn.addEventListener("click", () => {
+      state.xiMode = state.xiMode === "swap" ? "view" : "swap";
+      state.xiPick = null;
+      render();
+    });
+    const clearBtn = $("xi-clear");
+    if (clearBtn) clearBtn.addEventListener("click", () => {
+      MG.tactics.setXI(c, null, state.xiPlan); state.xiPick = null; render();
+    });
+    for (const b of document.querySelectorAll(".shirt[data-slot]")) {
+      b.addEventListener("click", () => {
+        const slot = Number(b.dataset.slot);
+        if (state.xiMode !== "swap") {
+          if (b.dataset.pid) openPlayer(Number(b.dataset.pid));
+          return;
+        }
+        if (state.xiPick == null) { state.xiPick = slot; render(); return; }
+        if (state.xiPick === slot) { state.xiPick = null; render(); return; }
+        swapInXI(c, state.xiPick, slot);
+        state.xiPick = null;
+        render();
+      });
+      if (state.xiMode === "swap" && Number(b.dataset.slot) === state.xiPick) b.classList.add("picked");
+    }
+    for (const b of document.querySelectorAll("[data-bench]")) {
+      b.addEventListener("click", () => {
+        if (state.xiPick == null) return;
+        bringIn(c, state.xiPick, Number(b.dataset.bench));
+        state.xiPick = null;
+        render();
+      });
     }
     for (const b of document.querySelectorAll("[data-squadsort]")) {
       b.addEventListener("click", () => { state.squadSort = b.dataset.squadsort; refreshLists(); });
@@ -3278,7 +3434,14 @@
       el.addEventListener("click", (e) => { e.stopPropagation(); openPlayer(Number(el.dataset.player)); });
     }
     const auto = $("auto-pick");
-    if (auto) auto.addEventListener("click", () => { MG.tactics.setXI(c, null); render(); });
+    if (auto) auto.addEventListener("click", () => {
+      /* Auto-pick writes the best available side into THIS sheet rather than
+       * clearing it, so "auto-pick my cup team" leaves a cup team behind
+       * instead of quietly falling back to the league eleven. */
+      MG.tactics.setXI(c, MG.tactics.autoPick(c, c.formation).map((p) => p && p.id), state.xiPlan);
+      state.xiPick = null;
+      render();
+    });
     // The search box updates its own results div only — a full renderTab()
     // on every keystroke would tear down and rebuild the input itself,
     // dropping focus and the cursor position after every single letter.
@@ -3346,73 +3509,14 @@
     for (const el of document.querySelectorAll("[data-close]")) el.addEventListener("click", closeModal);
   }
 
-  /** Swap the player in a given XI slot. Sortable by rating (for this role),
-   *  position or name — the QOL the screenshot asked for. */
-  function openSlotChooser(slotIndex) {
-    const c = club();
-    const formation = MG.tactics.FORMATIONS[c.formation];
-    const slot = formation.slots[slotIndex];
-    const currentIds = MG.tactics.effectiveXI(c).map((p) => p && p.id);
-
-    // Rating in the chooser means rating IN THIS SLOT — a winger at left-back
-    // sorts by what he is worth there, not by his headline number.
-    const chooserSorts = {
-      rating: (a, b) => MG.tactics.effectiveOverall(b, slot) - MG.tactics.effectiveOverall(a, slot),
-      pos: SORTS.pos, name: SORTS.name,
-    };
-    const options = c.squad.slice().sort(chooserSorts[state.chooserSort] || chooserSorts.rating);
-
-    modal(`<h3 class="muted">WHO PLAYS AT <span class="ppos ${posClass(slot)}">${esc(slot)}</span>?</h3>
-      <div class="sortbar"><span class="muted">Sort</span>
-        ${["rating", "pos", "name"].map((k) => `<button class="btn tiny ${state.chooserSort === k ? "on-mentor" : ""}" data-csort="${k}">${k === "pos" ? "POSITION" : k.toUpperCase()}</button>`).join("")}
-      </div>
-      <div class="muted" style="font-size:12px;margin-bottom:8px">The big number is the player's <b>rating</b> — fixed, the same everywhere in the game. <b>IN ROLE</b> is what he is worth <i>specifically in this shirt</i>, and it can land above or below that number: a natural fit, good form, high morale and full fitness push it up, an unfamiliar position or a knock pulls it down. This is about the <b>player</b>, not the manager or the formation — tactics and the manager's own influence affect the <b>team's</b> rating on the pitch, never an individual's number here.</div>
-      <div class="chooser-list">${options.map((p) => {
-        const fam = MG.tactics.familiarity(p.pos, slot);
-        const inXI = currentIds.indexOf(p.id);
-        const pc = posClass(p.pos);
-        const famCls = fam >= 0.9 ? "accent" : fam >= 0.7 ? "gold" : "bad";
-        // The coloured number is ALWAYS the player's own rating, exactly as it
-        // reads everywhere else in the game. What changes with the shirt is the
-        // in-role figure beside it, shown with the swing that produced it —
-        // showing the adjusted number in the big slot made two different values
-        // both look like "his rating".
-        const eff = Math.round(MG.tactics.effectiveOverall(p, slot));
-        const delta = eff - Math.round(p.overall);
-        const effCls = delta >= 0 ? "accent" : delta <= -6 ? "bad" : "gold";
-        return `<button class="pcard" data-pick="${p.id}" style="cursor:pointer">
-          <div class="prating ${pc}">${Math.round(p.overall)}</div>
-          <div class="pbody">
-            <div class="pname">${esc(p.name)}${inXI >= 0 && inXI !== slotIndex ? ` <span class="muted" style="font-weight:400;font-size:11px">(now ${esc(formation.slots[inXI])})</span>` : ""}</div>
-            <div class="pmeta"><span class="ppos ${pc}">${esc(p.pos)}</span>${p.age}y · <span class="${famCls}">${Math.round(fam * 100)}% suited</span>${p.season.injured > 0 ? ` · <span class="inj">injured</span>` : ""}</div>
-          </div>
-          <div class="pactions" style="text-align:right">
-            <span class="${effCls}" style="font-weight:800;font-size:15px">${eff}</span>
-            <span class="muted" style="font-size:10px;display:block">IN ROLE ${delta >= 0 ? "+" : ""}${delta}</span>
-          </div>
-        </button>`;
-      }).join("")}</div>`);
-
-    for (const b of document.querySelectorAll("[data-csort]")) {
-      b.addEventListener("click", () => { state.chooserSort = b.dataset.csort; openSlotChooser(slotIndex); });
-    }
-    for (const b of document.querySelectorAll("[data-pick]")) {
-      b.addEventListener("click", () => {
-        const id = Number(b.dataset.pick);
-        const ids = currentIds.slice();
-        const existing = ids.indexOf(id);
-        // Picking someone already in the side swaps the two shirts.
-        if (existing >= 0) { ids[existing] = ids[slotIndex]; }
-        ids[slotIndex] = id;
-        MG.tactics.setXI(c, ids);
-        closeModal();
-        render();
-      });
-    }
-  }
-
-  /** "2026/27" from a calendar start year — the label the club and career
-   *  screens already use for a completed season. */
+  /* openSlotChooser lived here: a modal that swapped the man in one slot,
+   * reached by tapping a shirt. The pitch replaced it — tapping a shirt now
+   * opens his profile, and CHANGE THE SIDE turns the same shirts into a
+   * two-tap swap with the rest of the squad laid out underneath. One less
+   * screen to leave and come back from, and the manager can see the shape he
+   * is changing while he changes it.
+   *
+   * state.chooserSort went with it. */
   function seasonLabel(year) {
     if (year == null) return "—";
     return `${year}/${String(year + 1).slice(2)}`;
