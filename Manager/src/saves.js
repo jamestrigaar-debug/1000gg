@@ -10,9 +10,9 @@
  *
  * WHAT GETS SAVED, AND WHY IT'S SAFE TO DROP THE REST
  *   world.clubs / managers / freeManagers / news / history / playerClubId /
- *   playerMovements / playerMatches / agentRosters / the early-season
- *   partial-league state / rng.state / seed — everything the simulation
- *   cannot regenerate.
+ *   playerMovements / playerMatches / agentRosters / the campaign in flight
+ *   (world.seasonState) / rng.state / seed — everything the simulation cannot
+ *   regenerate.
  *   world.clubIndex / managerIndex / _profiles / _selections are NOT saved —
  *   they are pure derived lookups (id -> object, or a cached rating), exactly
  *   the same ones createWorld leaves empty and world.js rebuilds on first
@@ -24,9 +24,11 @@
  *   fresh after every load instead, the same way the rest of the game
  *   already treats them.
  *
- * MILESTONES — called from ui.js at: career start, taking a job, before/
- * after a season sim, after the transfer window's movements are resolved,
- * after each end-of-season decision card, and season complete. Each call is
+ * MILESTONES — called from ui.js at: career start, taking a job, EVERY BLOCK
+ * BOUNDARY (a season stops five times now, and each stop is a place a player
+ * on a phone actually puts the game down), after the transfer window's
+ * movements are resolved, after each end-of-season decision card, and season
+ * complete. Each call is
  * cheap (an IndexedDB put of one record) and fire-and-forget from the
  * caller's point of view — see saveNow's return value if a caller ever
  * needs to know whether it actually landed.
@@ -38,7 +40,13 @@
   const DB_NAME = "manager1000gg";
   const DB_VERSION = 1;
   const STORE = "career";
-  const SCHEMA_VERSION = 1;
+  /* 2 — the two-month blocks. A season is now a state that persists between
+   * five stops (world.seasonState) rather than a single call, and competition
+   * state moved from club objects to club ids. A v1 save has no seasonState
+   * and a fixture list of the wrong shape, so it is refused rather than
+   * half-loaded: loadCurrent returns null on a schema mismatch and the player
+   * starts a fresh career, which is the honest outcome. */
+  const SCHEMA_VERSION = 2;
   const KEY_CURRENT = "current";
   const KEY_PREVIOUS = "previous";
 
@@ -84,7 +92,14 @@
     "seed", "year", "season", "clubs", "managers", "freeManagers", "news",
     "history", "playerClubId", "playerMovements", "playerMatches",
     "agentRosters", "clubTransferLog",
-    "_partialLeague", "_earlySnapshot", "_lastEuroQualification", "_systemAgedSeason",
+    /* The campaign in flight. It holds every division's table and fixture
+     * list, every cup bracket and the European draw, all as club IDS rather
+     * than club objects — see competitions.buildFixtures for why that matters
+     * to a file this size. Saving mid-season is only possible because of it:
+     * a season now pauses five times, and each of those pauses is a place the
+     * player can put the game down. */
+    "seasonState",
+    "_lastEuroQualification", "_lastCupWinners", "_systemAgedSeason",
   ];
 
   function packWorld(world) {
@@ -119,6 +134,12 @@
     if (data.rngState != null) world.rng.state = data.rngState;
 
     MG.world.attachApi(world);
+    /* attachApi installs a FRESH match record, which is right for a new world
+     * and wrong for a restored one — it landed after the fields were copied
+     * and wiped the season's results on the way past. A save taken in October
+     * came back with an empty log and told the manager, at the end of it, that
+     * he had played twenty-three fewer games than he had. */
+    if (data.playerMatches) world.playerMatches = data.playerMatches;
 
     // Every id minted anywhere in the world (a signing, an academy graduate,
     // a regen, a newly generated manager) comes off these two counters —
@@ -132,6 +153,11 @@
       // the world mints collides with one of them.
       if (c.reserves) for (const p of c.reserves) if (p.id > maxPlayerId) maxPlayerId = p.id;
     }
+    // The radar's ruler is fitted from the population, and a restored world
+    // never went through createWorld — without this every profile in a
+    // resumed career would draw on the unfitted default.
+    if (MG.ratings.fitRadarScale) MG.ratings.fitRadarScale(world);
+
     MG.players.setNextId(maxPlayerId + 1);
     let maxManagerId = 0;
     for (const m of world.managers) if (m.id > maxManagerId) maxManagerId = m.id;
@@ -293,5 +319,13 @@
     return Promise.all([idbDel(KEY_CURRENT), idbDel(KEY_PREVIOUS)]).then(() => true).catch(() => false);
   }
 
-  MG.saves = { available, saveNow, loadCurrent, loadPrevious, hasSave, clearAll };
+  MG.saves = {
+    available, saveNow, loadCurrent, loadPrevious, hasSave, clearAll,
+    /* The serialisation pair, exported so it can be tested without a browser.
+     * Mid-season saving is a first-class path now that a season stops five
+     * times rather than once — a save taken in October has to come back at the
+     * same block, with the same tables, and finish the same way — and none of
+     * that was covered while these two were private to the module. */
+    packWorld, unpackWorld, SCHEMA_VERSION,
+  };
 })(typeof globalThis !== "undefined" ? globalThis : this);

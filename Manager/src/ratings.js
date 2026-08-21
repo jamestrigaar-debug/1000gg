@@ -434,6 +434,57 @@
     return clamp(Math.round(soften(v * c[0] + c[1] + (POS_OFFSET[pos] || 0) + aer + lift)), 2, 99);
   }
 
+  /* --------------------- THE RADAR'S OWN SCALE ----------------------------
+   * Every axis used to be drawn on the same 38-to-99 ruler, and that is why
+   * every good player filled the hexagon: the axes do not share a range. Real
+   * Defending in this database runs from the teens to the mid-nineties;
+   * Mental is squeezed into a band barely thirty points wide. Drawn on one
+   * ruler, the wide axis does all the talking and the narrow ones sit at a
+   * constant middling radius on every single player — six corners, two of
+   * which ever move.
+   *
+   * So each axis gets its own ruler, fitted to what the database actually
+   * contains: the bottom of the chart is the 3rd percentile of that axis
+   * across every player in the world, the top is the 99th. An axis is then
+   * showing where this player sits AMONG FOOTBALLERS on that quality, which
+   * is the only question a radar was ever answering, and a player who is
+   * genuinely elite at one thing gets a spike instead of a slightly longer
+   * corner.
+   *
+   * Fitted once, from the world, at creation. Percentiles of the real
+   * population rather than hand-set bounds, so it stays honest if the
+   * database changes underneath it. */
+  const AXIS_KEYS = ["def", "phy", "spd", "att", "aer", "men"];
+  let RADAR_SCALE = null;
+
+  function fitRadarScale(world) {
+    const cols = AXIS_KEYS.map(() => []);
+    for (const c of world.clubs) {
+      for (const p of c.squad) {
+        const axes = radarAxes(p);
+        for (let i = 0; i < axes.length && i < cols.length; i++) cols[i].push(axes[i].value);
+      }
+    }
+    const scale = {};
+    AXIS_KEYS.forEach((k, i) => {
+      const v = cols[i].sort((a, b) => a - b);
+      if (v.length < 50) { scale[k] = [38, 99]; return; }
+      const at = (q) => v[clamp(Math.floor(v.length * q), 0, v.length - 1)];
+      const lo = at(0.03), hi = at(0.99);
+      // Never let a degenerate axis collapse to a point.
+      scale[k] = hi - lo >= 12 ? [lo, hi] : [lo, lo + 12];
+    });
+    RADAR_SCALE = scale;
+    return scale;
+  }
+
+  /** [lo, hi] for the axis at index `i`, or a sane default before fitting. */
+  function radarScale(i) {
+    const k = AXIS_KEYS[i];
+    if (RADAR_SCALE && RADAR_SCALE[k]) return RADAR_SCALE[k];
+    return [38, 99];
+  }
+
   function radarAxes(player) {
     const a = player.attrs || {};
     const men = player.mentalityRating || 55;
@@ -611,6 +662,6 @@
   MG.ratings = {
     ROLE_WEIGHTS, ROLE_INFLUENCE, attrValue, roleRating,
     hidden, resetHidden, pruneHidden, rollSeasonForm, fatigueFactor,
-    radarAxes, axisMean, AXIS_RELEVANCE, AER_POS, DEF_ATR_WEIGHT, heightScore, defenceAttribute,
+    radarAxes, radarScale, fitRadarScale, AXIS_KEYS, axisMean, AXIS_RELEVANCE, AER_POS, DEF_ATR_WEIGHT, heightScore, defenceAttribute,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

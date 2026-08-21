@@ -65,13 +65,28 @@
    * If the rating scales are ever rebalanced, re-run the benchmark and retune
    * this constant — it is calibration, not physics. */
   const BASE_XG = 0.90;
+  const XG_FLOOR = 0.45;   // see resolveDuel
   /** Attack rating points a fully-predictable side gives up. See tactics.js. */
   const PREDICT_COST = 2.5;
+  /* The floor is 0.45 of an expected goal, not 0.1.
+   *
+   * At 0.1 the engine was saying that a side outclassed badly enough has a
+   * ninety per cent chance of being nilled, and real football does not do that
+   * — the worst team in the division still wins a corner, still breaks once,
+   * still forces a save. The consequence showed up in exactly one place on the
+   * benchmark and had been sitting there for a long time: both-teams-scored ran
+   * around 45% against a real 50%, the largest standing gap of any metric, and
+   * every mechanic that made two sides differ from each other ate further into
+   * it. Raising the floor closes most of that gap and moves nothing else —
+   * measured over twenty seasons on three seeds, goals per game, home/away/draw
+   * shares, 0-0 and 1-1 rates and the title race are all within noise of where
+   * they were, while both-teams-scored improves and the bottom club's points
+   * total moves TOWARD its real-world target rather than away from it. */
   function resolveDuel(rng, attack, defence, chaosRange) {
     const diff = attack - defence;
     const baseXG = BASE_XG + diff / 24;
     const chaos = rng.between(-chaosRange, chaosRange) / 100;
-    return Math.max(0.1, baseXG * (1 + chaos));
+    return Math.max(XG_FLOOR, baseXG * (1 + chaos));
   }
 
   /* --------------------------- DIXON-COLES --------------------------------
@@ -324,10 +339,20 @@
   const GOAL_WEIGHT = { FW: 10, WG: 6, AM: 5, CM: 2.2, DM: 0.7, FB: 0.6, CB: 0.9, GK: 0.02 };
   const ASSIST_WEIGHT = { FW: 4, WG: 8, AM: 8, CM: 5, DM: 1.6, FB: 3, CB: 0.7, GK: 0.1 };
 
-  function buildSelection(club, manager, rng) {
+  /* `rotation` is the block plan's squad lever, 0..1 — see blocks.js. At 0 the
+   * eleven play until they drop; at 1 the minutes are spread across the squad.
+   * It reshapes the pecking-order curve below rather than picking a different
+   * team, which is what rotation actually is: the same manager, the same first
+   * choice, a different willingness to use the men behind him. */
+  function buildSelection(club, manager, rng, opts) {
     const squad = club.squad;
+    const rotation = clamp(opts && opts.rotation != null
+      ? opts.rotation
+      : (MG.blocks ? MG.blocks.rotationOf(club) : 0.5), 0, 1);
     const youthShare = clamp(
-      MG.managers.youthAppetite(manager, club) + ((club.modifiers && club.modifiers.youthBias) || 0),
+      MG.managers.youthAppetite(manager, club)
+        + ((club.modifiers && club.modifiers.youthBias) || 0)
+        + (MG.blocks ? MG.blocks.youthBiasOf(club) : 0),
       0.02, 0.6);
     const byPos = {};
     for (const p of squad) (byPos[p.pos] = byPos[p.pos] || []).push(p);
@@ -350,11 +375,21 @@
         // Starters play most of it, the next man in plays a chunk, the rest
         // pick up scraps. Rotation is implicit rather than per-match.
         const starters = def.starters;
+        /* The pecking-order curve, flattened by rotation. A settled side gives
+         * its first choice almost every minute and its fourth choice scraps;
+         * a rotated one has a genuine squad, and the difference between those
+         * two shapes is the difference between arriving at April fresh and
+         * arriving at it broken. */
+        /* Centred on 0.5, where the curve is EXACTLY what it was before block
+         * plans existed. That matters: the AI's choices average out to about a
+         * half across the world, so adding the lever moves individual clubs
+         * without quietly re-tuning the whole game underneath them. */
+        const r = rotation - 0.5;
         let share;
-        if (i < starters) share = 0.78 - i * 0.04;
-        else if (i < starters + 1) share = 0.34;
-        else if (i < starters + 2) share = 0.15;
-        else share = 0.05;
+        if (i < starters) share = (0.78 - r * 0.16) - i * (0.04 - r * 0.02);
+        else if (i < starters + 1) share = 0.34 + r * 0.36;
+        else if (i < starters + 2) share = 0.15 + r * 0.26;
+        else share = 0.05 + r * 0.14;
         share *= rng.between(0.85, 1.12);
         // An injured man plays only the part of the season he is fit for.
         share *= MG.players.availability(p);

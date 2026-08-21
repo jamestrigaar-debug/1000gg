@@ -190,6 +190,11 @@
       world.freeManagers.push(m);
     }
 
+    /* The radar's per-axis ruler, fitted from the population that was just
+     * built — see ratings.fitRadarScale. Has to happen after the squads exist
+     * and before anything draws a profile. */
+    if (MG.ratings.fitRadarScale) MG.ratings.fitRadarScale(world);
+
     // Every club starts with a stocked academy, so season one has prospects.
     if (MG.youth) for (const club of world.clubs) MG.youth.intake(world, club);
 
@@ -409,6 +414,16 @@
         p = MG.match.teamProfile(club, world.managerById(club.managerId));
         const bonus = MG.clubs.focusBonus(club, comp);
         p.attack += bonus; p.midfield += bonus; p.defence += bonus;
+        /* And how the side is set up for THIS block — push on, sit in, or the
+         * shape they drilled in pre-season. Applied here rather than baked into
+         * club.ratings because it lasts two months, not a season, and the
+         * profile cache is already dropped at every block boundary. */
+        if (MG.blocks) {
+          const shift = MG.blocks.shiftFor(club);
+          p.attack += shift.attack;
+          p.defence += shift.defence;
+          p.midfield += shift.midfield || 0;
+        }
         /* teamProfile's own `form` is club.form (momentum) PLUS
          * modifiers.form (a decision card's season-long swing) PLUS a morale
          * term — see match.js. Momentum is the one part of that sum which
@@ -459,7 +474,22 @@
       const stamp = MG.tactics ? MG.tactics.squadStamp(club) : club.squad.length;
       let s = world._selections[clubId];
       if (!s || s.stamp !== stamp) {
-        s = world._selections[clubId] = MG.match.buildSelection(club, world.managerById(club.managerId), world.rng);
+        /* Its own stream, NOT world.rng. Building a selection draws a rotation
+         * jitter per player, so while it drew from the shared sequence the
+         * simulation's numbers depended on WHEN this cache happened to miss —
+         * and the cache is derived state that a save throws away. Loading a
+         * mid-season save rebuilt every selection at once, spent draws the
+         * original run had spent much earlier, and the rest of the campaign
+         * came out different: same seed, same squads, same tables, different
+         * season. Keyed on the squad stamp, so a signing still reshuffles the
+         * pecking order — it just does it reproducibly. */
+        /* The block and the squad plan are part of the key: rotating in October
+         * has to produce a different set of minutes from rotating in August, or
+         * "rotate" means picking the same eleven with a different label on it. */
+        const S = world.seasonState;
+        const plan = MG.blocks ? MG.blocks.planFor(club).squad : "";
+        const rng = MG.createRng(`${world.seed}|selection|${clubId}|${stamp}|${S ? S.block : 0}|${plan}`);
+        s = world._selections[clubId] = MG.match.buildSelection(club, world.managerById(club.managerId), rng);
         s.stamp = stamp;
       }
       return s;
@@ -492,6 +522,14 @@
     world.prepareSeason = () => prepareSeason(world);
     world.advanceSeason = () => advanceSeason(world);
     world.beginSeason = () => beginSeason(world);
+    /* The next two months, everywhere. Returns the block report for the
+     * managed club — see the five-blocks header below. */
+    world.playBlock = () => playBlock(world);
+    world.blockPreview = () => blockPreview(world);
+    world.blocksLeft = () => {
+      const S = world.seasonState;
+      return S && S.season === world.season ? Math.max(0, BLOCKS - S.block) : BLOCKS;
+    };
     world.leagueTable = (leagueId) => {
       const last = world.history[world.history.length - 1];
       return last && last.leagues[leagueId] ? last.leagues[leagueId].table : null;
@@ -583,21 +621,61 @@
   }
 
   /* ------------------------------ THE SEASON ------------------------------ */
-  /* ---------------------- THE EARLY-SEASON CHECKPOINT ----------------------
-   * Plays the managed club's OWN division up to roughly a third of the way
-   * through, then stops and hands back what actually happened. Everything
-   * else in the world — the other nine divisions, the cups, Europe — is
-   * untouched and runs later, inside advanceSeason, exactly as before.
+  /* ======================= THE SEASON, IN FIVE BLOCKS ======================
+   * A season used to be one simulation call with a single stop in it. That is
+   * why the game read as flat: the manager picked a shape in July, watched a
+   * third of a season, changed something, and then found out in one go how the
+   * other two thirds had gone. Nothing he chose could be seen taking effect,
+   * because there was never a moment small enough to see it in.
    *
-   * This is what makes an early-season decision a real decision rather than
-   * a dressed-up pre-season one: the manager is looking at genuine results,
-   * a genuine table and a genuine injury list, and whatever he changes is
-   * played out over the fixtures that have not happened yet.
+   * So the campaign is now a STATE that gets played forward five times, in
+   * two-month blocks, and the manager stands in the middle of it four times
+   * over rather than once:
    *
-   * Returns null when there is no human club (every test harness, and the
-   * realism benchmark) — in which case nothing about the season changes at
-   * all, which is exactly why the benchmark is unaffected by any of this. */
-  const EARLY_SEASON_SHARE = 0.32;
+   *     AUG-SEP   OCT-NOV   DEC-JAN   FEB-MAR   APR-MAY
+   *        |         |         |         |         |
+   *      block 1   block 2   block 3   block 4   block 5
+   *
+   * What changed structurally, and why each piece had to move:
+   *
+   *   - The WHOLE WORLD ticks together. Every division advances by a fifth
+   *     each block, not just the managed one. A block report that showed the
+   *     manager his own table while the rest of the world was still on zero
+   *     games would be a lie he could read straight off the screen.
+   *   - Cups and Europe are spread across blocks 2-5 instead of being played
+   *     end-to-end after the league finished. A cup that resolves in one pass
+   *     either happens entirely inside one block, or the manager learns he
+   *     went out in the third round at the same moment he learns where he
+   *     finished. Both are what the old build did, and both are why the cup
+   *     never felt like part of the season.
+   *   - Europe is entered on LAST season's finishing positions. It always
+   *     should have been; the old code could get away with reading the
+   *     current table because Europe ran after the league had already ended.
+   *     Starting the continental campaign in October means the table it would
+   *     have read does not exist yet. See seedEuroQualification for the one
+   *     season that has nothing behind it.
+   *
+   * Everything from the final whistle onwards — money, the boardroom,
+   * promotion and relegation, the carousel, the awards, the summer — is
+   * untouched, and still runs exactly once, at the end of advanceSeason.
+   *
+   * advanceSeason itself is now a loop over playBlock followed by that
+   * end-of-season half, so a headless world (every test harness, the realism
+   * benchmark) plays precisely the same football as a managed one without
+   * needing to know blocks exist at all. */
+  const BLOCKS = 5;
+  const BLOCK_NAMES = ["AUG–SEP", "OCT–NOV", "DEC–JAN", "FEB–MAR", "APR–MAY"];
+  /* No cup football in the opening block: the league is what August is for,
+   * and it keeps the first stop of a new season about the league table. */
+  const CUP_FIRST_BLOCK = 2;
+
+  /** How many rounds of a knockout should be complete by the end of block `b`,
+   *  spread evenly so the final lands in the last block of the season. */
+  function roundsDueBy(totalRounds, b) {
+    if (b < CUP_FIRST_BLOCK) return 0;
+    const span = BLOCKS - CUP_FIRST_BLOCK + 1;
+    return Math.min(totalRounds, Math.ceil(totalRounds * (b - CUP_FIRST_BLOCK + 1) / span));
+  }
 
   /* Advance every club's tactical clock — how many seasons running it has
    * played the same playstyle in the same shape, which is what tactics.js turns
@@ -627,34 +705,359 @@
     world._profiles = {};
   }
 
-  function beginSeason(world) {
-    if (!world.playerClubId) return null;
-    if (world._partialLeague) return world._earlySnapshot || null;   // already begun
-    const club = world.clubById(world.playerClubId);
-    if (!club) return null;
-    // A new season, so a new match record — see the note in advanceSeason.
-    world.playerMatches = [];
+  /* The very first season of a save has no table behind it, and Europe is
+   * entered on last season's finishing positions. Reputation is what the world
+   * was built from in the first place, so it stands in for the season nobody
+   * played — the clubs that would have qualified are the clubs the database
+   * says are the biggest. */
+  function seedEuroQualification(world) {
+    const res = {};
+    for (const leagueId of MG.competitions.EURO_LEAGUES) {
+      const clubs = world.clubsInLeague(leagueId).slice().sort((a, b) => b.reputation - a.reputation);
+      if (clubs.length < 7) continue;
+      res[leagueId] = {
+        leagueId, fieldSize: clubs.length,
+        table: clubs.map((c, i) => ({ clubId: c.id, position: i + 1 })),
+      };
+    }
+    return res;
+  }
+
+  /** Build the season's state — every division, every cup, Europe — or hand
+   *  back the one already in flight. Idempotent, and keyed on the season, so
+   *  neither beginSeason nor advanceSeason can start a campaign twice. */
+  function ensureSeasonState(world) {
+    if (world.seasonState && world.seasonState.season === world.season) return world.seasonState;
     ageSystems(world);
-    const st = MG.competitions.beginLeague(world, club.leagueId);
+    /* A new season, so a new match record. This lives here rather than in
+     * advanceSeason because advanceSeason runs at the END of a campaign the
+     * blocks have already been recording: clearing there wiped everything the
+     * manager had already seen results for. */
+    world.playerMatches = [];
+
+    const leagues = {};
+    for (const leagueId of MG.clubs.LEAGUE_KEYS) {
+      const st = MG.competitions.beginLeague(world, leagueId);
+      if (st) leagues[leagueId] = st;
+    }
+
+    const cups = {};
+    const countries = {};
+    for (const club of world.clubs) (countries[club.country] = countries[club.country] || []).push(club);
+    for (const [country, field] of Object.entries(countries)) {
+      if (field.length < 8) continue;
+      const st = MG.competitions.beginKnockout(world, field, { name: `${country} Cup` });
+      if (!st) continue;
+      st.country = country;
+      st.totalRounds = MG.competitions.knockoutRoundsLeft(st);
+      cups[country] = st;
+    }
+
+    const euro = {};
+    const qualifiers = MG.competitions.europeanQualifiers(
+      world._lastEuroQualification || seedEuroQualification(world),
+      world._lastCupWinners || {});
+    for (const [comp, ids] of Object.entries(qualifiers)) {
+      const field = ids.map((cid) => world.clubById(cid)).filter(Boolean);
+      if (field.length < 4) continue;
+      const st = MG.competitions.beginKnockout(world, field, { name: comp, legs: 2, competition: "europe" });
+      if (!st) continue;
+      st.comp = comp;
+      st.totalRounds = MG.competitions.knockoutRoundsLeft(st);
+      euro[comp] = st;
+    }
+
+    world.seasonState = {
+      season: world.season, block: 0,
+      leagues, cups, euro,
+      // Accumulated as the blocks are played; read by the end-of-season half.
+      results: {}, cupWinners: {}, cupExits: {},
+      euroNames: {}, euroPrize: {}, euroRuns: {},
+      carousel: [], matchMark: 0,
+    };
+    return world.seasonState;
+  }
+
+  /* The winter sacking window. Lifted out of advanceSeason unchanged: a board
+   * with a short fuse and a side well adrift of its brief pulls the trigger in
+   * December rather than waiting for May. */
+  function midSeasonReview(world, S, leagueId, table) {
+    const rng = world.rng;
+    for (let i = 0; i < table.length; i++) {
+      const club = world.clubById(table[i].clubId);
+      if (!club) continue;
+      const targets = club.board.targets;
+      if (!targets) continue;
+      const behind = (i + 1) - targets.position;
+      const style = MG.clubs.BOARD_STYLES[club.board.style];
+      // Only a real collapse gets you sacked in December, and only from a
+      // board with a short fuse.
+      const threshold = style.tolerance + 4;
+      if (behind <= threshold) continue;
+      // Grace is absolute in the winter window: a manager appointed last
+      // summer is not sacked in his first December, however bad it looks.
+      // Without this a career could end before its first board review.
+      if (club.board.grace > 0) continue;
+      const pressure = (behind - threshold) / 10;
+      const odds = clamp(pressure * style.reactivity * 0.65, 0, 0.75);
+      if (!rng.chance(odds)) continue;
+      const out = removeManager(world, club, "sacked mid-season");
+      club.board.confidence = clamp(club.board.confidence - 20, 0, 100);
+      const replacement = hireFor(world, club, { midSeason: true });
+      S.carousel.push({ club: club.name, out: out ? out.name : null, in: replacement ? replacement.name : null, reason: "mid-season sacking", season: world.season });
+      world.report(
+        `${club.name} sack ${out ? out.name : "their manager"} in ${leagueId === "PL" ? "the Premier League" : MG.clubs.LEAGUES[leagueId].name} with the side ${ordinal(i + 1)}${replacement ? ` — ${replacement.name} takes over` : ""}.`,
+        "sack", club.id);
+    }
+  }
+
+  function settleCup(world, S, st) {
+    const cup = MG.competitions.finishKnockout(world, st);
+    if (!cup || !cup.winner) return;
+    S.cupWinners[st.country] = cup.winner.id;
+    Object.assign(S.cupExits, cup.exits);
+    cup.winner.history.cups++;
+    MG.clubs.adjustReputation(cup.winner, 1);
+    world.report(`${cup.winner.name} win the ${st.country === "England" ? "FA Cup" : `${st.country} Cup`}.`, "trophy", cup.winner.id);
+  }
+
+  function settleEurope(world, S, st) {
+    const run = MG.competitions.finishKnockout(world, st);
+    if (!run || !run.winner) return;
+    const comp = st.comp;
+    S.euroNames[comp] = run.winner.name;
+    /* Europe was running perfectly and was completely invisible: a club could
+     * qualify, play a full continental campaign and go out in the quarter-finals
+     * without a single word appearing anywhere, which is exactly why it read as
+     * broken. Each club's run is stashed here and attached to its season outcome
+     * later, so the log, the season review and the boardroom can all see it. */
+    for (const [cid, label] of Object.entries(run.exits)) {
+      S.euroPrize[cid] = (S.euroPrize[cid] || 0) + (MG.competitions.EURO_PRIZE[comp][label] || 0);
+      S.euroRuns[cid] = { comp, round: label };
+    }
+    S.euroRuns[run.winner.id] = { comp, round: "W" };
+    run.winner.history.europeanTitles++;
+    MG.clubs.adjustReputation(run.winner, comp === "UCL" ? 3 : 1);
+    world.report(`${run.winner.name} win the ${comp === "UCL" ? "Champions League" : comp === "UEL" ? "Europa League" : "Conference League"}.`, "trophy", run.winner.id);
+  }
+
+  /** Play whatever rounds of a knockout are owed by the end of block `b`. */
+  function playDueRounds(world, S, st, b, settle) {
+    if (st.done) return;
+    const due = roundsDueBy(st.totalRounds, b);
+    let played = st.totalRounds - MG.competitions.knockoutRoundsLeft(st);
+    while (played < due && !st.done) {
+      MG.competitions.knockoutRound(world, st);
+      played++;
+    }
+    if (st.done) settle(world, S, st);
+  }
+
+  /** Play the next two months of the season, everywhere. Returns the block
+   *  report for the managed club, or null when nobody is managing. */
+  function playBlock(world) {
+    const S = ensureSeasonState(world);
+    if (S.block >= BLOCKS) return blockReport(world, S, BLOCKS);
+    const b = ++S.block;
+    openBlock(world, S);
+
+    for (const leagueId of Object.keys(S.leagues)) {
+      const st = S.leagues[leagueId];
+      const to = MG.competitions.leagueCut(st, b, BLOCKS);
+      /* The winter window is a point in the CALENDAR, not a point in the block
+       * list: a division of 20 and a division of 24 do not reach their halfway
+       * matchday in the same block. Play up to it, hold the review, then carry
+       * on to the end of the block. */
+      const halfway = MG.competitions.leagueCut(st, 1, 2);
+      if (!st.midSeasonDone && to >= halfway) {
+        MG.competitions.advanceLeague(world, st, halfway);
+        midSeasonReview(world, S, leagueId, MG.competitions.leagueStanding(st));
+        st.midSeasonDone = true;
+      }
+      MG.competitions.advanceLeague(world, st, to);
+      if (st.cursor >= st.fixtures.length && !S.results[leagueId]) {
+        S.results[leagueId] = MG.competitions.finishLeague(st);
+      }
+    }
+
+    for (const st of Object.values(S.cups)) playDueRounds(world, S, st, b, settleCup);
+    for (const st of Object.values(S.euro)) playDueRounds(world, S, st, b, settleEurope);
+
+    closeBlock(world, S);
+    const report = blockReport(world, S, b);
+    S.matchMark = (world.playerMatches || []).length;
+    return report;
+  }
+
+  /* -------------------------- THE BLOCK BOUNDARY ---------------------------
+   * Two months of football does things to the people who played it, and this
+   * is where those things happen. openBlock decides how every side in the
+   * world is setting up and remembers where they stood; closeBlock charges
+   * them for it — fatigue, the treatment room, and the dressing room. See
+   * blocks.js for the model itself. */
+  function openBlock(world, S) {
+    if (!MG.blocks) return;
+    const rng = world.rng;
+    for (const leagueId of Object.keys(S.leagues)) {
+      const st = S.leagues[leagueId];
+      const standing = MG.competitions.leagueStanding(st);
+      standing.forEach((row, i) => {
+        const club = world.clubById(row.clubId);
+        if (!club) return;
+        /* The managed club's plan is the manager's own, chosen on the block
+         * start screen and left exactly as he set it. Everybody else's is
+         * chosen for them, or his is the only lever being pulled in a
+         * division of statues. */
+        if (club.id !== world.playerClubId) MG.blocks.aiPlan(world, club, rng, i + 1);
+        const plan = MG.blocks.planFor(club);
+        if (plan.approach === "reshape" && plan.shape && plan.shape !== club.formation) {
+          MG.tactics.setFormation(club, plan.shape);
+        }
+        if (APPROACH_FOCUS(plan)) MG.tactics.setTrainingFocus(club, APPROACH_FOCUS(plan));
+        MG.blocks.markBlockStart(club, row);
+      });
+    }
+    // The plan changes what the side is worth and who plays in it.
+    world._profiles = {};
+    world._selections = {};
+  }
+  const APPROACH_FOCUS = (plan) => {
+    const a = MG.blocks.APPROACH[plan.approach];
+    return a && a.focus ? a.focus : null;
+  };
+
+  function closeBlock(world, S) {
+    if (!MG.blocks) return;
+    const rng = world.rng;
+    for (const leagueId of Object.keys(S.leagues)) {
+      const st = S.leagues[leagueId];
+      for (const clubId of st.clubIds) {
+        const club = world.clubById(clubId);
+        if (!club) continue;
+        const row = st.table[clubId];
+        const mark = club._blockMark || {};
+        const blockResult = {
+          played: (row ? row.played : 0) - (mark.played || 0),
+          pts: (row ? row.pts : 0) - (mark.pts || 0),
+        };
+        const medical = MG.blocks.settleClub(world, club, rng);
+        MG.blocks.settleMorale(club, blockResult);
+        club._blockMedical = medical;
+        if (!MG.blocks.T || MG.blocks.T.refresh !== 0) MG.clubs.refreshRatings(club);
+      }
+    }
+    /* Fatigue is charged relative to the rest of the world, so the world's own
+     * level has to be measured before it can be charged — see blocks.js. */
+    MG.blocks.markFatiguePar(world.clubs);
+    /* Injuries and fatigue both change who is worth picking, so the cached
+     * teams and profiles have to go — otherwise the man who broke his leg in
+     * October keeps playing until somebody signs a striker. */
+    world._profiles = {};
+    world._selections = {};
+  }
+
+  /* ---------------------------- THE BLOCK REPORT ---------------------------
+   * What the manager is actually shown when the game stops. A superset of the
+   * old early-season snapshot — every field it had is still here and still
+   * means the same thing — plus what only makes sense now that there is more
+   * than one stop: which block this is, how the last two months went as
+   * opposed to the season so far, and where the club stands in the cup and in
+   * Europe while both are still undecided. */
+  function cupProgress(world, st, clubId, club) {
     if (!st) return null;
-    const upTo = Math.max(1, Math.floor(st.fixtures.length * EARLY_SEASON_SHARE));
-    MG.competitions.advanceLeague(world, st, upTo);
-    world._partialLeague = st;
+    const alive = st.alive.indexOf(clubId) >= 0 || st.waiting.indexOf(clubId) >= 0;
+    const exit = st.exits[clubId] || null;
+    if (!alive && !exit) return null;   // not in this competition at all
+    const ties = st.log.filter((l) => l.home === club.name || l.away === club.name);
+    const last = ties[ties.length - 1] || null;
+    return {
+      name: st.name, comp: st.comp || null, clubId,
+      alive: alive && !st.done,
+      won: exit === "W",
+      round: exit && exit !== "W" ? exit : MG.competitions.roundLabel(st.roundsRemaining),
+      lastTie: last,
+      played: ties.length,
+    };
+  }
+
+  /* The two or three players worth naming, best and worst. A block is eight
+   * games — enough to have an opinion about, not enough to rank a squad. */
+  function blockPerformers(club, row) {
+    const ppg = row && row.played ? row.pts / row.played : 1.35;
+    const rated = [];
+    for (const p of club.squad) {
+      const r = MG.blocks.blockRating(p, ppg);
+      if (r && r.apps >= 2) rated.push({ id: p.id, name: p.name, pos: p.pos, ...r });
+    }
+    if (rated.length < 3) return rated;
+    rated.sort((a, b) => b.rating - a.rating);
+    // Two who deserve it and the one who does not — a review that only ever
+    // praises is a review nobody reads twice.
+    return [rated[0], rated[1], rated[rated.length - 1]];
+  }
+
+  function blockMedical(club) {
+    const m = club._blockMedical || { hurt: [], returning: [] };
+    const row = (p) => ({ id: p.id, name: p.name, pos: p.pos });
+    let tired = 0;
+    for (const p of club.squad) if (MG.blocks.fatigueOf(p) >= 0.5) tired++;
+    return {
+      hurt: (m.hurt || []).map((h) => ({ ...row(h.player), blocks: h.blocks })),
+      back: (m.returning || []).map(row),
+      tired,
+    };
+  }
+
+  /* The board does not deliver a verdict until May — that is the point of the
+   * annual review, and cheapening it would cost the one moment in the season
+   * that genuinely lands. What it does do, every couple of months, is have an
+   * opinion. Non-binding, unscored, and never a number. */
+  function boardMood(club, standing, row) {
+    const t = club.board.targets;
+    if (!t || !row) return null;
+    const gap = t.position - row.position;
+    const name = club.board.style;
+    if (gap >= 4) return `The board are quietly delighted — ${ordinal(row.position)} is well beyond what they asked for.`;
+    if (gap >= 1) return `The board are satisfied. ${ordinal(row.position)} is ahead of the brief, and they have noticed.`;
+    if (gap === 0) return `The board see exactly what they asked for, and expect it to hold.`;
+    if (gap >= -3) return `The board are watching. ${ordinal(row.position)} is short of the brief, and ${name === "Chaotic" ? "this one does not wait long" : "patience is not infinite"}.`;
+    return `The board are unhappy. ${ordinal(row.position)} against a brief of ${ordinal(t.position)} is the kind of gap that ends careers.`;
+  }
+
+  function blockReport(world, S, b) {
+    const club = world.playerClubId ? world.clubById(world.playerClubId) : null;
+    if (!club) return null;
+    const st = S.leagues[club.leagueId];
+    if (!st) return null;
 
     const standing = MG.competitions.leagueStanding(st);
     const row = standing.find((r) => r.clubId === club.id) || null;
     const targets = club.board.targets;
     const injured = club.squad.filter((p) => (p.season.injured || 0) >= 0.25);
-    const scorer = club.squad.slice().sort((a, b) => (b.season.goals || 0) - (a.season.goals || 0))[0] || null;
+    const scorer = club.squad.slice().sort((a, x) => (x.season.goals || 0) - (a.season.goals || 0))[0] || null;
     const matches = (world.playerMatches || []).slice();
+    const blockMatches = matches.slice(S.matchMark);
     // Form over the opening weeks, as points per game against what the
     // division's own pace looks like.
     const ppg = row && row.played ? row.pts / row.played : 0;
-    const snapshot = {
+    const resultOf = (m) => {
+      const us = m.homeId === club.id ? m.hg : m.ag;
+      const them = m.homeId === club.id ? m.ag : m.hg;
+      return us > them ? "W" : us === them ? "D" : "L";
+    };
+
+    return {
+      block: b, blocks: BLOCKS,
+      blockName: BLOCK_NAMES[b - 1] || "",
+      first: b === 1, last: b >= BLOCKS,
       leagueId: club.leagueId,
       leagueName: st.leagueName,
       fieldSize: st.fieldSize,
       played: row ? row.played : 0,
+      // Counted off the calendar rather than inferred from the field size: an
+      // odd division sits a club out on some matchdays, so "everyone plays
+      // twice against everyone" is not true of every league in the game.
+      remaining: row ? Math.max(0, st.fixtures.reduce((n, f) => n + (f[0] === club.id || f[1] === club.id ? 1 : 0), 0) - row.played) : 0,
       position: row ? row.position : null,
       pts: row ? row.pts : 0,
       won: row ? row.won : 0, drawn: row ? row.drawn : 0, lost: row ? row.lost : 0,
@@ -669,122 +1072,174 @@
       injuredNames: injured.slice(0, 3).map((p) => p.name),
       topScorer: scorer && scorer.season.goals ? { name: scorer.name, goals: scorer.season.goals, id: scorer.id } : null,
       matches,
+      blockMatches,
+      form: matches.slice(-5).map(resultOf).join(""),
+      blockForm: blockMatches.map(resultOf).join(""),
       standing,
+      /* WHAT THE BLOCK DID, as opposed to where the season stands. The review
+       * screen is a small end-of-season report, and these are its rows. */
+      wasPosition: (club._blockMark && club._blockMark.position) || null,
+      performers: blockPerformers(club, row),
+      medical: blockMedical(club),
+      moraleLabel: MG.blocks.moraleLabel(MG.tactics.teamMorale(club)),
+      boardMood: boardMood(club, standing, row),
+      cup: cupProgress(world, S.cups[club.country], club.id, club),
+      europe: (() => {
+        for (const st2 of Object.values(S.euro)) {
+          const p = cupProgress(world, st2, club.id, club);
+          if (p) return p;
+        }
+        return null;
+      })(),
     };
-    world._earlySnapshot = snapshot;
-    return snapshot;
+  }
+
+  /* ---------------------------- THE BLOCK BRIEF ----------------------------
+   * What the manager is shown BEFORE the next two months are played, as
+   * opposed to blockReport, which is what he is shown after. Four questions
+   * and no more, because four is what fits on a phone and what a manager
+   * actually needs before setting a side up:
+   *
+   *   1. what is coming up      the fixtures, the cup tie, the European night
+   *   2. what state am I in     who is out, who is tired, how the room feels
+   *   3. what does the board    where they want him and what they think now
+   *      expect
+   *   4. what is my plan        the two levers, which is the only part of this
+   *                             screen he can change
+   *
+   * Anything that does not answer one of those four belongs somewhere else. */
+  function blockPreview(world) {
+    const club = world.playerClubId ? world.clubById(world.playerClubId) : null;
+    if (!club) return null;
+    const S = ensureSeasonState(world);
+    const next = Math.min(BLOCKS, S.block + 1);
+    const st = S.leagues[club.leagueId];
+    if (!st) return null;
+
+    // 1. WHAT IS COMING UP — this club's league fixtures inside the next block.
+    const from = MG.competitions.leagueCut(st, S.block, BLOCKS);
+    const to = MG.competitions.leagueCut(st, next, BLOCKS);
+    const standing = MG.competitions.leagueStanding(st);
+    const posOf = {};
+    standing.forEach((r, i) => { posOf[r.clubId] = i + 1; });
+    const fixtures = [];
+    for (let i = from; i < to; i++) {
+      const f = st.fixtures[i];
+      if (!f) continue;
+      const home = f[0] === club.id, oppId = home ? f[1] : f[0];
+      if (f[0] !== club.id && f[1] !== club.id) continue;
+      const opp = world.clubById(oppId);
+      if (!opp) continue;
+      fixtures.push({
+        opponent: opp.name, home, position: posOf[opp.id] || null,
+        strength: Math.round(MG.clubs.clubStrength(opp)),
+        derby: MG.match.isDerby(club.name, opp.name),
+      });
+    }
+
+    /* A cup or European round only appears if one actually falls in the block
+     * ahead. The opponent is genuinely not known — the draw for each round is
+     * made when that round is played (see competitions.js) — and saying so is
+     * better than inventing one. */
+    const tieIn = (state) => {
+      if (!state || state.done) return null;
+      const played = state.totalRounds - MG.competitions.knockoutRoundsLeft(state);
+      if (roundsDueBy(state.totalRounds, next) <= played) return null;
+      if (state.alive.indexOf(club.id) < 0 && state.waiting.indexOf(club.id) < 0) return null;
+      return {
+        name: state.name, comp: state.comp || null,
+        round: MG.competitions.roundLabel(state.roundsRemaining),
+        left: state.alive.length + state.waiting.length,
+      };
+    };
+    const cup = tieIn(S.cups[club.country]);
+    let euro = null;
+    for (const e of Object.values(S.euro)) { euro = euro || tieIn(e); }
+
+    // 2. WHAT STATE AM I IN.
+    const out = [], tired = [];
+    for (const p of club.squad) {
+      const blocks = (p.season && p.season.outBlocks) || 0;
+      if (blocks > 0) { out.push({ id: p.id, name: p.name, pos: p.pos, blocks, overall: p.overall }); continue; }
+      const f = MG.blocks.fatigueOf(p);
+      if (f >= 0.5 && (p.season.minutesShare || 0) >= 0.2) {
+        tired.push({ id: p.id, name: p.name, pos: p.pos, fatigue: Math.round(f * 100), label: MG.blocks.fatigueLabel(f) });
+      }
+    }
+    out.sort((a, b) => b.overall - a.overall);
+    tired.sort((a, b) => b.fatigue - a.fatigue);
+    const morale = MG.tactics.teamMorale(club);
+
+    // 3. WHAT DOES THE BOARD EXPECT.
+    const row = standing.find((r) => r.clubId === club.id) || null;
+    const targets = club.board.targets;
+
+    return {
+      block: next, blocks: BLOCKS, blockName: BLOCK_NAMES[next - 1] || "",
+      first: next === 1,
+      leagueName: st.leagueName,
+      fixtures, cup, euro,
+      squad: {
+        size: club.squad.length,
+        available: club.squad.length - out.length,
+        out, tired,
+        fatigue: Math.round(MG.blocks.xiFatigue(club) * 100),
+        morale: Math.round(morale),
+        moraleLabel: MG.blocks.moraleLabel(morale),
+      },
+      board: {
+        target: targets ? targets.position : null,
+        summary: targets ? targets.summary : null,
+        position: row ? row.position : null,
+        played: row ? row.played : 0,
+        vsTarget: (targets && row) ? targets.position - row.position : 0,
+        confidence: Math.round(club.board.confidence),
+        style: club.board.style,
+      },
+      plan: { ...MG.blocks.planFor(club) },
+      shapeOnOffer: MG.blocks.suggestShape(world, club),
+      formation: club.formation || "4-4-2",
+    };
+  }
+
+  /** Open the season WITHOUT playing any of it: build every division, every
+   *  cup and the European draw, and stop. It used to play the first block on
+   *  the way through, which meant the manager was shown his opening-weeks
+   *  brief after the opening weeks had already been played — the one screen
+   *  where the whole point is that nothing has happened yet.
+   *
+   *  Returns null before a ball is kicked, and the current block's report when
+   *  a mid-season save is being resumed. That report is DERIVED from the state,
+   *  never stored in it — a saved copy would be a second, staler answer to a
+   *  question the tables can already answer. */
+  function beginSeason(world) {
+    if (!world.playerClubId) return null;
+    const S = ensureSeasonState(world);
+    return S.block === 0 ? null : blockReport(world, S, S.block);
   }
 
   function advanceSeason(world) {
-    ageSystems(world);
+    /* The season is played as five blocks and then settled. A managed career
+     * calls playBlock four times through the UI and arrives here with the
+     * campaign already at April; a headless world arrives here with nothing
+     * played and the loop below plays the lot. Either way the football is the
+     * same football, and everything after the loop happens exactly once. */
+    const S = ensureSeasonState(world);
+    while (S.block < BLOCKS) playBlock(world);
+
     const rng = world.rng;
     const seasonNews = [];
-    const results = {};
-    const carousel = [];
-    /* The match record is NOT cleared here. It used to be, and that quietly
-     * threw away the opening third of every season: beginSeason plays those
-     * weeks and records them, then this ran and wiped them before the rest of
-     * the campaign was played. A Premier League season came out of it holding
-     * 28 games of 38 — the ten the manager had actually already seen results
-     * for were the ten that vanished. Clearing belongs at the START of a
-     * season (see beginSeason), which is where it now happens. */
-
-    /* ---- 1. every division, with a winter sacking window ---- */
-    const midSeason = (leagueId, table) => {
-      for (let i = 0; i < table.length; i++) {
-        const club = world.clubById(table[i].clubId);
-        const targets = club.board.targets;
-        if (!targets) continue;
-        const behind = (i + 1) - targets.position;
-        const style = MG.clubs.BOARD_STYLES[club.board.style];
-        // Only a real collapse gets you sacked in December, and only from a
-        // board with a short fuse.
-        const threshold = style.tolerance + 4;
-        if (behind <= threshold) continue;
-        // Grace is absolute in the winter window: a manager appointed last
-        // summer is not sacked in his first December, however bad it looks.
-        // Without this a career could end before its first board review.
-        if (club.board.grace > 0) continue;
-        const pressure = (behind - threshold) / 10;
-        const odds = clamp(pressure * style.reactivity * 0.65, 0, 0.75);
-        if (!rng.chance(odds)) continue;
-        const out = removeManager(world, club, "sacked mid-season");
-        club.board.confidence = clamp(club.board.confidence - 20, 0, 100);
-        const replacement = hireFor(world, club, { midSeason: true });
-        carousel.push({ club: club.name, out: out ? out.name : null, in: replacement ? replacement.name : null, reason: "mid-season sacking", season: world.season });
-        world.report(
-          `${club.name} sack ${out ? out.name : "their manager"} in ${leagueId === "PL" ? "the Premier League" : MG.clubs.LEAGUES[leagueId].name} with the side ${ordinal(i + 1)}${replacement ? ` — ${replacement.name} takes over` : ""}.`,
-          "sack", club.id);
-      }
-    };
-
-    for (const leagueId of MG.clubs.LEAGUE_KEYS) {
-      /* The player's own division may already be part-played — beginSeason
-       * runs it up to the early-season checkpoint so the manager can make
-       * decisions with real results in front of him. Whatever he decided
-       * there has already landed on the club by now, so the rest of the
-       * campaign is played out against the side he chose to become. */
-      const partial = world._partialLeague;
-      const res = (partial && partial.leagueId === leagueId)
-        ? MG.competitions.resumeLeague(world, partial, { midSeason })
-        : MG.competitions.runLeague(world, leagueId, { midSeason });
-      if (partial && partial.leagueId === leagueId) world._partialLeague = null;
-      if (res) results[leagueId] = res;
-    }
-    // A part-played league whose division somehow never came up in the loop
-    // above must not survive into next season as a stale half-table.
-    world._partialLeague = null;
-    world._earlySnapshot = null;
-
-    /* ---- 2. domestic cups, one per country ---- */
-    const cupWinners = {};
-    const cupExits = {};
-    const countries = {};
-    for (const club of world.clubs) (countries[club.country] = countries[club.country] || []).push(club);
-    for (const [country, field] of Object.entries(countries)) {
-      if (field.length < 8) continue;
-      const cup = MG.competitions.runKnockout(world, field, { name: `${country} Cup` });
-      if (!cup || !cup.winner) continue;
-      cupWinners[country] = cup.winner.id;
-      Object.assign(cupExits, cup.exits);
-      cup.winner.history.cups++;
-      MG.clubs.adjustReputation(cup.winner, 1);
-      world.report(`${cup.winner.name} win the ${country === "England" ? "FA Cup" : `${country} Cup`}.`, "trophy", cup.winner.id);
-    }
-
-    /* ---- 3. Europe ---- */
-    const euro = {};
-    const euroPrize = {};
-    /* Europe was running perfectly and was completely invisible: a club could
-     * qualify, play a full continental campaign and go out in the quarter-finals
-     * without a single word appearing anywhere, which is exactly why it read as
-     * broken. Each club's run is stashed here and attached to its season outcome
-     * below, so the log, the season review and the boardroom can all see it. */
-    const euroRuns = {};
-    const qualifiers = MG.competitions.europeanQualifiers(world._lastEuroQualification || results, cupWinners);
-    for (const [comp, ids] of Object.entries(qualifiers)) {
-      const field = ids.map((cid) => world.clubById(cid)).filter(Boolean);
-      if (field.length < 4) continue;
-      const run = MG.competitions.runKnockout(world, field, { name: comp, legs: 2, competition: "europe" });
-      if (!run || !run.winner) continue;
-      euro[comp] = run.winner.name;
-      for (const [cid, label] of Object.entries(run.exits)) {
-        euroPrize[cid] = (euroPrize[cid] || 0) + (MG.competitions.EURO_PRIZE[comp][label] || 0);
-      }
-      run.winner.history.europeanTitles++;
-      MG.clubs.adjustReputation(run.winner, comp === "UCL" ? 3 : 1);
-      world.report(`${run.winner.name} win the ${comp === "UCL" ? "Champions League" : comp === "UEL" ? "Europa League" : "Conference League"}.`, "trophy", run.winner.id);
-      /* Europe was running perfectly and was completely invisible: a club could
-       * qualify, play a full continental campaign and go out in the
-       * quarter-finals without a single word appearing anywhere, which is why it
-       * read as broken. The managed club's own run is now recorded on its
-       * outcome so the log, the season review and the boardroom can all see it. */
-      for (const [cid, label] of Object.entries(run.exits)) {
-        euroRuns[cid] = { comp, round: label };
-      }
-      euroRuns[run.winner.id] = { comp, round: "W" };
-    }
+    const results = S.results;
+    const carousel = S.carousel;
+    const cupWinners = S.cupWinners;
+    const cupExits = S.cupExits;
+    const euro = S.euroNames;
+    const euroPrize = S.euroPrize;
+    const euroRuns = S.euroRuns;
+    /* Next season's European places, decided by the season that just finished
+     * rather than by the one about to start — see the block header. */
     world._lastEuroQualification = results;
+    world._lastCupWinners = cupWinners;
 
     /* ---- 4. settle the season for every club: money, then the board ---- */
     const boardReports = {};
@@ -1136,6 +1591,10 @@
 
     world.season++;
     world.year++;
+    /* The campaign is over, so its state goes. Dropped only after the calendar
+     * has rolled: everything above still reads the tables, the cup exits and
+     * the European runs out of it. */
+    world.seasonState = null;
     for (const m of world.freeManagers) m.joblessSeasons++;
     world.prepareSeason();
     return summary;

@@ -111,7 +111,12 @@
     const avail = MG.players.availability(player);
     const base = MG.ratings && slot ? MG.ratings.roleRating(player, slot) : player.overall;
     const form = (player.season && player.season.form) || 1;
-    return base * fam * moraleMult * form * (0.45 + 0.55 * avail);
+    /* Sixth term: how tired he is RIGHT NOW. Everything else here is settled
+     * for the season by the time a ball is kicked — this is the one that moves
+     * between one two-month block and the next, and it is the whole reason
+     * resting a player is a decision rather than a slogan. See blocks.js. */
+    const fresh = MG.blocks ? MG.blocks.fatigueMultiplier(player) : 1;
+    return base * fam * moraleMult * form * fresh * (0.45 + 0.55 * avail);
   }
 
   /** Squad-wide morale, weighted toward the players who actually play. */

@@ -22,7 +22,7 @@
   const MG = (root.MG = root.MG || {});
 
   MG.build = {
-    VERSION: "0.9.14",
+    VERSION: "0.11.0",
     CHANNEL: "beta",
     NAME: "Football DNA Simulator — Manager",
     /** "0.9.3 beta" — what goes on screen. */

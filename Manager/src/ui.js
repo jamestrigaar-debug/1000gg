@@ -58,7 +58,7 @@
     hubTab: "overview", hubNewJob: false,
     proposals: [], proposalChoices: [], proposalOutcomes: [],
     moveCards: [], moveChoices: [], moveOutcomes: [], lastMoveSummary: null, lastApproach: null,
-    phase: null, earlySnapshot: null, seasonBrief: null,
+    phase: null, earlySnapshot: null, preview: null, seasonBrief: null,
     lastSeenNewsId: 0, notifOpen: false,
   };
   root.MG_STATE = state;
@@ -149,9 +149,10 @@
    *
    *   pre-season anything  -> the hub, and set the window up again
    *   mid-season           -> "ready"; beginSeason() already refuses to
-   *                           replay opening weeks it has played (it returns
-   *                           the stored snapshot), so KICK OFF resumes into
-   *                           the early-season window rather than restarting
+   *                           replay football it has played — the campaign's
+   *                           own state is saved, so it re-derives the report
+   *                           for whichever block the save was taken in and
+   *                           KICK OFF resumes there rather than restarting
    *   post-season anything -> "result", which flows on into the board's
    *                           review, the SIGN/VETO on any movement still
    *                           unresolved in world.playerMovements, and both
@@ -176,6 +177,7 @@
     "preseason-hub": "preseason-hub", transfers: "preseason-hub", "transfer-proposals": "preseason-hub",
     preseason1: "preseason-hub", preseason2: "preseason-hub",
     ready: "ready", earlyseason: "ready",
+    "block-brief": "ready", "block-review": "ready",
     result: "result", "move-approval": "result", "manager-approach": "result",
     postseason1: "result", postseason2: "result", "endseason-done": "result",
   };
@@ -195,7 +197,7 @@
     state.cards = []; state.cardIndex = 0; state.outcomes = [];
     state.moveCards = []; state.moveChoices = []; state.moveOutcomes = [];
     state.proposals = []; state.proposalChoices = []; state.proposalOutcomes = [];
-    state.phase = null; state.earlySnapshot = null; state.seasonBrief = null;
+    state.phase = null; state.earlySnapshot = null; state.preview = null; state.seasonBrief = null;
     state.transfersSeason = null; state.signCount = 0; state.signPositions = []; state.boardRecs = null;
     state.recent = [];
     // The season just gone, as the post-season screens need it. lastReport
@@ -388,7 +390,7 @@
   const PHASE_AFTER = {
     PRE1: () => beginTransferWindow(),
     PRE2: () => { state.stage = "ready"; render(); autosave(); },     // milestone: Decision (pre-season)
-    EARLY: () => finishSeason(),
+    EARLY: () => advanceBlock(),
     POST1: () => runPhase("POST2"),
     POST2: () => { state.stage = "endseason-done"; render(); autosave(); },   // milestone: Decision (post-season)
   };
@@ -411,7 +413,13 @@
     const c = club();
     const ctx = MG.decisions.buildContext(state.world, c, state.manager, state.lastRow, state.earlySnapshot);
     const conf = MG.decisions.PHASES[phaseKey];
-    const picked = MG.decisions.pick(MG.decisions.poolFor(phaseKey), ctx, state.world.rng, conf.cards, state.recent);
+    /* In-season windows come round four times a year now rather than once, so
+     * the opening stop still asks two things and every stop after it asks one.
+     * Two every time would drain an eleven-card pool by Christmas and spend
+     * the second half of the season asking nothing at all. */
+    const early = state.earlySnapshot;
+    const count = (phaseKey === "EARLY" && early && early.block > 1) ? 1 : conf.cards;
+    const picked = MG.decisions.pick(MG.decisions.poolFor(phaseKey), ctx, state.world.rng, count, state.recent);
     state.cards = picked.map((d) => ({ def: d, view: MG.decisions.present(d, ctx, state.world.rng), ctx }));
     state.cardIndex = 0;
     state.phase = phaseKey;
@@ -640,26 +648,88 @@
     render();
   }
 
-  /* Kick-off. A third of the season is played here and here only — the rest
-   * waits behind the early-season window, so whatever is decided there is
-   * decided with real results in hand and lands on the fixtures still to
-   * come. See world.beginSeason / competitions.resumeLeague. */
+  /* ------------------------- THE SEASON, IN BLOCKS -------------------------
+   * The season is played two months at a time (see world.js's five-blocks
+   * header). The manager stops after each of the first four and is shown what
+   * has actually happened — table, form, injuries, the cup, Europe — before
+   * being asked anything. The old build stopped once, a third of the way in,
+   * and that single stop was doing the work of a whole season's worth of
+   * management.
+   *
+   * The loop is: play a block -> show it -> ask what he wants to change ->
+   * play the next block. The last block is played inside finishSeason, so the
+   * final whistle and the end-of-season reckoning stay one continuous moment
+   * rather than two clicks apart. */
+  const BLOCK_TITLES = ["THE OPENING WEEKS", "AUTUMN", "THE WINTER MONTHS", "THE RUN-IN BEGINS", "THE RUN-IN"];
+
+  /* Two screens, not one, and the difference matters. THE BRIEF is forward-
+   * looking: what is coming, what state the squad is in, what the board
+   * expects, and the two levers — the only things on it he can change. THE
+   * REVIEW is backward-looking: what those two months actually did, and one
+   * decision that reacts to it. Setting up and reacting are different jobs
+   * and putting them on one screen made both of them mush. */
   function playSeason() {
+    const world = state.world;
+    world.beginSeason();          // builds the season state without playing it
+    showBlockBrief();
+  }
+
+  function showBlockBrief() {
     const world = state.world, c = club();
-    state.seasonBrief = JSON.parse(JSON.stringify(c.board.targets || {}));
-    $("stage").innerHTML = `<div class="panel simming">THE OPENING WEEKS of ${world.year}/${String(world.year + 1).slice(2)}…</div>`;
+    if (!state.seasonBrief) state.seasonBrief = JSON.parse(JSON.stringify(c.board.targets || {}));
+    const preview = world.blockPreview();
+    if (!preview) { finishSeason(); return; }
+    state.preview = preview;
+    state.stage = "block-brief";
+    autosave();   // milestone: the start of a block is a place to put it down
+    render();
+  }
+
+  /** Play the two months the brief was written for. */
+  function runBlock() {
+    const world = state.world;
+    const p = state.preview;
+    $("stage").innerHTML = `<div class="panel simming">${esc(BLOCK_TITLES[(p ? p.block : 1) - 1] || "THE NEXT TWO MONTHS")}…</div>`;
     setTimeout(() => {
-      state.earlySnapshot = world.beginSeason();
-      autosave();   // milestone: Midseason
-      runPhase("EARLY");
+      // The last block runs into the final whistle without a review screen —
+      // the season result IS the review for it.
+      if (world.blocksLeft() <= 1) { finishSeason(); return; }
+      showBlockReview(world.playBlock());
     }, 50);
+  }
+
+  function showBlockReview(report) {
+    if (!report) { finishSeason(); return; }
+    state.earlySnapshot = report;
+    state.stage = "block-review";
+    autosave();
+    render();
+  }
+
+  /** After the review's reactive decision: brief up for the next two months. */
+  function advanceBlock() {
+    if (state.world.blocksLeft() <= 0) { finishSeason(); return; }
+    showBlockBrief();
+  }
+
+  /* The two levers. Setting one re-renders in place — it is a toggle, not a
+   * card that consumes itself, and the manager should be able to change his
+   * mind before he kicks off. */
+  function setPlan(part, key) {
+    const c = club(), plan = MG.blocks.planFor(c);
+    plan[part] = key;
+    if (part === "approach") {
+      plan.shape = key === "reshape" ? (state.preview && state.preview.shapeOnOffer) : null;
+    }
+    state.preview = state.world.blockPreview();
+    render();
   }
 
   function finishSeason() {
     const world = state.world, c = club();
     const brief = state.seasonBrief || JSON.parse(JSON.stringify(c.board.targets || {}));
     const leagueId = c.leagueId;
-    $("stage").innerHTML = `<div class="panel simming">SIMULATING THE REST OF ${world.year}/${String(world.year + 1).slice(2)} — every division in the world…</div>`;
+    $("stage").innerHTML = `<div class="panel simming">THE RUN-IN — ${world.year}/${String(world.year + 1).slice(2)} decided, everywhere…</div>`;
 
     setTimeout(() => {
       const summary = world.advanceSeason();
@@ -1047,7 +1117,14 @@
     $("fans-mood").className = fans >= 55 ? "accent" : fans >= 35 ? "gold" : "bad";
     $("fans-blurb").textContent = mood.blurb;
 
-    $("lastseason").innerHTML = lastSeasonHtml();
+    /* LAST SEASON is a reminder for the screens where you are between
+     * campaigns. On a block screen it is four hundred pixels of last year
+     * sitting between the header and the thing the manager actually opened
+     * the game to look at, on a phone, five times a season. One idea per
+     * screen: the block loop gets the screen to itself. */
+    const inBlock = state.stage === "block-brief" || state.stage === "block-review";
+    $("lastseason").innerHTML = inBlock ? "" : lastSeasonHtml();
+    document.body.classList.toggle("in-block", inBlock);
     $("stage").innerHTML = stageHtml();
     $("logfeed").innerHTML = logFeedHtml();
     renderNotifications();
@@ -1195,6 +1272,8 @@
       return outcomesHtml() + transferSummaryHtml({ title: "THE SUMMER JUST GONE" }) + moveSummaryHtml() + contractsUpHtml(club())
         + `<button class="btn primary big" id="to-preseason" style="margin-top:12px">PRE-SEASON ▶</button>`;
     }
+    if (state.stage === "block-brief") return blockBriefHtml();
+    if (state.stage === "block-review") return blockReviewHtml();
     if (state.stage === "ready") return readyHtml();
     if (state.stage === "move-approval") return moveApprovalHtml();
     if (state.stage === "manager-approach") return approachHtml();
@@ -1560,6 +1639,205 @@
     </div>`;
   }
 
+  /* ---------------------------- THE BLOCK REPORT ---------------------------
+   * Where the season actually stands, four times a year. Built to be read on
+   * a phone in one screen without scrolling to a tab: the two months just
+   * gone, then the table around you, then the cup and Europe while both are
+   * still live, then the treatment room. */
+  const formHtml = (s) => (s || "").split("").map((r) =>
+    `<span class="form-pip ${r === "W" ? "w" : r === "D" ? "d" : "l"}">${r}</span>`).join("");
+
+  /* A European round is named for how many clubs are left in it, not for how
+   * many rounds the FA Cup happens to have. The shared label table calls a
+   * sixteen-club Champions League round "R5", which is correct as a bracket
+   * depth and nonsense as a competition name. Prize money still keys off the
+   * raw label — this is presentation only. */
+  function euroRoundLabel(label) {
+    const i = MG.competitions.ROUND_LABELS.indexOf(label);
+    if (i < 0) return cupLabel(label);
+    const teams = Math.pow(2, i + 1);
+    if (teams <= 2) return "the final";
+    if (teams === 4) return "the semi-final";
+    if (teams === 8) return "the quarter-final";
+    return `the round of ${teams}`;
+  }
+
+
+
+  /* ======================== THE BLOCK BRIEF (before) ========================
+   * Four questions and no more. Anything that does not answer one of them is
+   * somewhere else in the game:
+   *
+   *   1. WHAT IS COMING UP    the fixtures, the cup tie, the European night
+   *   2. WHERE THE SQUAD IS   who is out, who is tired, how the room feels
+   *   3. WHAT THE BOARD WANTS the brief, and where he stands against it
+   *   4. THE PLAN             the two levers, and nothing else
+   *
+   * Glance first, tap for depth: the injury and fatigue lists are folded into
+   * <details> so the top of the screen stays one thumb-length on a phone. */
+  const OPP_TAG = (f) => (f.derby ? `<span class="tag derby">DERBY</span>`
+    : f.position && f.position <= 4 ? `<span class="tag hard">TOP 4</span>` : "");
+
+  function fixtureRow(f) {
+    return `<div class="fix">
+      <span class="fix-ha ${f.home ? "h" : "a"}">${f.home ? "H" : "A"}</span>
+      <span class="fix-opp">${esc(f.opponent)}</span>
+      ${f.position ? `<span class="muted fix-pos">${ordinal(f.position)}</span>` : ""}
+      ${OPP_TAG(f)}
+    </div>`;
+  }
+
+  function planCardsHtml(table, keys, part, chosen) {
+    return keys.map((k) => {
+      const o = table[k];
+      const on = k === chosen;
+      return `<button class="plan-card${on ? " on" : ""}" data-plan="${part}" data-key="${k}">
+        <div class="plan-top"><b>${esc(o.label)}</b><span class="plan-tag">${esc(o.tag)}</span></div>
+        <div class="plan-blurb">${esc(o.blurb)}</div>
+        <div class="plan-effect">${esc(o.effect)}</div>
+      </button>`;
+    }).join("");
+  }
+
+  function blockBriefHtml() {
+    const p = state.preview;
+    if (!p) return resultHtml();
+    const B = MG.blocks;
+    const posCls = p.board.vsTarget >= 2 ? "accent" : p.board.vsTarget <= -3 ? "bad" : "gold";
+    const approach = { ...B.APPROACH };
+    // The reshape option names the shape on offer rather than saying "change
+    // shape" — one tap, and it is what a coach would actually say out loud.
+    if (p.shapeOnOffer) {
+      approach.reshape = {
+        ...approach.reshape,
+        label: p.shapeOnOffer,
+        tag: "NEW SHAPE",
+        blurb: `Leave the ${p.formation} behind and set up in a ${p.shapeOnOffer} for the next two months.`,
+      };
+    }
+    const fat = p.squad.fatigue;
+    const fatCls = fat >= 45 ? "bad" : fat >= 22 ? "warn" : "accent";
+
+    return `
+      <div class="stage-step">THE BRIEF · BLOCK ${p.block} OF ${p.blocks} · ${esc(p.blockName)}</div>
+
+      <div class="panel blk">
+        <div class="blk-q">1 · WHAT'S COMING UP</div>
+        <div class="fix-list">${p.fixtures.map(fixtureRow).join("") || `<div class="muted">No league football in this block.</div>`}</div>
+        ${(p.cup || p.euro) ? `<div class="blk-extra">
+          ${p.cup ? `<span class="tag cup">🏆 ${esc(p.cup.name)} · ${esc(cupLabel(p.cup.round))}</span>` : ""}
+          ${p.euro ? `<span class="tag euro">★ ${esc(p.euro.comp)} · ${esc(euroRoundLabel(p.euro.round))}</span>` : ""}
+        </div>` : ""}
+      </div>
+
+      <div class="panel blk">
+        <div class="blk-q">2 · YOUR SQUAD</div>
+        <div class="blk-stats">
+          <span><b>${p.squad.available}</b><span class="muted">/${p.squad.size} fit</span></span>
+          <span class="${fatCls}"><b>${fat}%</b><span class="muted"> worked</span></span>
+          <span class="${p.squad.moraleLabel.cls}"><b>${esc(p.squad.moraleLabel.label)}</b><span class="muted"> room</span></span>
+        </div>
+        ${p.squad.out.length ? `<details class="drill"><summary><span class="bad">${p.squad.out.length} unavailable</span></summary>
+          ${p.squad.out.map((o) => `<div class="drill-row"><b>${esc(o.name)}</b> <span class="muted">${o.pos}</span>
+            <span class="bad">out ${o.blocks === 1 ? "this block" : `${o.blocks} blocks`}</span></div>`).join("")}
+        </details>` : ""}
+        ${p.squad.tired.length ? `<details class="drill"><summary><span class="warn">${p.squad.tired.length} carrying a load</span></summary>
+          ${p.squad.tired.map((o) => `<div class="drill-row"><b>${esc(o.name)}</b> <span class="muted">${o.pos}</span>
+            <span class="warn">${esc(o.label)} · ${o.fatigue}%</span></div>`).join("")}
+        </details>` : ""}
+      </div>
+
+      <div class="panel blk">
+        <div class="blk-q">3 · WHAT THE BOARD EXPECTS</div>
+        <div class="muted" style="font-size:13px;margin-bottom:6px">${esc(p.board.summary || "No brief set.")}</div>
+        <div class="blk-stats">
+          ${p.board.position ? `<span><b class="${posCls}">${ordinal(p.board.position)}</b><span class="muted"> after ${p.board.played}</span></span>` : `<span class="muted">Not kicked off yet</span>`}
+          <span><span class="muted">Asked for </span><b>${p.board.target ? ordinal(p.board.target) : "—"}</b></span>
+          <span><span class="muted">Confidence </span><b>${p.board.confidence}</b></span>
+        </div>
+      </div>
+
+      <div class="panel blk">
+        <div class="blk-q">4 · YOUR PLAN</div>
+        <div class="plan-label">THE APPROACH <span class="muted">· shape, mentality and what you drill</span></div>
+        <div class="plan-grid">${planCardsHtml(approach, B.APPROACH_KEYS, "approach", p.plan.approach)}</div>
+        <div class="plan-label" style="margin-top:12px">THE SQUAD <span class="muted">· who plays and who rests</span></div>
+        <div class="plan-grid">${planCardsHtml(B.SQUAD_PLAN, B.SQUAD_KEYS, "squad", p.plan.squad)}</div>
+        <div class="muted" style="font-size:11px;margin-top:10px">Currently in a ${esc(p.formation)}${p.plan.approach === "reshape" && p.plan.shape ? ` — switching to a ${esc(p.plan.shape)}` : ""}.</div>
+      </div>
+
+      <button class="btn primary big sticky-go" id="block-play">PLAY ${esc(p.blockName)} ▶</button>`;
+  }
+
+  /* ======================== THE BLOCK REVIEW (after) ========================
+   * The end-of-season report at a smaller scale: what the two months did, in
+   * the order a manager reads it. Deliberately NOT styled like the brief —
+   * the brief plans, this reacts, and a manager should be able to tell which
+   * screen he is on without reading a word of it. */
+  function performerRow(r) {
+    const cls = r.rating >= 7.4 ? "accent" : r.rating >= 6.4 ? "gold" : "bad";
+    const arrow = r.rating >= 7.4 ? "▲" : r.rating >= 6.4 ? "▶" : "▼";
+    const line = [r.apps + (r.apps === 1 ? " app" : " apps"),
+      r.goals ? `${r.goals}g` : null, r.assists ? `${r.assists}a` : null].filter(Boolean).join(" · ");
+    return `<div class="perf" data-player="${r.id}">
+      <span class="perf-arrow ${cls}">${arrow}</span>
+      <span class="perf-name"><b>${esc(r.name)}</b> <span class="muted">${r.pos}</span></span>
+      <span class="muted perf-line">${esc(line)}</span>
+      <span class="perf-rating ${cls}">${r.rating.toFixed(1)}</span>
+    </div>`;
+  }
+
+  function blockReviewHtml() {
+    const e = state.earlySnapshot, c = club();
+    if (!e) return resultHtml();
+    const blockRes = e.blockMatches || [];
+    const w = blockRes.filter((m) => (m.homeId === c.id ? m.hg > m.ag : m.ag > m.hg)).length;
+    const d = blockRes.filter((m) => m.hg === m.ag).length;
+    const l = blockRes.length - w - d;
+    const gf = blockRes.reduce((t, m) => t + (m.homeId === c.id ? m.hg : m.ag), 0);
+    const ga = blockRes.reduce((t, m) => t + (m.homeId === c.id ? m.ag : m.hg), 0);
+    const was = e.wasPosition, now = e.position;
+    const moved = was && now ? was - now : 0;
+
+    return `
+      <div class="stage-step rev">THE REVIEW · BLOCK ${e.block} OF ${e.blocks} · ${esc(e.blockName)}</div>
+
+      <div class="panel rev">
+        <div class="rev-head">
+          <div class="rev-record"><b>${w}W ${d}D ${l}L</b><span class="muted"> · ${gf} scored, ${ga} conceded</span></div>
+          <div class="rev-move">
+            ${was ? `<span class="muted">${ordinal(was)}</span> <span class="mv ${moved > 0 ? "up" : moved < 0 ? "down" : "flat"}">${moved > 0 ? "▲" : moved < 0 ? "▼" : "—"}</span> ` : ""}
+            <b class="${moved > 0 ? "accent" : moved < 0 ? "bad" : "gold"}">${now ? ordinal(now) : "—"}</b>
+          </div>
+        </div>
+        <div style="margin-top:6px">${formHtml(e.blockForm)}</div>
+      </div>
+
+      ${e.performers && e.performers.length ? `<div class="panel rev">
+        <div class="blk-q rev">WHO STOOD OUT</div>
+        ${e.performers.map(performerRow).join("")}
+      </div>` : ""}
+
+      ${(e.medical && (e.medical.hurt.length || e.medical.back.length)) ? `<div class="panel rev">
+        <div class="blk-q rev">THE TREATMENT ROOM</div>
+        ${e.medical.hurt.map((h) => `<div class="drill-row"><span class="bad">✚</span> <b>${esc(h.name)}</b> <span class="muted">${h.pos}</span> <span class="bad">out ${h.blocks === 1 ? "one block" : `${h.blocks} blocks`}</span></div>`).join("")}
+        ${e.medical.back.map((h) => `<div class="drill-row"><span class="accent">✓</span> <b>${esc(h.name)}</b> <span class="muted">${h.pos}</span> <span class="accent">back in contention</span></div>`).join("")}
+        ${e.medical.tired ? `<div class="drill-row muted">${e.medical.tired} ${e.medical.tired === 1 ? "player is" : "players are"} carrying a heavy load into the next block.</div>` : ""}
+      </div>` : ""}
+
+      <div class="panel rev">
+        <div class="blk-q rev">THE MOOD</div>
+        <div class="blk-stats">
+          <span class="${e.moraleLabel ? e.moraleLabel.cls : "muted"}"><b>${esc(e.moraleLabel ? e.moraleLabel.label : "—")}</b><span class="muted"> dressing room</span></span>
+          ${e.cup ? `<span class="muted">${esc(e.cup.name)}: <b class="${e.cup.alive ? "gold" : "muted"}">${e.cup.won ? "WON IT" : e.cup.alive ? "still in" : "out"}</b></span>` : ""}
+          ${e.europe ? `<span class="muted">${esc(e.europe.comp)}: <b class="${e.europe.alive ? "gold" : "muted"}">${e.europe.won ? "WON IT" : e.europe.alive ? "still in" : "out"}</b></span>` : ""}
+        </div>
+        ${e.boardMood ? `<div class="board-say">${esc(e.boardMood)}</div>` : ""}
+      </div>
+
+      <button class="btn primary big sticky-go" id="block-continue">CONTINUE ▶</button>`;
+  }
+
   function cardHtml() {
     const card = state.cards[state.cardIndex];
     const done = outcomesHtml();
@@ -1570,7 +1848,7 @@
     return `${done}
       <div class="stage-step">${label} · decision ${state.cardIndex + 1} of ${state.cards.length}</div>
       ${state.phase === "EARLY" ? earlyTableHtml() : glanceHtml(club())}
-      <div class="decision ${isBoard ? "boardroom" : ""}">
+      <div class="decision ${isBoard ? "boardroom" : ""}${state.phase === "EARLY" ? " reacting" : ""}">
         <div class="decision-tag">${esc(card.view.category)}</div>
         <div class="decision-text">${esc(card.view.text)}</div>
         <div class="decision-choices">
@@ -1860,9 +2138,18 @@
 
   function wireStage() {
     for (const b of document.querySelectorAll("[data-choice]")) b.addEventListener("click", () => chooseOption(Number(b.dataset.choice)));
+    // The two block levers. Toggles, not cards: tapping one re-renders in
+    // place so the manager can change his mind before he kicks off.
+    for (const b of document.querySelectorAll("[data-plan]")) b.addEventListener("click", () => setPlan(b.dataset.plan, b.dataset.key));
     for (const b of document.querySelectorAll("[data-ending]")) b.addEventListener("click", () => chooseEnding(Number(b.dataset.ending)));
     const bind = (id, fn) => { const el = $(id); if (el) el.addEventListener("click", fn); };
     bind("play-season", playSeason);
+    // The block report's CONTINUE: what he wants to change, then the next two
+    // months. runPhase falls straight through to advanceBlock when the window
+    // has nothing worth asking.
+    bind("block-play", runBlock);
+    // The review's reactive decision, then the brief for the next two months.
+    bind("block-continue", () => runPhase("EARLY"));
     bind("to-endseason", toEndSeason);
     bind("to-preseason", toNextSeason);
     bind("approach-accept", () => chooseApproach(true));
@@ -2106,26 +2393,43 @@
    * this" — which is what you actually want when deciding whether he fits,
    * and the question a column of near-identical bar lengths is worst at.
    *
-   * THE SCALE IS THE WHOLE TRICK. Plotted raw on 0-99 every senior
-   * professional is a rounded blob in the middle: real squads live in a
-   * band of roughly 45-90, so a 46 and an 85 — a genuinely enormous
-   * difference — sit barely 40% of the radius apart while the inner half of
-   * the chart stays permanently empty. The radial axis therefore starts at
-   * RADAR_FLOOR rather than zero, spending the whole chart on the range
-   * players are actually in and turning that same pair into most of the
-   * radius. Nothing is invented or exaggerated: these are the same values
-   * printed on the bars, on a zoomed axis — which is exactly why the floor
-   * is printed underneath rather than hidden. */
-  const RADAR_FLOOR = 38;
+   * THE SCALE IS THE WHOLE TRICK, and it took two goes to get right.
+   *
+   * Plotted raw on 0-99 every senior professional is a rounded blob in the
+   * middle, because real squads live in a band of roughly 45-90 and the inner
+   * half of the chart stays permanently empty. The first fix was one shared
+   * floor: start the radius at 38 rather than 0 and spend the whole chart on
+   * the range players are actually in.
+   *
+   * That helped and was still wrong, because the axes do not share a range.
+   * Defending in this database runs from the teens to the mid-nineties;
+   * Mental is squeezed into a much narrower band. On one ruler the wide axis
+   * does all the talking and the narrow ones sit at the same middling radius
+   * on every single player — six corners, two of which ever move, which is
+   * exactly the "everyone fills the hexagon" complaint. Each axis now gets
+   * its own ruler, fitted to the 3rd-to-99th percentile of that quality
+   * across every player in the world (ratings.fitRadarScale). Measured over
+   * the full population, shapes came out 16% more spiky.
+   *
+   * Nothing is invented or exaggerated: these are the same values printed on
+   * the bars, on an axis scaled to the population — which is exactly why what
+   * the edge means is printed underneath rather than hidden. */
   const RADAR_AXES = ["DEF", "PHY", "SPD", "ATT", "AER", "MEN"];
   function radarHtml(stats) {
     if (!stats || stats.length < 3) return "";
     const n = stats.length;
     const cx = 100, cy = 96, R = 62;
-    // Floored a little above zero so a genuinely poor axis is still a
-    // visible point rather than vanishing into the centre and pinching the
-    // whole shape shut.
-    const rOf = (v) => R * clamp((v - RADAR_FLOOR) / (99 - RADAR_FLOOR), 0.08, 1);
+    /* EACH AXIS ON ITS OWN RULER, fitted to the 3rd-to-99th percentile of that
+     * quality across every player in the database — see ratings.fitRadarScale.
+     * One shared 38-to-99 ruler was the reason every good player filled the
+     * hexagon: the axes do not share a range, so the wide ones did all the
+     * talking and the narrow ones sat at the same middling radius on
+     * everybody. A corner now says where this player stands among footballers
+     * on that quality, which is the only question the chart was asking. */
+    const rOf = (v, i) => {
+      const [lo, hi] = MG.ratings.radarScale(i);
+      return R * clamp((v - lo) / Math.max(1, hi - lo), 0.07, 1);
+    };
     const pt = (i, r) => {
       const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
       return [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
@@ -2136,8 +2440,8 @@
       return `<line class="spoke" x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`;
     }).join("");
     const dots = stats.map((s, i) => {
-      const [x, y] = pt(i, rOf(s.value));
-      return `<circle class="dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6"/>`;
+      const [x, y] = pt(i, rOf(s.value, i));
+      return `<circle class="dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4"/>`;
     }).join("");
     const labels = stats.map((s, i) => {
       const [x, y] = pt(i, R + 16);
@@ -2148,17 +2452,24 @@
       return `<text class="axlabel" x="${x.toFixed(1)}" y="${(y + dy).toFixed(1)}" text-anchor="${at}">${esc(code)}</text>
               <text class="axval" x="${x.toFixed(1)}" y="${(y + dy + 11).toFixed(1)}" text-anchor="${at}">${Math.round(s.value)}</text>`;
     }).join("");
+    /* Banded rings behind a thin fill and a thick bright outline. The old
+     * chart was a heavy translucent slab whose edge was the same weight as
+     * the grid under it, so the SHAPE — the only thing a radar is for — was
+     * the least legible mark on the picture. */
     return `<div class="radar-wrap">
       <svg class="radar" viewBox="0 0 200 200" role="img" aria-label="Attribute radar">
+        <polygon class="band band-3" points="${poly(() => R)}"/>
+        <polygon class="band band-2" points="${poly(() => R * 0.66)}"/>
+        <polygon class="band band-1" points="${poly(() => R * 0.33)}"/>
         <polygon class="grid" points="${poly(() => R)}"/>
         <polygon class="grid" points="${poly(() => R * 0.66)}"/>
         <polygon class="grid" points="${poly(() => R * 0.33)}"/>
         ${spokes}
-        <polygon class="shape" points="${poly((s) => rOf(s.value))}"/>
+        <polygon class="shape" points="${poly((s, i) => rOf(s.value, i))}"/>
         ${dots}
         ${labels}
       </svg>
-      <div class="radar-note">Same numbers as the bars — the axis starts at ${RADAR_FLOOR}, so the shape shows the differences.</div>
+      <div class="radar-note">Each axis is scaled against every player in the game — the edge is the top 1%.</div>
     </div>`;
   }
 
