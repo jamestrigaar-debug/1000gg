@@ -237,6 +237,99 @@
   .hg { font-size: 9px; color: var(--accent); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; }
   .simming { text-align: center; padding: 40px 20px; color: var(--accent2); font-weight: 700; }
 
+  body.in-block #lastseason-label,
+  body.in-block #lower-tabs,
+  body.in-block #lastseason { display: none; }
+
+  /* ---------- The block loop: the brief, then the review ----------
+     Two screens that must never be mistaken for each other. The BRIEF plans
+     the next two months and is green-edged; the REVIEW reacts to the two just
+     gone and is blue-edged. A manager on a phone should know which one he is
+     looking at before he reads a word. */
+  .blk { padding: 12px 13px; border-left: 3px solid var(--accent); }
+  .panel.rev { padding: 12px 13px; border-left: 3px solid var(--accent2); }
+  .stage-step.rev { color: var(--accent2); }
+  .blk-q { font-size: 10.5px; letter-spacing: 1.6px; text-transform: uppercase;
+    color: var(--accent); font-weight: 800; margin-bottom: 8px; }
+  .blk-q.rev { color: var(--accent2); }
+  .blk-stats { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; align-items: baseline; }
+  .blk-stats b { font-size: 15px; }
+  .warn { color: #ffb347; }
+
+  /* Fixtures: cards in a row, not a table. */
+  .fix-list { display: flex; flex-direction: column; gap: 5px; }
+  .fix { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .fix-ha { width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 4px;
+    font-size: 10px; font-weight: 800; flex-shrink: 0; }
+  .fix-ha.h { background: var(--accent); color: #052211; }
+  .fix-ha.a { background: var(--card2); color: var(--muted); border: 1px solid var(--line); }
+  .fix-opp { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fix-pos { font-size: 11px; flex-shrink: 0; }
+  .blk-extra { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .tag { font-size: 9.5px; font-weight: 800; letter-spacing: .6px; padding: 2px 7px; border-radius: 4px;
+    border: 1px solid var(--line); color: var(--muted); flex-shrink: 0; }
+  .tag.derby { border-color: var(--bad); color: var(--bad); }
+  .tag.hard { border-color: var(--gold); color: var(--gold); }
+  .tag.cup { border-color: var(--gold); color: var(--gold); }
+  .tag.euro { border-color: var(--rare); color: var(--rare); }
+
+  /* Glance, then tap. */
+  .drill { margin-top: 9px; }
+  .drill summary { cursor: pointer; font-size: 12px; font-weight: 700; list-style: none; padding: 3px 0; }
+  .drill summary::-webkit-details-marker { display: none; }
+  .drill summary::before { content: "▸ "; color: var(--muted); }
+  .drill[open] summary::before { content: "▾ "; }
+  .drill-row { display: flex; gap: 7px; align-items: baseline; font-size: 12px; padding: 3px 0 3px 12px; }
+  .drill-row b { font-weight: 700; }
+
+  /* The two levers. */
+  .plan-label { font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase;
+    color: var(--txt); font-weight: 800; margin-bottom: 7px; }
+  .plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 7px; }
+  .plan-card { text-align: left; background: var(--bg2); border: 1px solid var(--line); border-radius: 9px;
+    padding: 9px 10px; color: var(--txt); font-family: inherit; cursor: pointer; transition: border-color .12s, background .12s; }
+  .plan-card:hover { border-color: var(--accent2); }
+  .plan-card.on { border-color: var(--accent); background: rgba(0,208,108,.10); box-shadow: inset 0 0 0 1px var(--accent); }
+  .plan-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 13px; }
+  .plan-top b { white-space: nowrap; }
+  .plan-tag { font-size: 8.5px; letter-spacing: .8px; color: var(--muted); font-weight: 800; flex-shrink: 0; }
+  .plan-card.on .plan-tag { color: var(--accent); }
+  .plan-blurb { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.35; }
+  .plan-effect { font-size: 11px; color: var(--accent2); margin-top: 5px; font-weight: 600; }
+
+  /* Always know what to do next. */
+  .sticky-go { width: 100%; margin-top: 4px; }
+
+  /* The review's rows. */
+  .rev-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+  .rev-record { font-size: 15px; }
+  .rev-move { font-size: 15px; }
+  .mv.up { color: var(--accent); }
+  .mv.down { color: var(--bad); }
+  .mv.flat { color: var(--muted); }
+  .perf { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; padding: 5px 0;
+    border-bottom: 1px solid var(--line); }
+  .perf:last-child { border-bottom: 0; }
+  .perf-arrow { font-size: 11px; flex-shrink: 0; }
+  .perf-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .perf-line { font-size: 11px; flex-shrink: 0; }
+  .perf-rating { font-weight: 800; font-size: 14px; width: 34px; text-align: right; flex-shrink: 0; }
+  /* The reactive decision that closes a block wears the review's blue, so a
+     manager never mistakes "react to what just happened" for "plan the next
+     two months" — they are different jobs and they look different. */
+  .decision.reacting { border-left: 3px solid var(--accent2); }
+  .decision.reacting .decision-tag { color: var(--accent2); }
+
+  .board-say { margin-top: 9px; padding: 8px 10px; background: var(--bg2); border-radius: 8px;
+    border-left: 2px solid var(--accent2); font-size: 12.5px; font-style: italic; color: var(--txt); }
+
+  /* Form over the two months just played — the block report's headline. */
+  .form-pip { display: inline-block; width: 16px; height: 16px; line-height: 16px; text-align: center;
+    border-radius: 3px; font-size: 10px; font-weight: 700; margin-right: 2px; color: #05110a; }
+  .form-pip.w { background: var(--accent); }
+  .form-pip.d { background: var(--gold, #d8b24a); }
+  .form-pip.l { background: var(--bad); color: #fff; }
+
   /* ---------- Tier 1: career dashboard ---------- */
   .tier-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted);
     margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
@@ -470,9 +563,18 @@
      than a fixed pixel size, since two thirds of players are on a phone. */
   .radar-wrap { margin-top: 16px; }
   .radar { display: block; width: 100%; max-width: 250px; margin: 0 auto; overflow: visible; }
-  .radar .grid, .radar .spoke { fill: none; stroke: var(--line); stroke-width: 1; }
-  .radar .shape { fill: rgba(0, 208, 108, .20); stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
-  .radar .dot { fill: var(--accent); }
+  /* Banded rings, a thin fill and a thick bright outline. The shape is the
+     only thing a radar exists to show, so it is the loudest mark on the
+     picture — it used to be a heavy translucent slab whose edge weighed the
+     same as the grid underneath it. */
+  .radar .band { stroke: none; }
+  .radar .band-3 { fill: rgba(255,255,255,.022); }
+  .radar .band-2 { fill: rgba(255,255,255,.028); }
+  .radar .band-1 { fill: rgba(255,255,255,.034); }
+  .radar .grid, .radar .spoke { fill: none; stroke: var(--line); stroke-width: .8; opacity: .75; }
+  .radar .shape { fill: rgba(0, 208, 108, .11); stroke: var(--accent); stroke-width: 3;
+    stroke-linejoin: round; filter: drop-shadow(0 0 4px rgba(0,208,108,.45)); }
+  .radar .dot { fill: var(--txt); stroke: var(--accent); stroke-width: 1.4; }
   .radar .axlabel { fill: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .04em; }
   .radar .axval { fill: var(--txt); font-size: 11px; font-weight: 800; }
   .radar-note { color: var(--muted); font-size: 10.5px; text-align: center; margin-top: 2px; }
@@ -582,7 +684,7 @@
     </div>
 
     <!-- Last season — a compact reminder of where you stand -->
-    <div class="tier-label">Last season</div>
+    <div class="tier-label" id="lastseason-label">Last season</div>
     <div id="lastseason"></div>
 
     <!-- Reference — the table, your record and the wider world. Sits ABOVE the
@@ -654,6 +756,7 @@
 <script src="src/narrative.js"></script>
 <script src="src/youth.js"></script>
 <script src="src/competitions.js"></script>
+<script src="src/blocks.js"></script>
 <script src="src/agents.js"></script>
 <script src="src/transfers.js"></script>
 <script src="src/ai.js"></script>
