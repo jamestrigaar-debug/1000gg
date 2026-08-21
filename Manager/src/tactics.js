@@ -251,7 +251,35 @@
   /** The XI a club will actually field: the manager's picked side for this
    *  competition if it is still valid, then his league side, then the best
    *  available. */
+  /* THE PICKED XI IS CACHED, because picking one is the most expensive thing
+   * in the engine and the same eleven was being picked over and over inside a
+   * single block: once by refreshRatings, once by teamProfile for its depth
+   * and morale reads, once more by anything that asked for the ratings again.
+   * Measured over six seasons, autoPick alone accounted for about a quarter of
+   * all the work the simulation did.
+   *
+   * The cache is keyed on the club, the competition, the shape and the squad's
+   * own fingerprint, and dropped for a club by clubs.refreshRatings — which is
+   * the function every state change that could alter the side already calls.
+   * Nothing else needs to remember to invalidate. */
+  const XI_CACHE = new Map();
+  function dropXICache(clubId) {
+    if (clubId == null) { XI_CACHE.clear(); return; }
+    for (const k of XI_CACHE.keys()) if (k.startsWith(`${clubId}|`)) XI_CACHE.delete(k);
+  }
+
   function effectiveXI(club, comp) {
+    const key = `${club.id}|${comp || "league"}|${club.formation || "4-4-2"}|${squadStamp(club)}`;
+    const hit = XI_CACHE.get(key);
+    if (hit) return hit;
+    const xi = pickXI(club, comp);
+    // Bounded: one entry per club per competition, and cleared every block.
+    if (XI_CACHE.size > 4000) XI_CACHE.clear();
+    XI_CACHE.set(key, xi);
+    return xi;
+  }
+
+  function pickXI(club, comp) {
     const formationKey = club.formation || "4-4-2";
     const formation = FORMATIONS[formationKey] || FORMATIONS["4-4-2"];
     const byId = {};
@@ -743,7 +771,7 @@
     PREDICT_RAMP, PREDICT_COST, systemKey, ageSystem, predictability, predictabilityLabel,
     FORMATIONS, FORMATION_KEYS, FAMILIARITY, familiarity,
     initMorale, effectiveOverall, teamMorale, shiftMorale, settleMorale,
-    autoPick, effectiveXI, setXI, setFormation, xiRatings, xiReport, planIds, PLANS, PLAN_LABEL,
+    autoPick, effectiveXI, dropXICache, setXI, setFormation, xiRatings, xiReport, planIds, PLANS, PLAN_LABEL,
     MATCHUP, MATCHUP_XG, formationEdge, matchupLabel, backupsFor, depthScore,
     TRAINING_FOCUS, TRAINING_FOCUS_KEYS, formationFit, trainingFit, managerFit,
     synergyScore, developmentMultiplier, setTrainingFocus, autoTrainingFocus,

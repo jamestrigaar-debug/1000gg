@@ -112,9 +112,36 @@
   const ROLE_INFLUENCE = 0.45;
 
   /** A player's ability IN A GIVEN ROLE, on the same 0-99 scale as `overall`. */
+  /* MEMOISED, because this is the single hottest function in the game: eleven
+   * shirts against a dozen spares, for every club, several times a block, came
+   * to about 1.3 MILLION calls a season — a fifth of all the work the
+   * simulation did, recomputing the same answers over and over.
+   *
+   * It is a pure function of the player's attributes, his overall and the
+   * slot, and attributes move in exactly three places (development, the
+   * academy, and one decision card), each of which bumps `_av`. The cache
+   * lives in a WeakMap rather than on the player so it never reaches a save
+   * file and dies with the player it belongs to. */
+  const ROLE_CACHE = new WeakMap();
+
   function roleRating(player, slot) {
     const table = ROLE_WEIGHT_LIST[slot];
     if (!table) return player.overall;
+    const v = player._av || 0;
+    let c = ROLE_CACHE.get(player);
+    if (!c || c.v !== v) { c = { v, s: {} }; ROLE_CACHE.set(player, c); }
+    else if (c.s[slot] !== undefined) return c.s[slot];
+    const out = computeRoleRating(player, table);
+    c.s[slot] = out;
+    return out;
+  }
+
+  /** Mark a player's attributes as changed, so the role cache is rebuilt. */
+  function touchAttrs(player) {
+    player._av = (player._av || 0) + 1;
+  }
+
+  function computeRoleRating(player, table) {
     const { gets, vals, weightSum, n } = table;
     let weighted = 0, plain = 0;
     for (let i = 0; i < n; i++) {
@@ -662,6 +689,6 @@
   MG.ratings = {
     ROLE_WEIGHTS, ROLE_INFLUENCE, attrValue, roleRating,
     hidden, resetHidden, pruneHidden, rollSeasonForm, fatigueFactor,
-    radarAxes, radarScale, fitRadarScale, AXIS_KEYS, axisMean, AXIS_RELEVANCE, AER_POS, DEF_ATR_WEIGHT, heightScore, defenceAttribute,
+    radarAxes, radarScale, fitRadarScale, AXIS_KEYS, touchAttrs, axisMean, AXIS_RELEVANCE, AER_POS, DEF_ATR_WEIGHT, heightScore, defenceAttribute,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

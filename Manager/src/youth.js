@@ -149,6 +149,8 @@
       for (const [k, w] of Object.entries(focus.attrs)) {
         p.attrs[k] = clamp(Math.round(p.attrs[k] + w * (0.6 + quality) + rng.gauss() * 0.4), 20, 99);
       }
+      // Attributes moved: drop this player's role-rating cache.
+      if (MG.ratings.touchAttrs) MG.ratings.touchAttrs(p);
       if (focus.mental) p.mentalityRating = clamp(Math.round(p.mentalityRating + focus.mental * (0.6 + quality)), 20, 99);
       p.value = MG.players.marketValue(p);
       // The scouting range tightens as he plays and trains in front of them.

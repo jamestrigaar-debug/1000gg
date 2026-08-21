@@ -910,16 +910,42 @@
          * division of statues. */
         if (club.id !== world.playerClubId) MG.blocks.aiPlan(world, club, rng, i + 1);
         const plan = MG.blocks.planFor(club);
-        if (plan.approach === "reshape" && plan.shape && plan.shape !== club.formation) {
-          MG.tactics.setFormation(club, plan.shape);
+        /* CHANGING SHAPE IS AN EVENT, NOT A STATE. Left as a standing approach
+         * it did two wrong things at once: the side kept paying the higher
+         * running cost of a rebuild for ever, and the brief went on showing
+         * "SWITCH TO 4-3-3" as the selected card while changing nothing —
+         * plan.shape already equalled the formation, so the tap the manager
+         * could see highlighted was doing nothing at all. You change shape,
+         * and then you play it. */
+        /* Read the focus the approach implies BEFORE spending the reshape,
+         * or the one block that most needs to be drilling the new shape is the
+         * one block that trains for nothing. */
+        const implied = APPROACH_FOCUS(plan);
+        if (plan.approach === "reshape") {
+          if (plan.shape && plan.shape !== club.formation) MG.tactics.setFormation(club, plan.shape);
+          plan.approach = "drilled";
+          plan.shape = null;
         }
-        if (APPROACH_FOCUS(plan)) MG.tactics.setTrainingFocus(club, APPROACH_FOCUS(plan));
-        MG.blocks.markBlockStart(club, row);
+        /* The approach implies a training focus, but only while it is in
+         * force. Without remembering what the manager actually chose, one
+         * block of PUSH ON overwrote his pre-season training choice
+         * permanently — going back to AS DRILLED restored nothing, because
+         * the drilled approach names no focus of its own. The pre-season
+         * control quietly stopped meaning anything after the first block. */
+        if (implied) {
+          if (!club._ownFocus) club._ownFocus = club.trainingFocus || "balanced";
+          MG.tactics.setTrainingFocus(club, implied);
+        } else if (club._ownFocus) {
+          MG.tactics.setTrainingFocus(club, club._ownFocus);
+          club._ownFocus = null;
+        }
+        MG.blocks.markBlockStart(club, row, club.id === world.playerClubId);
       });
     }
     // The plan changes what the side is worth and who plays in it.
     world._profiles = {};
     world._selections = {};
+    MG.tactics.dropXICache();
   }
   const APPROACH_FOCUS = (plan) => {
     const a = MG.blocks.APPROACH[plan.approach];
@@ -929,6 +955,7 @@
   function closeBlock(world, S) {
     if (!MG.blocks) return;
     const rng = world.rng;
+    const touched = [];
     for (const leagueId of Object.keys(S.leagues)) {
       const st = S.leagues[leagueId];
       for (const clubId of st.clubIds) {
@@ -943,17 +970,27 @@
         const medical = MG.blocks.settleClub(world, club, rng);
         MG.blocks.settleMorale(club, blockResult);
         club._blockMedical = medical;
-        if (!MG.blocks.T || MG.blocks.T.refresh !== 0) MG.clubs.refreshRatings(club);
+        touched.push(club);
       }
     }
     /* Fatigue is charged relative to the rest of the world, so the world's own
-     * level has to be measured before it can be charged — see blocks.js. */
+     * level has to be measured before it can be charged — see blocks.js.
+     *
+     * BEFORE the ratings refresh, not after. refreshRatings reads a player's
+     * effective level, which reads fatigueRel, so re-rating first and
+     * re-measuring second left every club in the world carrying the PREVIOUS
+     * block's fatigue in its ratings — a whole two months out of date, all
+     * season, every season. */
     MG.blocks.markFatiguePar(world.clubs);
+    if (!MG.blocks.T || MG.blocks.T.refresh !== 0) {
+      for (const club of touched) MG.clubs.refreshRatings(club);
+    }
     /* Injuries and fatigue both change who is worth picking, so the cached
      * teams and profiles have to go — otherwise the man who broke his leg in
      * October keeps playing until somebody signs a striker. */
     world._profiles = {};
     world._selections = {};
+    MG.tactics.dropXICache();
   }
 
   /* ---------------------------- THE BLOCK REPORT ---------------------------
@@ -996,14 +1033,20 @@
     return [rated[0], rated[1], rated[rated.length - 1]];
   }
 
-  function blockMedical(club) {
+  function blockMedical(club, world) {
     const m = club._blockMedical || { hurt: [], returning: [] };
-    const row = (p) => ({ id: p.id, name: p.name, pos: p.pos });
+    const byId = {};
+    for (const p of club.squad) byId[p.id] = p;
+    const row = (id) => {
+      const p = byId[id];
+      return p ? { id: p.id, name: p.name, pos: p.pos } : null;
+    };
     let tired = 0;
     for (const p of club.squad) if (MG.blocks.fatigueOf(p) >= 0.5) tired++;
     return {
-      hurt: (m.hurt || []).map((h) => ({ ...row(h.player), blocks: h.blocks })),
-      back: (m.returning || []).map(row),
+      // A man sold between the injury and the report is simply gone.
+      hurt: (m.hurt || []).map((h) => { const r = row(h.id); return r && { ...r, blocks: h.blocks }; }).filter(Boolean),
+      back: (m.returning || []).map(row).filter(Boolean),
       tired,
     };
   }
@@ -1080,7 +1123,7 @@
        * screen is a small end-of-season report, and these are its rows. */
       wasPosition: (club._blockMark && club._blockMark.position) || null,
       performers: blockPerformers(club, row),
-      medical: blockMedical(club),
+      medical: blockMedical(club, world),
       moraleLabel: MG.blocks.moraleLabel(MG.tactics.teamMorale(club)),
       boardMood: boardMood(club, standing, row),
       cup: cupProgress(world, S.cups[club.country], club.id, club),
@@ -1584,7 +1627,13 @@
       bigTransfers: window.news.length,
       managerWindow,
       playerApproach: playerApproach ? { clubId: playerApproach.club.id } : null,
-      news: world.news.filter((n) => n.season === world.season),
+      /* The season's news, narrowed to the club the manager is at. The full
+       * season log used to go in here, and world.history keeps sixty seasons
+       * of summaries — so every save carried a complete SECOND copy of the
+       * log, over a megabyte of it after forty seasons, to serve exactly one
+       * reader: the result screen looking for its own sacking. */
+      news: world.news.filter((n) => n.season === world.season
+        && (n.clubId === world.playerClubId || n.type === "trophy")),
     };
     world.history.push(summary);
     if (world.history.length > 60) world.history.shift();

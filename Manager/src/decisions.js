@@ -251,6 +251,7 @@
       train(attr, delta) {
         for (const p of club.squad) {
           p.attrs[attr] = clamp(Math.round((p.attrs[attr] || 55) + delta), 20, 99);
+          if (MG.ratings.touchAttrs) MG.ratings.touchAttrs(p);
         }
       },
       facilities(f) {

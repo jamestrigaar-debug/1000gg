@@ -322,6 +322,7 @@
     player.overall = clamp(Math.round((prevOverall + d) * 10) / 10, 25, 96);
     if (player.overall > player.potential) player.potential = player.overall;
     const w = d >= 0 ? GAIN_WEIGHTS : DECLINE_WEIGHTS;
+    let changed = false;
     for (const k of Object.keys(HOUSE)) {
       const now = player.attrs[k];
       if (now == null) continue;
@@ -329,7 +330,13 @@
       const residual = houseTarget(k, player.overall) - now;
       const move = slope * d * w[k] + residual * CONVERGE;
       player.attrs[k] = clamp(Math.round(now + move), 20, 99);
+      changed = true;
     }
+    /* Overall moved too, and roleRating reads it, so the cache is dropped
+     * whether or not a single attribute happened to shift. See
+     * ratings.roleRating. */
+    void changed;
+    if (MG.ratings.touchAttrs) MG.ratings.touchAttrs(player);
     // Balance tracks the body it describes, not its own curve — see above.
     if (player.attrs.balance != null) {
       player.attrs.balance = deriveBalanceAgility(
@@ -518,7 +525,7 @@
       form: 0,
       // Career totals, so a fifteen-season save can show you who the world's
       // record scorer became.
-      career: { apps: 0, goals: 0, assists: 0, seasons: 0, clubs: [] },
+      career: { apps: 0, goals: 0, assists: 0, seasons: 0, history: [] },
       season: { apps: 0, goals: 0, assists: 0, minutesShare: 0, injured: 0 },
       retired: false,
     }, fields);
@@ -526,16 +533,16 @@
     return p;
   }
 
-  /* A player's move is recorded twice: `career.clubs` (a flat name list, the
-   * original field — kept so nothing that already reads it breaks) and
-   * `career.history` (club, season, age), which is what a profile actually
-   * needs to show a career as a timeline rather than a bag of names. Season
-   * is best-effort — a few sites (initial squad generation, an academy
-   * promotion reached through a code path with no world in scope) cannot
-   * always supply one, and the profile just leaves the year blank there
-   * rather than guessing. */
+  /* A move is recorded ONCE, in `career.history` (club, season, age), which is
+   * what a profile needs to show a career as a timeline rather than a bag of
+   * names. There used to be a second copy in `career.clubs` — a flat name list
+   * kept "so nothing that already reads it breaks" — and by the time anyone
+   * checked, nothing read it: it was write-only duplication costing about
+   * 800 KB in a forty-season save. Season is best-effort; a few sites (initial
+   * squad generation, an academy promotion reached through a code path with no
+   * world in scope) cannot supply one, and the profile leaves the year blank
+   * there rather than guessing. */
   function recordMove(player, clubName, season, opts) {
-    player.career.clubs.push(clubName);
     if (!player.career.history) player.career.history = [];
     player.career.history.push({ club: clubName, season: season != null ? season : null, age: player.age });
     /* The one flag every arrival passes through, whatever brought him in —

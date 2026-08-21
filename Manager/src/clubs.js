@@ -354,6 +354,10 @@
   }
 
   function refreshRatings(club) {
+    /* Anything that changes a club enough to need new ratings can also change
+     * WHO PLAYS, so the picked-XI cache for this club goes first. This is the
+     * single invalidation point for that cache — see tactics.effectiveXI. */
+    if (MG.tactics && MG.tactics.dropXICache) MG.tactics.dropXICache(club.id);
     // Ratings come from the ELEVEN on the pitch, not the whole squad — see
     // tactics.js. Picking a team is supposed to matter, and it cannot matter
     // if the numbers are computed from twenty-six players regardless.

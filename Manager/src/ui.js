@@ -51,7 +51,6 @@
     recent: [], career: [], lastRow: null, lastReport: null, lastBrief: null,
     sackReason: null,
     endingEntry: null, endingView: null, endingOutcome: null,
-    tab: "table", tabOpen: false,
     squadSort: "rating", chooserSort: "rating",
     signCount: 0, signPositions: [], signAmbition: "solid", transfersSeason: null, boardRecs: null,
     playerSearch: "", topPos: "ALL",
@@ -60,6 +59,8 @@
     moveCards: [], moveChoices: [], moveOutcomes: [], lastMoveSummary: null, lastApproach: null,
     phase: null, earlySnapshot: null, preview: null, seasonBrief: null,
     xiPlan: "league", xiMode: "view", xiPick: null,
+    // Which bottom-bar tab is showing, and which sub-tab inside it.
+    nav: "season", tab: "squad", deck: 0,
     lastSeenNewsId: 0, notifOpen: false,
   };
   root.MG_STATE = state;
@@ -161,18 +162,6 @@
    *
    * That last row is the one that matters: every post-season stage used to
    * land on "ready", quietly skipping all of it. */
-  /* Screens that open the reference panel automatically — none, now that the
-   * strip sits ABOVE the decisions rather than below them. It used to open
-   * itself on the season-ahead screen, which was harmless at the bottom of the
-   * page and is not harmless at the top: a full league table between the
-   * header and the decision pushes the decision off the first screen, which is
-   * the one thing this layout exists to prevent.
-   *
-   * The strip itself is always on screen, so the table, your record, the world
-   * and the academy stay one tap away from everywhere in the game — and squad,
-   * tactics and contracts are in the pre-season hub, which is why they are no
-   * longer duplicated here. */
-  const TAB_STAGES = {};
 
   const RESUME_STAGE = {
     "preseason-hub": "preseason-hub", transfers: "preseason-hub", "transfer-proposals": "preseason-hub",
@@ -682,6 +671,7 @@
     if (!preview) { finishSeason(); return; }
     state.preview = preview;
     state.stage = "block-brief";
+    state.deck = 0;
     autosave();   // milestone: the start of a block is a place to put it down
     render();
   }
@@ -703,6 +693,7 @@
     if (!report) { finishSeason(); return; }
     state.earlySnapshot = report;
     state.stage = "block-review";
+    state.deck = 0;
     autosave();
     render();
   }
@@ -723,6 +714,12 @@
       plan.shape = key === "reshape" ? (state.preview && state.preview.shapeOnOffer) : null;
     }
     state.preview = state.world.blockPreview();
+    /* Choosing answers the card, so the deck moves on. Tapping a different
+     * option on a card you have already answered just changes the answer —
+     * you are moved forward only from the card you were being asked. */
+    const cards = BRIEF_CARDS;
+    const asked = part === "approach" ? cards.indexOf("approach") : cards.indexOf("squad");
+    if ((state.deck || 0) === asked && asked < cards.length - 1) state.deck = asked + 1;
     render();
   }
 
@@ -1094,70 +1091,187 @@
     state._lastStage = state.stage;
     state._lastTab = state.tab;
 
-    const world = state.world, c = club(), m = state.manager, board = c.board;
+    const world = state.world, c = club();
+
+    /* ---- the context bar: who you are, where you stand, what is next ---- */
+    $("club-crest").textContent = crestOf(c.name);
     $("career-club").textContent = c.name;
-    $("career-league").textContent = MG.clubs.LEAGUES[c.leagueId].name;
-    $("career-season").textContent = `Season ${world.season} of ${MG.endings.SEASON_CAP} · ${world.year}/${String(world.year + 1).slice(2)}`;
-    $("career-manager").innerHTML = `${esc(m.name)} · ${esc(m.archetypeName)} · ${esc(m.tactic)} · ${esc(c.formation)} · rep ${m.reputation}`;
+    $("tb-context").innerHTML = contextLineHtml(world, c);
+    /* The position block is hidden rather than dashed out before a ball is
+     * kicked — a gold em-dash where a number belongs reads as a bug. */
+    const pos = livePosition(world, c);
+    $("tb-pos-wrap").hidden = !pos;
+    if (pos) {
+      $("tb-pos").textContent = ordinal(pos.position);
+      $("tb-pos").className = pos.vsTarget >= 2 ? "accent" : pos.vsTarget <= -3 ? "bad" : "";
+      $("tb-pos-lab").textContent = `OF ${pos.fieldSize}`;
+    }
 
-    const conf = Math.round(board.confidence);
-    $("confidence-bar").style.width = `${conf}%`;
-    $("confidence-bar").className = `conf ${conf >= 55 ? "" : conf >= 35 ? "warn" : "bad"}`;
-    $("confidence-value").textContent = conf;
-    $("board-style").textContent = board.style.toUpperCase();
-    $("board-style").className = `board-${board.style.toLowerCase()}`;
-    $("board-brief").textContent = board.targets ? board.targets.summary : "";
+    /* ---- the body: whichever pane the bottom bar is pointing at ---- */
+    const nav = state.nav || "season";
+    $("pane-season").hidden = nav !== "season";
+    $("pane-ref").hidden = nav === "season";
+    for (const b of document.querySelectorAll("[data-nav]")) b.classList.toggle("on", b.dataset.nav === nav);
+    const dot = $("club-dot");
+    if (dot) dot.hidden = !boardWantsAttention(c);
 
-    // The supporters: the second opinion, and one the board listens to.
-    const fans = Math.round(c.fans == null ? 56 : c.fans);
-    const mood = MG.clubs.fanMood(fans);
-    $("fans-bar").style.width = `${fans}%`;
-    $("fans-bar").className = `conf ${fans >= 55 ? "" : fans >= 35 ? "warn" : "bad"}`;
-    $("fans-value").textContent = fans;
-    $("fans-mood").textContent = mood.label.toUpperCase();
-    $("fans-mood").className = fans >= 55 ? "accent" : fans >= 35 ? "gold" : "bad";
-    $("fans-blurb").textContent = mood.blurb;
-
-    /* LAST SEASON is a reminder for the screens where you are between
-     * campaigns. On a block screen it is four hundred pixels of last year
-     * sitting between the header and the thing the manager actually opened
-     * the game to look at, on a phone, five times a season. One idea per
-     * screen: the block loop gets the screen to itself. */
-    const inBlock = state.stage === "block-brief" || state.stage === "block-review";
-    $("lastseason").innerHTML = inBlock ? "" : lastSeasonHtml();
-    document.body.classList.toggle("in-block", inBlock);
-    $("stage").innerHTML = stageHtml();
-    $("logfeed").innerHTML = logFeedHtml();
+    if (nav === "season") {
+      const deckStage = state.stage === "block-brief" || state.stage === "block-review";
+      $("stage").innerHTML = stageHtml();
+      $("tab-body").innerHTML = "";
+      $("log-label").hidden = deckStage;
+      $("logfeed").innerHTML = deckStage ? logFoldHtml() : logFeedHtml();
+      wireStage();
+      /* wireTab still runs on the season pane: the pre-season hub carries its
+       * own squad and tactics controls, and their selectors are document-wide
+       * by design. */
+      wireTab();
+    } else {
+      /* The season pane is EMPTIED rather than just hidden. Rendering it
+       * anyway meant every squad existed twice in the DOM at once — measured
+       * at 46 player rows on screen and 46 more in the hidden copy, each
+       * rebuilt on every render and each carrying its own handlers. */
+      $("stage").innerHTML = "";
+      $("logfeed").innerHTML = "";
+      renderRefNav(nav);
+      renderTab();
+    }
     renderNotifications();
-    wireStage();
-    /* WHERE THE REFERENCE TABS BELONG.
-     *
-     * The squad/tactics/youth/table strip is a reference surface, and it is
-     * long — a 26-man squad below every screen put the whole career page at
-     * over 4,000px on a phone, so a two-line decision sat on top of five
-     * screens of list nobody had asked to see. Two thirds of the people
-     * playing this are on a phone, and the game is meant to be played in
-     * the decisions and the log.
-     *
-     * So the tabs appear only where browsing is the point: the season-ahead
-     * screen. Everywhere a decision is being asked, the page is the
-     * decision and the log, full stop. Nothing is lost — the pre-season hub
-     * carries squad, tactics and contracts as its own sub-tabs, and the
-     * season-ahead screen carries the strip in full.
-     *
-     * The body is EMPTIED rather than just hidden, too. Rendering it anyway
-     * meant every squad existed twice in the DOM at once (measured: 46
-     * player rows on screen, 46 more in the hidden copy), each rebuilt on
-     * every render and each carrying its own click handlers. wireTab still
-     * runs either way — the hub's own tactics and squad controls are bound
-     * by it, since its selectors are document-wide by design. */
-    // A new screen always starts with the reference panel closed, so a
-    // decision is never buried under a squad list left open three screens
-    // ago. Reopening it is one tap, and it stays open until the next screen.
-    if (stageChanged) state.tabOpen = !!TAB_STAGES[state.stage];
-    if (state.tabOpen) renderTab();
-    else { $("tab-body").innerHTML = ""; renderTabStrip(); wireTab(); }
-    if (scrollY != null) window.scrollTo(0, scrollY);
+
+    /* The body is the only thing that scrolls, so the scroll position lives
+     * on it rather than on the window. */
+    const body = $("app-body");
+    if (body && scrollY != null) body.scrollTop = scrollY;
+    else if (body) body.scrollTop = 0;
+  }
+
+  /* Two or three letters that read as the club, for the crest. Initials of a
+   * multi-word name, otherwise the first two letters — "Manchester City" is
+   * MC, "Monza" is MO, and neither is ever mistaken for the other. */
+  function crestOf(name) {
+    const words = String(name).split(/\s+/).filter((w) => w.length > 2);
+    if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+    return String(name).slice(0, 2).toUpperCase();
+  }
+
+  /* The one line under the club name. It says the division, where in the
+   * season you are, and — while a season is running — who is next. */
+  function contextLineHtml(world, c) {
+    const league = MG.clubs.LEAGUES[c.leagueId].name;
+    const S = world.seasonState;
+    const year = `${world.year}/${String(world.year + 1).slice(2)}`;
+    if (!S || S.season !== world.season || S.block === 0) {
+      return `${esc(league)} · ${esc(year)} · <span class="muted">pre-season</span>`;
+    }
+    /* Deliberately NOT a block label. The bar tried carrying one and was wrong
+     * half the time by construction: on a review screen the season state has
+     * already moved on, so the bar read DEC–JAN over a card headed OCT–NOV.
+     * Both decks print the block they are about; the bar says what is NEXT,
+     * which is true on every screen in the game. */
+    const next = nextFixture(world, c);
+    return next
+      ? `${esc(league)} · <span class="accent">${esc(next)}</span>`
+      : `${esc(league)} · ${esc(year)} · <span class="muted">season's end</span>`;
+  }
+
+  /** The next league opponent, home or away, or null between seasons. */
+  function nextFixture(world, c) {
+    const S = world.seasonState;
+    if (!S || !S.leagues) return null;
+    const st = S.leagues[c.leagueId];
+    if (!st) return null;
+    for (let i = st.cursor; i < st.fixtures.length; i++) {
+      const f = st.fixtures[i];
+      if (f[0] !== c.id && f[1] !== c.id) continue;
+      const opp = world.clubById(f[0] === c.id ? f[1] : f[0]);
+      if (!opp) continue;
+      return `v ${shortClub(opp.name)} (${f[0] === c.id ? "H" : "A"})`;
+    }
+    return null;
+  }
+
+  /** Where the club stands right now — live if a season is running, last
+   *  season's finish if not. */
+  function livePosition(world, c) {
+    const S = world.seasonState;
+    if (S && S.leagues && S.leagues[c.leagueId] && S.block > 0) {
+      const st = S.leagues[c.leagueId];
+      const table = MG.competitions.leagueStanding(st);
+      const i = table.findIndex((r) => r.clubId === c.id);
+      if (i >= 0) {
+        const t = c.board.targets;
+        return { position: i + 1, fieldSize: st.fieldSize, vsTarget: t ? t.position - (i + 1) : 0 };
+      }
+    }
+    const row = state.lastRow;
+    if (row) return { position: row.position, fieldSize: row.fieldSize, vsTarget: 0 };
+    return null;
+  }
+
+  /* The CLUB tab wears a dot when the boardroom is somewhere the manager
+   * ought to look — a confidence collapse or supporters on the turn. */
+  function boardWantsAttention(c) {
+    const conf = Math.round(c.board.confidence);
+    const fans = Math.round(c.fans == null ? 56 : c.fans);
+    return conf < 40 || fans < 35;
+  }
+
+  /* A swipe is a horizontal drag that beat the vertical one. The threshold is
+   * generous (48px, and twice as horizontal as vertical) because the card
+   * scrolls too, and stealing a scroll to change card is far more annoying
+   * than missing a swipe. */
+  function wireSwipe() {
+    const el = document.querySelector("[data-swipe]");
+    if (!el) return;
+    let x0 = 0, y0 = 0, live = false;
+    el.addEventListener("touchstart", (ev) => {
+      const t = ev.changedTouches[0];
+      x0 = t.clientX; y0 = t.clientY; live = true;
+    }, { passive: true });
+    el.addEventListener("touchend", (ev) => {
+      if (!live) return;
+      live = false;
+      const t = ev.changedTouches[0];
+      const dx = t.clientX - x0, dy = t.clientY - y0;
+      if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 2) return;
+      const cards = state.stage === "block-brief" ? BRIEF_CARDS : REVIEW_CARDS;
+      const at = clamp(state.deck || 0, 0, cards.length - 1);
+      const to = clamp(at + (dx < 0 ? 1 : -1), 0, cards.length - 1);
+      if (to === at) return;
+      state.deck = to;
+      render();
+    }, { passive: true });
+  }
+
+  /* ---- the reference panes ----
+   * The six-button strip is gone. SQUAD and TACTICS are tabs of their own;
+   * everything else that was on it — the table, your record, the world, the
+   * academy, the honours, and the boardroom itself — lives under CLUB. */
+  const REF_PANES = {
+    squad: [{ key: "squad", label: "SQUAD" }],
+    tactics: [{ key: "tactics", label: "TACTICS" }],
+    club: [
+      { key: "board", label: "BOARDROOM" },
+      { key: "table", label: "TABLE" },
+      { key: "career", label: "RECORD" },
+      { key: "youth", label: "ACADEMY" },
+      { key: "world", label: "WORLD" },
+      { key: "awards", label: "HONOURS" },
+      { key: "log", label: "LOG" },
+    ],
+  };
+
+  function renderRefNav(nav) {
+    const panes = REF_PANES[nav] || [];
+    if (!panes.some((p) => p.key === state.tab)) state.tab = panes[0] ? panes[0].key : "squad";
+    const seg = $("ref-seg");
+    // A single-choice strip is not a choice; SQUAD and TACTICS just show.
+    seg.hidden = panes.length < 2;
+    seg.innerHTML = panes.length < 2 ? "" : panes.map((p) =>
+      `<button class="${p.key === state.tab ? "on" : ""}" data-ref="${p.key}">${esc(p.label)}</button>`).join("");
+    for (const b of seg.querySelectorAll("[data-ref]")) {
+      b.addEventListener("click", () => { state.tab = b.dataset.ref; render(); });
+    }
   }
 
   /* ------------------------------ NOTIFICATIONS ----------------------------
@@ -1226,14 +1340,35 @@
   /* Kept open on the main screen: the board reports back here — what it signed,
    * what it tried and could not, who it renewed or let go. The world's own
    * noise stays in the WORLD tab; this is your club only. */
-  function logFeedHtml() {
+  /* THE LOG, sized to the screen it is under.
+   *
+   * On a deck screen it is three lines behind a fold. It used to print
+   * fourteen under every card, and in a busy summer that is eight hundred
+   * pixels of "the board suggest X could be moved on" sitting beneath a
+   * question the manager has not answered yet — the exact noise the deck
+   * exists to get rid of. The full run lives in CLUB, and the bell still
+   * catches anything that actually needs him. */
+  function logFeedHtml(limit) {
     const world = state.world;
-    const mine = world.newsFor(state.clubId, 14);
+    const n = limit || 14;
+    const mine = world.newsFor(state.clubId, n);
     if (!mine.length) return `<div class="panel"><div class="muted" style="font-size:13px">Nothing has happened at this club yet. Play a season and the board will report back here.</div></div>`;
-    return `<div class="panel"><div class="table-scroll" style="max-height:230px">
-      ${mine.map((n) => `<div class="log-entry ${esc(n.type)}"><span class="muted">${n.year}</span> ${esc(n.text)}</div>`).join("")}
-    </div></div>`;
+    const rows = mine.map((x) => `<div class="log-entry ${esc(x.type)}"><span class="muted">${x.year}</span> ${esc(x.text)}</div>`).join("");
+    return `<div class="panel"><div class="table-scroll" style="max-height:230px">${rows}</div></div>`;
   }
+
+  /** The deck's version: folded shut, three lines when opened. */
+  function logFoldHtml() {
+    const world = state.world;
+    const mine = world.newsFor(state.clubId, 3);
+    if (!mine.length) return "";
+    return `<details class="drill log-fold"><summary><span>The log</span>
+        <span class="muted">${esc(shortLog(mine[0]))}</span></summary>
+      ${mine.map((x) => `<div class="log-entry ${esc(x.type)}"><span class="muted">${x.year}</span> ${esc(x.text)}</div>`).join("")}
+      <div class="muted" style="font-size:11px;padding:4px 0 8px">The full run is in <b>CLUB → LOG</b>.</div>
+    </details>`;
+  }
+  const shortLog = (n) => (n.text.length > 34 ? `${n.text.slice(0, 32)}…` : n.text);
 
   /* ----------------------------- CAREER (tab) ----------------------------- */
   function careerHtml() {
@@ -1688,94 +1823,116 @@
     </div>`;
   }
 
-  function planCardsHtml(table, keys, part, chosen) {
-    return keys.map((k) => {
-      const o = table[k];
-      const on = k === chosen;
-      return `<button class="plan-card${on ? " on" : ""}" data-plan="${part}" data-key="${k}">
-        <div class="plan-top"><b>${esc(o.label)}</b><span class="plan-tag">${esc(o.tag)}</span></div>
-        <div class="plan-blurb">${esc(o.blurb)}</div>
-        <div class="plan-effect">${esc(o.effect)}</div>
-      </button>`;
-    }).join("");
+  /* planCardsHtml lived here — the two-up grid of plan cards from the
+   * four-questions brief. The deck asks one question per screen, so an option
+   * is a full-width row with its price printed on it (see .opt) and the grid
+   * had nothing left to lay out. */
+
+  /* ======================= THE BRIEF, AS A DECK ============================
+   * Three cards, one question each, and only one on screen at a time:
+   *
+   *   1. THE GLANCE    what is coming up, what state the squad is in, and
+   *                    what the board is expecting — the three questions a
+   *                    manager answers by LOOKING, folded into one card with
+   *                    the detail one tap behind it.
+   *   2. THE APPROACH  how the side sets up for the next two months.
+   *   3. THE SQUAD     who plays and who rests.
+   *
+   * The four questions are still the four questions; what changed is that
+   * three of them are things you read and one is a thing you decide, so the
+   * reading is one card and each decision gets a screen of its own. A phone
+   * shows one idea at a time or it shows none of them properly.
+   *
+   * Cards are reachable by tapping the dots, by the button, or by swiping. */
+  const BRIEF_CARDS = ["glance", "approach", "squad"];
+
+  function deckChromeHtml(cards, at, step) {
+    return `
+      <div class="deck-prog">${cards.map((_, i) =>
+        `<i class="${i < at ? "done" : i === at ? "now" : ""}" data-deck="${i}"></i>`).join("")}</div>
+      <div class="deck-head"><span class="step">${esc(step)}</span>
+        <span class="of">${at + 1} OF ${cards.length}</span></div>`;
+  }
+
+  function briefGlanceHtml(p) {
+    const fat = p.squad.fatigue;
+    const fatCls = fat >= 45 ? "bad" : fat >= 22 ? "warn" : "accent";
+    const posCls = p.board.vsTarget >= 2 ? "accent" : p.board.vsTarget <= -3 ? "bad" : "gold";
+    const shown = p.fixtures.slice(0, 3);
+    const more = p.fixtures.length - shown.length;
+    return `
+      <div class="kicker">WHAT'S COMING UP</div>
+      <h2>${p.fixtures.length} ${p.fixtures.length === 1 ? "game" : "games"}${p.cup || p.euro ? ` <span class="muted" style="font-weight:400">and ${p.cup && p.euro ? "two ties" : "a tie"}</span>` : ""}</h2>
+      <div class="fix-list">${shown.map(fixtureRow).join("") || `<div class="muted">No league football in this block.</div>`}</div>
+      <div class="muted" style="font-size:11px;margin-top:5px">
+        ${more > 0 ? `+ ${more} more` : ""}${p.cup ? `${more > 0 ? " · " : ""}🏆 ${esc(p.cup.name)} ${esc(cupLabel(p.cup.round))}` : ""}${p.euro ? ` · ★ ${esc(p.euro.comp)} ${esc(euroRoundLabel(p.euro.round))}` : ""}
+      </div>
+      <div class="glance3">
+        <div><b class="accent">${p.squad.available}</b><span>FIT OF ${p.squad.size}</span></div>
+        <div><b class="${fatCls}">${fat}%</b><span>WORKED</span></div>
+        <div><b class="${posCls}">${p.board.position ? ordinal(p.board.position) : "—"}</b><span>${p.board.target ? `V ${ordinal(p.board.target)} ASKED` : "NOT KICKED OFF"}</span></div>
+      </div>
+      <div class="glance-folds">
+        ${p.squad.out.length || p.squad.tired.length ? `<details class="drill"><summary><span>Who's out, who's tired</span>
+          <span class="bad">${p.squad.out.length} + ${p.squad.tired.length}</span></summary>
+          ${p.squad.out.map((o) => `<div class="drill-row"><b>${esc(o.name)}</b> <span class="muted">${o.pos}</span>
+            <span class="bad">out ${o.blocks === 1 ? "this block" : `${o.blocks} blocks`}</span></div>`).join("")}
+          ${p.squad.tired.map((o) => `<div class="drill-row"><b>${esc(o.name)}</b> <span class="muted">${o.pos}</span>
+            <span class="warn">${esc(o.label)} · ${o.fatigue}%</span></div>`).join("")}
+        </details>` : ""}
+        <details class="drill"><summary><span>The board, in full</span>
+          <span class="muted">${esc(p.board.style)} · ${p.board.confidence}</span></summary>
+          <div class="drill-row muted">${esc(p.board.summary || "No brief set.")}</div>
+          <div class="drill-row muted">Dressing room: <b class="${p.squad.moraleLabel.cls}">${esc(p.squad.moraleLabel.label)}</b></div>
+        </details>
+        <details class="drill"><summary><span>The team sheet</span>
+          <span class="muted">${esc(p.formation)}</span></summary>
+          ${pitchHtml(club(), "league", "view")}
+          <div class="muted" style="font-size:11px;padding-bottom:8px">Tap a player for his profile. Change the side in TACTICS.</div>
+        </details>
+      </div>`;
+  }
+
+  function briefChoiceHtml(table, keys, part, chosen, title, blurb) {
+    return `
+      <div class="kicker">${esc(title)}</div>
+      <h2>${esc(blurb)}</h2>
+      ${keys.map((k) => {
+        const o = table[k];
+        return `<button class="opt${k === chosen ? " on" : ""}" data-plan="${part}" data-key="${k}">
+          <b>${esc(o.label)}</b><span>${esc(o.effect)}</span></button>`;
+      }).join("")}`;
   }
 
   function blockBriefHtml() {
     const p = state.preview;
     if (!p) return resultHtml();
     const B = MG.blocks;
-    const posCls = p.board.vsTarget >= 2 ? "accent" : p.board.vsTarget <= -3 ? "bad" : "gold";
+    const at = clamp(state.deck || 0, 0, BRIEF_CARDS.length - 1);
     const approach = { ...B.APPROACH };
-    // The reshape option names the shape on offer rather than saying "change
-    // shape" — one tap, and it is what a coach would actually say out loud.
+    // The reshape option names the shape on offer — one tap, and it is what a
+    // coach would actually say out loud.
     if (p.shapeOnOffer) {
-      approach.reshape = {
-        ...approach.reshape,
-        label: p.shapeOnOffer,
-        tag: "NEW SHAPE",
-        blurb: `Leave the ${p.formation} behind and set up in a ${p.shapeOnOffer} for the next two months.`,
-      };
+      approach.reshape = { ...approach.reshape, label: `SWITCH TO ${p.shapeOnOffer}` };
     }
-    const fat = p.squad.fatigue;
-    const fatCls = fat >= 45 ? "bad" : fat >= 22 ? "warn" : "accent";
-
+    const card = BRIEF_CARDS[at] === "glance" ? briefGlanceHtml(p)
+      : BRIEF_CARDS[at] === "approach"
+        ? briefChoiceHtml(approach, B.APPROACH_KEYS, "approach", p.plan.approach,
+          "THE APPROACH", "How do we set up for the next two months?")
+        : briefChoiceHtml(B.SQUAD_PLAN, B.SQUAD_KEYS, "squad", p.plan.squad,
+          "THE SQUAD", "Who plays, and who gets a rest?");
+    const last = at === BRIEF_CARDS.length - 1;
+    const nextLabel = last ? `PLAY ${esc(p.blockName)} ▶`
+      : at === 0 ? "SET THE APPROACH ▶" : "NEXT — THE SQUAD ▶";
     return `
-      <div class="stage-step">THE BRIEF · BLOCK ${p.block} OF ${p.blocks} · ${esc(p.blockName)}</div>
-
-      <div class="panel blk">
-        <div class="blk-q">1 · WHAT'S COMING UP</div>
-        <div class="fix-list">${p.fixtures.map(fixtureRow).join("") || `<div class="muted">No league football in this block.</div>`}</div>
-        ${(p.cup || p.euro) ? `<div class="blk-extra">
-          ${p.cup ? `<span class="tag cup">🏆 ${esc(p.cup.name)} · ${esc(cupLabel(p.cup.round))}</span>` : ""}
-          ${p.euro ? `<span class="tag euro">★ ${esc(p.euro.comp)} · ${esc(euroRoundLabel(p.euro.round))}</span>` : ""}
-        </div>` : ""}
-      </div>
-
-      <div class="panel blk">
-        <div class="blk-q">2 · YOUR SQUAD</div>
-        <div class="blk-stats">
-          <span><b>${p.squad.available}</b><span class="muted">/${p.squad.size} fit</span></span>
-          <span class="${fatCls}"><b>${fat}%</b><span class="muted"> worked</span></span>
-          <span class="${p.squad.moraleLabel.cls}"><b>${esc(p.squad.moraleLabel.label)}</b><span class="muted"> room</span></span>
-        </div>
-        ${p.squad.out.length ? `<details class="drill"><summary><span class="bad">${p.squad.out.length} unavailable</span></summary>
-          ${p.squad.out.map((o) => `<div class="drill-row"><b>${esc(o.name)}</b> <span class="muted">${o.pos}</span>
-            <span class="bad">out ${o.blocks === 1 ? "this block" : `${o.blocks} blocks`}</span></div>`).join("")}
-        </details>` : ""}
-        ${p.squad.tired.length ? `<details class="drill"><summary><span class="warn">${p.squad.tired.length} carrying a load</span></summary>
-          ${p.squad.tired.map((o) => `<div class="drill-row"><b>${esc(o.name)}</b> <span class="muted">${o.pos}</span>
-            <span class="warn">${esc(o.label)} · ${o.fatigue}%</span></div>`).join("")}
-        </details>` : ""}
-      </div>
-
-      <div class="panel blk">
-        <div class="blk-q">3 · WHAT THE BOARD EXPECTS</div>
-        <div class="muted" style="font-size:13px;margin-bottom:6px">${esc(p.board.summary || "No brief set.")}</div>
-        <div class="blk-stats">
-          ${p.board.position ? `<span><b class="${posCls}">${ordinal(p.board.position)}</b><span class="muted"> after ${p.board.played}</span></span>` : `<span class="muted">Not kicked off yet</span>`}
-          <span><span class="muted">Asked for </span><b>${p.board.target ? ordinal(p.board.target) : "—"}</b></span>
-          <span><span class="muted">Confidence </span><b>${p.board.confidence}</b></span>
-        </div>
-      </div>
-
-      <div class="panel blk">
-        <div class="blk-q">4 · YOUR PLAN</div>
-        <div class="plan-label">THE APPROACH <span class="muted">· shape, mentality and what you drill</span></div>
-        <div class="plan-grid">${planCardsHtml(approach, B.APPROACH_KEYS, "approach", p.plan.approach)}</div>
-        <div class="plan-label" style="margin-top:12px">THE SQUAD <span class="muted">· who plays and who rests</span></div>
-        <div class="plan-grid">${planCardsHtml(B.SQUAD_PLAN, B.SQUAD_KEYS, "squad", p.plan.squad)}</div>
-        <div class="muted" style="font-size:11px;margin-top:10px">Currently in a ${esc(p.formation)}${p.plan.approach === "reshape" && p.plan.shape ? ` — switching to a ${esc(p.plan.shape)}` : ""}.</div>
-        <!-- The side itself, folded away. It belongs under "your plan" rather
-             than as a fifth question — the eleven you are sending out IS the
-             plan — but a full pitch open by default would double the length of
-             the brief on a phone. -->
-        <details class="drill sheet-fold"><summary><span class="accent">See the team sheet</span></summary>
-          ${pitchHtml(club(), "league", "view")}
-          <div class="muted" style="font-size:11px">Tap a player for his profile. Change the side in <b>TACTICS</b>.</div>
-        </details>
-      </div>
-
-      <button class="btn primary big sticky-go" id="block-play">PLAY ${esc(p.blockName)} ▶</button>`;
+      ${deckChromeHtml(BRIEF_CARDS, at, `${p.blockName} · THE BRIEF`)}
+      <div class="deck" data-swipe="brief"><div class="card">${card}</div></div>
+      <div class="deck-foot">
+        <button class="btn primary big" id="deck-next">${nextLabel}</button>
+        <div class="deck-hint">${last
+          ? `${esc(B.SQUAD_PLAN[p.plan.squad].label.toLowerCase())} · ${esc(B.APPROACH[p.plan.approach].label.toLowerCase())} · ${esc(p.formation)}`
+          : "swipe, or tap the dots, to move between cards"}</div>
+      </div>`;
   }
 
   /* ======================== THE BLOCK REVIEW (after) ========================
@@ -1796,9 +1953,9 @@
     </div>`;
   }
 
-  function blockReviewHtml() {
-    const e = state.earlySnapshot, c = club();
-    if (!e) return resultHtml();
+  const REVIEW_CARDS = ["results", "people", "mood"];
+
+  function reviewResultsHtml(e, c) {
     const blockRes = e.blockMatches || [];
     const w = blockRes.filter((m) => (m.homeId === c.id ? m.hg > m.ag : m.ag > m.hg)).length;
     const d = blockRes.filter((m) => m.hg === m.ag).length;
@@ -1807,44 +1964,65 @@
     const ga = blockRes.reduce((t, m) => t + (m.homeId === c.id ? m.ag : m.hg), 0);
     const was = e.wasPosition, now = e.position;
     const moved = was && now ? was - now : 0;
-
     return `
-      <div class="stage-step rev">THE REVIEW · BLOCK ${e.block} OF ${e.blocks} · ${esc(e.blockName)}</div>
-
-      <div class="panel rev">
-        <div class="rev-head">
-          <div class="rev-record"><b>${w}W ${d}D ${l}L</b><span class="muted"> · ${gf} scored, ${ga} conceded</span></div>
-          <div class="rev-move">
-            ${was ? `<span class="muted">${ordinal(was)}</span> <span class="mv ${moved > 0 ? "up" : moved < 0 ? "down" : "flat"}">${moved > 0 ? "▲" : moved < 0 ? "▼" : "—"}</span> ` : ""}
-            <b class="${moved > 0 ? "accent" : moved < 0 ? "bad" : "gold"}">${now ? ordinal(now) : "—"}</b>
-          </div>
-        </div>
-        <div style="margin-top:6px">${formHtml(e.blockForm)}</div>
+      <div class="kicker rev">THESE TWO MONTHS</div>
+      <h2>${w}W ${d}D ${l}L</h2>
+      <div class="rev-move">
+        ${was ? `<span class="muted">${ordinal(was)}</span> <span class="mv ${moved > 0 ? "up" : moved < 0 ? "down" : "flat"}">${moved > 0 ? "▲" : moved < 0 ? "▼" : "—"}</span> ` : ""}
+        <b class="${moved > 0 ? "accent" : moved < 0 ? "bad" : "gold"}">${now ? ordinal(now) : "—"}</b>
+        <span class="muted" style="font-size:12px"> · ${gf} scored, ${ga} conceded</span>
       </div>
-
-      ${e.performers && e.performers.length ? `<div class="panel rev">
-        <div class="blk-q rev">WHO STOOD OUT</div>
-        ${e.performers.map(performerRow).join("")}
-      </div>` : ""}
-
-      ${(e.medical && (e.medical.hurt.length || e.medical.back.length)) ? `<div class="panel rev">
-        <div class="blk-q rev">THE TREATMENT ROOM</div>
-        ${e.medical.hurt.map((h) => `<div class="drill-row"><span class="bad">✚</span> <b>${esc(h.name)}</b> <span class="muted">${h.pos}</span> <span class="bad">out ${h.blocks === 1 ? "one block" : `${h.blocks} blocks`}</span></div>`).join("")}
-        ${e.medical.back.map((h) => `<div class="drill-row"><span class="accent">✓</span> <b>${esc(h.name)}</b> <span class="muted">${h.pos}</span> <span class="accent">back in contention</span></div>`).join("")}
-        ${e.medical.tired ? `<div class="drill-row muted">${e.medical.tired} ${e.medical.tired === 1 ? "player is" : "players are"} carrying a heavy load into the next block.</div>` : ""}
-      </div>` : ""}
-
-      <div class="panel rev">
-        <div class="blk-q rev">THE MOOD</div>
-        <div class="blk-stats">
-          <span class="${e.moraleLabel ? e.moraleLabel.cls : "muted"}"><b>${esc(e.moraleLabel ? e.moraleLabel.label : "—")}</b><span class="muted"> dressing room</span></span>
-          ${e.cup ? `<span class="muted">${esc(e.cup.name)}: <b class="${e.cup.alive ? "gold" : "muted"}">${e.cup.won ? "WON IT" : e.cup.alive ? "still in" : "out"}</b></span>` : ""}
-          ${e.europe ? `<span class="muted">${esc(e.europe.comp)}: <b class="${e.europe.alive ? "gold" : "muted"}">${e.europe.won ? "WON IT" : e.europe.alive ? "still in" : "out"}</b></span>` : ""}
-        </div>
-        ${e.boardMood ? `<div class="board-say">${esc(e.boardMood)}</div>` : ""}
+      <div style="margin:12px 0 4px">${formHtml(e.blockForm)}</div>
+      <div class="glance3" style="margin-top:14px">
+        <div><b>${e.played}</b><span>PLAYED</span></div>
+        <div><b>${e.pts}</b><span>POINTS</span></div>
+        <div><b>${e.ppg}</b><span>PER GAME</span></div>
       </div>
+      ${(e.cup || e.europe) ? `<div class="glance-folds"><div class="drill-row" style="padding-left:0">
+        ${e.cup ? `<span class="muted">${esc(e.cup.name)}: <b class="${e.cup.alive ? "gold" : "muted"}">${e.cup.won ? "WON IT" : e.cup.alive ? "still in" : "out"}</b></span>` : ""}
+        ${e.europe ? `<span class="muted">${esc(e.europe.comp)}: <b class="${e.europe.alive ? "gold" : "muted"}">${e.europe.won ? "WON IT" : e.europe.alive ? "still in" : "out"}</b></span>` : ""}
+      </div></div>` : ""}`;
+  }
 
-      <button class="btn primary big sticky-go" id="block-continue">CONTINUE ▶</button>`;
+  function reviewPeopleHtml(e) {
+    const med = e.medical || { hurt: [], back: [], tired: 0 };
+    const any = (e.performers && e.performers.length) || med.hurt.length || med.back.length;
+    return `
+      <div class="kicker rev">WHO STOOD OUT</div>
+      <h2>${e.performers && e.performers.length ? "Two who deserved it, one who did not" : "Nothing to report"}</h2>
+      ${(e.performers || []).map(performerRow).join("")}
+      ${(med.hurt.length || med.back.length || med.tired) ? `
+        <div class="rev-sub">THE TREATMENT ROOM</div>
+        ${med.hurt.map((h) => `<div class="drill-row" style="padding-left:0"><span class="bad">✚</span> <b>${esc(h.name)}</b>
+          <span class="muted">${h.pos}</span> <span class="bad">out ${h.blocks === 1 ? "one block" : `${h.blocks} blocks`}</span></div>`).join("")}
+        ${med.back.map((h) => `<div class="drill-row" style="padding-left:0"><span class="accent">✓</span> <b>${esc(h.name)}</b>
+          <span class="muted">${h.pos}</span> <span class="accent">back in contention</span></div>`).join("")}
+        ${med.tired ? `<div class="drill-row muted" style="padding-left:0">${med.tired} ${med.tired === 1 ? "player is" : "players are"} carrying a heavy load into the next block.</div>` : ""}` : ""}
+      ${!any ? `<p>A quiet couple of months. Nobody hurt, nobody carried.</p>` : ""}`;
+  }
+
+  function reviewMoodHtml(e) {
+    return `
+      <div class="kicker rev">THE DRESSING ROOM</div>
+      <h2 class="${e.moraleLabel ? e.moraleLabel.cls : ""}">${esc(e.moraleLabel ? e.moraleLabel.label : "—")}</h2>
+      ${e.boardMood ? `<div class="board-say">${esc(e.boardMood)}</div>` : ""}
+      <p style="margin-top:14px">The board do not deliver a verdict until May. This is them having an opinion.</p>`;
+  }
+
+  function blockReviewHtml() {
+    const e = state.earlySnapshot, c = club();
+    if (!e) return resultHtml();
+    const at = clamp(state.deck || 0, 0, REVIEW_CARDS.length - 1);
+    const card = REVIEW_CARDS[at] === "results" ? reviewResultsHtml(e, c)
+      : REVIEW_CARDS[at] === "people" ? reviewPeopleHtml(e) : reviewMoodHtml(e);
+    const last = at === REVIEW_CARDS.length - 1;
+    return `
+      ${deckChromeHtml(REVIEW_CARDS, at, `${esc(e.blockName)} · THE REVIEW`)}
+      <div class="deck rev" data-swipe="review"><div class="card rev">${card}</div></div>
+      <div class="deck-foot">
+        <button class="btn primary big" id="deck-next">${last ? "CONTINUE ▶" : "NEXT ▶"}</button>
+        <div class="deck-hint">${last ? "" : "swipe, or tap the dots, to move between cards"}</div>
+      </div>`;
   }
 
   function cardHtml() {
@@ -2156,9 +2334,23 @@
     // The block report's CONTINUE: what he wants to change, then the next two
     // months. runPhase falls straight through to advanceBlock when the window
     // has nothing worth asking.
-    bind("block-play", runBlock);
-    // The review's reactive decision, then the brief for the next two months.
-    bind("block-continue", () => runPhase("EARLY"));
+    /* ---- the deck ----
+     * One card at a time, moved by the button, by the dots, or by a swipe.
+     * The button ADVANCES until the last card and then commits, so a manager
+     * who only ever taps the big green thing still walks the whole deck and
+     * still ends up playing the block. */
+    bind("deck-next", () => {
+      const cards = state.stage === "block-brief" ? BRIEF_CARDS : REVIEW_CARDS;
+      const at = clamp(state.deck || 0, 0, cards.length - 1);
+      if (at < cards.length - 1) { state.deck = at + 1; render(); return; }
+      state.deck = 0;
+      if (state.stage === "block-brief") runBlock();
+      else runPhase("EARLY");
+    });
+    for (const d of document.querySelectorAll("[data-deck]")) {
+      d.addEventListener("click", () => { state.deck = Number(d.dataset.deck); render(); });
+    }
+    wireSwipe();
     bind("to-endseason", toEndSeason);
     bind("to-preseason", toNextSeason);
     bind("approach-accept", () => chooseApproach(true));
@@ -2272,18 +2464,13 @@
   /* ------------------------ TIER 3: CLUB AND WORLD ------------------------ */
   /* The strip on its own — drawn on every screen, whether or not the panel
    * under it is open. */
-  function renderTabStrip() {
-    for (const b of document.querySelectorAll(".tab")) {
-      b.classList.toggle("on", state.tabOpen && b.dataset.tab === state.tab);
-    }
-    const hint = $("tab-hint");
-    if (hint) hint.textContent = state.tabOpen
-      ? "Tap the open tab again to close it."
-      : "Tap to open — your squad, the table, your record, the world, the academy, the honours.";
-  }
+  /* renderTabStrip lived here. The six-button reference strip it drove is
+   * gone: SQUAD and TACTICS are bottom-bar tabs of their own now, and the
+   * table, your record, the world, the academy, the honours and the boardroom
+   * are sub-tabs under CLUB. One navigation, always reachable, and SQUAD no
+   * longer appears twice on the same screen meaning two different things. */
 
   function renderTab() {
-    renderTabStrip();
     const el = $("tab-body");
     /* SQUAD lives here as well as in the pre-season hub. Beta feedback asked
      * for it on the always-available strip alongside the table and the world,
@@ -2293,9 +2480,43 @@
      * mentor controls document-wide — so it needs nothing the hub gives it.
      * Tactics deliberately stays where it was, inside the decisions at the
      * point of the season that asks for it. */
-    const views = { squad: squadHtml, table: tableHtml, career: careerHtml, world: worldHtml, youth: youthHtml, awards: awardsHtml };
+    const views = { squad: squadHtml, tactics: tacticsHtml, board: boardroomHtml,
+      table: tableHtml, career: careerHtml, world: worldHtml, youth: youthHtml, awards: awardsHtml,
+      log: () => logFeedHtml(60) };
     el.innerHTML = (views[state.tab] || tableHtml)();
     wireTab();
+  }
+
+  /* THE BOARDROOM, as a place rather than a strip of bars above every screen.
+   * Confidence and the supporters used to sit in the header on all of them,
+   * costing 140px on every single screen to say something that changes four
+   * times a season. They live here, in full, one tap away. */
+  function boardroomHtml() {
+    const c = club(), b = c.board, m = state.manager;
+    const conf = Math.round(b.confidence);
+    const fans = Math.round(c.fans == null ? 56 : c.fans);
+    const mood = MG.clubs.fanMood(fans);
+    const bar = (v) => `<div class="conf-track"><i class="conf ${v >= 55 ? "" : v >= 35 ? "warn" : "bad"}" style="width:${v}%"></i></div>`;
+    return `
+      <div class="panel">
+        <div class="conf-top"><span>Board confidence</span><span class="board-${esc(b.style.toLowerCase())}">${esc(b.style.toUpperCase())}</span></div>
+        ${bar(conf)}
+        <div class="muted" style="font-size:12px;margin-top:4px">${conf}/100 · ${esc(b.targets ? b.targets.summary : "No brief set")}</div>
+        <div class="conf-top" style="margin-top:12px"><span>The supporters</span><span class="${fans >= 55 ? "accent" : fans >= 35 ? "gold" : "bad"}">${esc(mood.label.toUpperCase())}</span></div>
+        ${bar(fans)}
+        <div class="muted" style="font-size:12px;margin-top:4px">${fans}/100 · ${esc(mood.blurb)}</div>
+      </div>
+      <div class="panel">
+        <div class="blk-q">YOUR STANDING</div>
+        <div class="blk-stats">
+          <span><b>${esc(m.name)}</b></span>
+          <span><span class="muted">rep </span><b>${m.reputation}</b></span>
+          <span><span class="muted">style </span><b>${esc(m.tactic)}</b></span>
+          <span><span class="muted">shape </span><b>${esc(c.formation)}</b></span>
+        </div>
+        <div class="muted" style="font-size:12px;margin-top:6px">${esc(m.archetypeName)}</div>
+      </div>
+      ${lastSeasonHtml()}`;
   }
 
   function squadHtml() {
@@ -2906,7 +3127,7 @@
     const report = MG.tactics.xiReport(c, comp);
     const level = MG.clubs.LEAGUE_PLAYER_LEVEL[c.leagueId] != null ? MG.clubs.LEAGUE_PLAYER_LEVEL[c.leagueId] : 55;
     return `<div class="pitch-wrap">
-      <div class="pitch-grass" data-pitch="${esc(comp)}">
+      <div class="pitch-grass" data-pitch="${esc(comp)}" data-mode="${mode === "swap" ? "swap" : "view"}">
         <div class="mk-halfway"></div><div class="mk-centre"></div>
         <div class="mk-box top"></div><div class="mk-box bottom"></div>
         <div class="mk-six top"></div><div class="mk-six bottom"></div>
@@ -3395,7 +3616,13 @@
     for (const b of document.querySelectorAll(".shirt[data-slot]")) {
       b.addEventListener("click", () => {
         const slot = Number(b.dataset.slot);
-        if (state.xiMode !== "swap") {
+        /* The mode comes from the pitch this shirt is standing on, not from
+         * global state. The block brief renders a read-only sheet, and reading
+         * state.xiMode meant leaving swap mode on over in TACTICS turned that
+         * reference pitch into a live one — a tap meant to open a profile
+         * silently reshuffled the side. */
+        const editable = b.closest("[data-pitch]") && b.closest("[data-pitch]").dataset.mode === "swap";
+        if (!editable) {
           if (b.dataset.pid) openPlayer(Number(b.dataset.pid));
           return;
         }
@@ -3758,14 +3985,13 @@
     $("sacked-continue").addEventListener("click", () => { renderOffers(); show("screen-offers"); });
     $("sacked-restart").addEventListener("click", () => show("screen-welcome"));
     $("legacy-restart").addEventListener("click", () => show("screen-welcome"));
-    for (const b of document.querySelectorAll(".tab")) {
+    /* The bottom bar. Bound once, here, because it lives outside every screen
+     * the game renders and must never be torn down with one. */
+    for (const b of document.querySelectorAll("[data-nav]")) {
       b.addEventListener("click", () => {
-        // Tapping the tab that is already open closes the panel — the way
-        // back to a short page without hunting for a separate close button.
-        if (state.tabOpen && state.tab === b.dataset.tab) state.tabOpen = false;
-        else { state.tab = b.dataset.tab; state.tabOpen = true; }
-        if (state.tabOpen) renderTab();
-        else { $("tab-body").innerHTML = ""; renderTabStrip(); wireTab(); }
+        state.nav = b.dataset.nav;
+        state.playerView = null;    // leaving a tab closes a profile opened in it
+        render();
       });
     }
     $("notif-bell").addEventListener("click", (e) => {

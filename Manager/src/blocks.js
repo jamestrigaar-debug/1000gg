@@ -179,6 +179,44 @@
     return best;
   }
 
+  /* HOW DEEP IS THIS SQUAD, cheaply. 0 is eleven men and nothing behind them,
+   * 1 is a squad where the second choice is as good as the first.
+   *
+   * tactics.depthScore answers this properly — it works out who would actually
+   * come in for each starter — and it is far too expensive to ask once per
+   * club per block just to weight one AI choice: measured over six seasons it
+   * was 16% of the entire simulation, more than the football. This reads the
+   * same fact off the squad list: how many bodies there are, and how far the
+   * twelfth-best man is behind the best eleven. Two sorts and no role ratings.
+   *
+   * (depthScore is still what the SQUAD REPORT shows the manager, where it is
+   * asked for once, on demand, and precision is the point.) */
+  function squadDepth(club) {
+    const n = club.squad.length;
+    if (n < 12) return 0;
+    const ovr = club.squad.map((p) => p.overall).sort((a, b) => b - a);
+    let first = 0;
+    for (let i = 0; i < 11; i++) first += ovr[i];
+    first /= 11;
+    const cover = ovr.slice(11, 18);
+    if (!cover.length) return 0;
+    const bench = cover.reduce((t, v) => t + v, 0) / cover.length;
+    // A bench eight points off the first team is a proper squad; twenty off is
+    // eleven men and some kids. Squad size carries the rest.
+    const quality = clamp(1 - (first - bench) / 20, 0, 1);
+    const bodies = clamp((n - 14) / 10, 0, 1);
+    const raw = quality * 0.7 + bodies * 0.3;
+    /* Mapped onto depthScore's own scale rather than left on its own. The two
+     * agree on the SHAPE of the answer (correlation 0.61 across the world) but
+     * the cheap read sits systematically higher — mean 0.75 against 0.52 — and
+     * aiPlan's rotate-versus-strongest weights were tuned against the
+     * expensive one. Left unmapped it quietly added a third of a point of
+     * rotate bias to every club in the game. Constants are the population's
+     * own mean and spread; re-fit them if this formula is ever changed. */
+    return clamp(DEPTH_BASE + (raw - DEPTH_RAW_MEAN) * DEPTH_SCALE, 0, 1);
+  }
+  const DEPTH_BASE = 0.523, DEPTH_RAW_MEAN = 0.749, DEPTH_SCALE = 1.03;
+
   /* ------------------------------ THE AI's PLAN ---------------------------
    * Every other club in the world picks a plan too, or the manager's lever is
    * the only one being pulled and the division is a set of statues. Read off
@@ -190,9 +228,7 @@
     const pos = standing || (targets ? targets.position : Math.round(size / 2));
     const behind = targets ? pos - targets.position : 0;
     const tired = squadFatigue(club);
-    // depthScore is 0-100, not 0-1. Read raw it swamped every other term here
-    // and every club in the world rotated, whatever its situation.
-    const depth = clamp((MG.tactics.depthScore ? MG.tactics.depthScore(club) : 50) / 100, 0, 1);
+    const depth = squadDepth(club);
     /* Where they actually are in the division, 0 at the top and 1 at the
      * bottom. This is the term that stops "behind the brief" being read as
      * "go for it": a mid-table side told to finish sixth chases the game, and
@@ -370,7 +406,12 @@
   /* ---------------------------- THE BLOCK BOUNDARY ------------------------
    * Called once per club per block, after the football. Everything the block
    * did to the people in the building happens here. */
-  function markBlockStart(club, row) {
+  /* `deep` stamps the individual players as well as the club. Only the managed
+   * club needs it — the marks exist so the block REVIEW can say what these two
+   * months did, and there is no review for the other two hundred clubs. Stamped
+   * world-wide it put a scratch object on all 5,700 players and carried a fifth
+   * of a megabyte of it into every save for nothing. */
+  function markBlockStart(club, row, deep) {
     club._blockMark = {
       pts: row ? row.pts : 0, played: row ? row.played : 0,
       gf: row ? row.gf : 0, ga: row ? row.ga : 0,
@@ -378,6 +419,7 @@
       position: row ? row.position : null,
     };
     for (const p of club.squad) {
+      if (!deep) { if (p._blockMark) delete p._blockMark; continue; }
       p._blockMark = {
         goals: (p.season && p.season.goals) || 0,
         assists: (p.season && p.season.assists) || 0,
@@ -386,6 +428,10 @@
     }
   }
 
+  /* Returns IDS, not players. Holding the objects meant club._blockMedical
+   * carried a live reference to every injured man, and packWorld serialises
+   * clubs wholesale — so every save contained a second, divergent copy of a
+   * quarter of a megabyte of players that nothing ever read. */
   /** Wear, recovery, returns from injury and new ones — for one club. */
   function settleClub(world, club, rng) {
     const load = loadFactor(club);
@@ -399,7 +445,7 @@
         p.season.outBlocks--;
         // Resting mends: an injured man recovers faster than a rotated one.
         p.season.fatigue = clamp(fatigueOf(p) - T.blockRecovery * 1.2, 0, 1);
-        if (p.season.outBlocks === 0) returning.push(p);
+        if (p.season.outBlocks === 0) returning.push(p.id);
         continue;
       }
 
@@ -419,7 +465,7 @@
          * what a block out costs — accumulated, because a man who breaks down
          * twice has missed twice as much. */
         p.season.injured = clamp((p.season.injured || 0) + out / 5, 0, 1);
-        hurt.push({ player: p, blocks: out });
+        hurt.push({ id: p.id, blocks: out });
       }
     }
     return { returning, hurt };
@@ -475,7 +521,12 @@
   const OUTPUT_EXPECT = { FW: 1.0, WG: 0.75, AM: 0.7, CM: 0.4, DM: 0.22, FB: 0.25, CB: 0.18, GK: 0.05 };
 
   function blockRating(player, blockPpg) {
-    const m = player._blockMark || { goals: 0, assists: 0, apps: 0 };
+    /* No mark means he was not at the club when the block started — a
+     * mid-season signing. Without this his ENTIRE season to date counted as
+     * these two months, and a striker bought in January turned up in the
+     * February review credited with every goal he had scored all year. */
+    if (!player._blockMark) return null;
+    const m = player._blockMark;
     const s = player.season || {};
     const apps = Math.max(0, (s.apps || 0) - m.apps);
     if (!apps) return null;
@@ -494,7 +545,7 @@
   MG.blocks = {
     APPROACH, APPROACH_KEYS, SQUAD_PLAN, SQUAD_KEYS, DEFAULT_PLAN,
     planFor, shiftFor, loadFactor, rotationOf, youthBiasOf, suggestShape, aiPlan,
-    fatigueOf, fatigueMultiplier, fatigueLabel, squadFatigue, xiFatigue, markFatiguePar, T, tune,
+    fatigueOf, fatigueMultiplier, fatigueLabel, squadFatigue, xiFatigue, squadDepth, markFatiguePar, T, tune,
     rollBlockInjury, markBlockStart, settleClub, settleMorale, moraleLabel,
     blockRating, OUTPUT_EXPECT,
   };
