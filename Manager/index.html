@@ -453,56 +453,114 @@
      a pitch, not a different game's screen bolted on. Shirts are absolutely
      positioned from the per-formation coords in tactics.js, so a back three
      looks like a back three on a phone as well as a desktop. */
-  .pitch-wrap { margin: 8px 0 10px; }
+  /* THE SCALE IS THE POINT. A pitch is a backdrop; the players are the
+     screen. The first cut had it the other way round — a tall pitch with
+     small chips floating on it — and it read as a diagram rather than a team
+     sheet. The pitch is now capped and squarer, and each man is a card big
+     enough to read at a glance, which is how Football Manager has drawn this
+     for twenty years and why it works. */
+  .pitch-wrap { margin: 8px 0 10px; display: flex; justify-content: center; }
   .pitch-grass {
-    position: relative; width: 100%; aspect-ratio: 3 / 4; border-radius: 12px;
-    border: 1px solid var(--line); overflow: hidden;
+    position: relative; width: 100%; max-width: 380px; aspect-ratio: 20 / 23;
+    border-radius: 12px; border: 1px solid var(--line); overflow: hidden;
     background:
-      repeating-linear-gradient(180deg, rgba(255,255,255,.017) 0 8%, transparent 8% 16%),
+      repeating-linear-gradient(180deg, rgba(255,255,255,.02) 0 9%, transparent 9% 18%),
       linear-gradient(180deg, #0d3722 0%, #082516 60%, #061c11 100%);
   }
-  .pitch-grass > div[class^="mk-"] { position: absolute; border: 1px solid rgba(255,255,255,.10); }
+  .pitch-grass > div[class^="mk-"] { position: absolute; border: 1px solid rgba(255,255,255,.09); }
   .mk-halfway { left: 0; right: 0; top: 50%; height: 0; border-width: 1px 0 0 0 !important; }
-  .mk-centre { left: 50%; top: 50%; width: 22%; aspect-ratio: 1; transform: translate(-50%,-50%); border-radius: 50%; }
-  .mk-box { left: 21%; width: 58%; height: 17%; }
+  .mk-centre { left: 50%; top: 50%; width: 20%; aspect-ratio: 1; transform: translate(-50%,-50%); border-radius: 50%; }
+  .mk-box { left: 22%; width: 56%; height: 15%; }
   .mk-box.top { top: 0; border-top: 0 !important; }
   .mk-box.bottom { bottom: 0; border-bottom: 0 !important; }
-  .mk-six { left: 36%; width: 28%; height: 7%; }
+  .mk-six { left: 37%; width: 26%; height: 6%; }
   .mk-six.top { top: 0; border-top: 0 !important; }
   .mk-six.bottom { bottom: 0; border-bottom: 0 !important; }
 
+  /* One man, one card: kit, role, name. */
   .shirt {
     position: absolute; transform: translate(-50%,-50%);
-    display: flex; flex-direction: column; align-items: center; gap: 1px;
-    width: 68px; padding: 4px 2px 3px; border-radius: 9px; cursor: pointer;
-    background: rgba(4,18,11,.82); border: 1px solid var(--line);
-    color: var(--txt); font-family: inherit; line-height: 1.1;
-    transition: border-color .12s, transform .12s, background .12s;
+    display: flex; flex-direction: column; align-items: center;
+    width: 78px; padding: 0; border: 0; background: none;
+    color: var(--txt); font-family: inherit; line-height: 1.1; cursor: pointer;
+    transition: transform .12s;
   }
-  .shirt:hover { border-color: var(--accent2); z-index: 3; }
-  .shirt.offrole { border-color: var(--gold); }
-  .shirt.misfit { border-color: var(--bad); }
-  .shirt.picked { border-color: var(--accent); background: rgba(0,208,108,.22);
-    transform: translate(-50%,-50%) scale(1.08); z-index: 4; }
-  .shirt.swapping { cursor: grab; }
-  .shirt.empty { opacity: .55; border-style: dashed; }
-  .shirt-top { display: flex; align-items: center; justify-content: center; gap: 4px; }
-  .shirt-badge { font-weight: 900; font-size: 15px; letter-spacing: -.5px; }
-  .shirt-badge.elite { color: var(--rare); }
-  .shirt-badge.good { color: var(--accent); }
-  .shirt-badge.ok { color: var(--gold); }
-  .shirt-badge.poor { color: var(--bad); }
-  .shirt-name { font-size: 10.5px; font-weight: 700; max-width: 64px; overflow: hidden;
-    text-overflow: ellipsis; white-space: nowrap; }
-  .shirt-role { font-size: 8.5px; letter-spacing: .5px; font-weight: 800; color: var(--muted); }
-  /* Condition as a dot, never a number — a manager scans a pitch, he does not
-     read it. Grey is fine, amber is tiring, red is broken. */
-  .cond { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .shirt-kit {
+    position: relative; width: 42px; height: 34px; display: flex;
+    align-items: center; justify-content: center; border-radius: 7px 7px 4px 4px;
+    background: linear-gradient(180deg, #1b4b32, #113322);
+    border: 1px solid var(--line); border-bottom: 0;
+    box-shadow: 0 2px 6px rgba(0,0,0,.5);
+  }
+  /* The shoulders, so a kit reads as a shirt rather than a box. */
+  .shirt-kit::before, .shirt-kit::after {
+    content: ""; position: absolute; top: 0; width: 9px; height: 11px;
+    background: inherit; border: 1px solid var(--line); border-radius: 3px;
+  }
+  .shirt-kit::before { left: -8px; border-right: 0; }
+  .shirt-kit::after { right: -8px; border-left: 0; }
+  .shirt-kit.elite { background: linear-gradient(180deg, #4a2a6b, #2e1a44); border-color: var(--rare); }
+  .shirt-kit.good  { background: linear-gradient(180deg, #12603c, #0c4229); border-color: var(--accent); }
+  .shirt-kit.ok    { background: linear-gradient(180deg, #5c5416, #3d380f); border-color: var(--gold); }
+  .shirt-kit.poor  { background: linear-gradient(180deg, #5e1f27, #3f151b); border-color: var(--bad); }
+  .shirt-badge { font-weight: 900; font-size: 17px; letter-spacing: -.5px; position: relative; z-index: 1; }
+  .shirt-kit.elite .shirt-badge { color: #e3c9ff; }
+  .shirt-kit.good  .shirt-badge { color: #8dffc6; }
+  .shirt-kit.ok    .shirt-badge { color: #ffef9a; }
+  .shirt-kit.poor  .shirt-badge { color: #ffc2c8; }
+  .cond { position: absolute; top: -3px; right: -11px; width: 9px; height: 9px;
+    border-radius: 50%; border: 2px solid #04120b; z-index: 2; }
   .cond.fresh { background: var(--accent); }
   .cond.tired { background: var(--gold); }
   .cond.cooked { background: #ff9f43; }
   .cond.hurt { background: var(--bad); }
-  .cond.out { background: var(--bad); box-shadow: 0 0 0 2px rgba(255,107,122,.3); }
+  .cond.out { background: var(--bad); box-shadow: 0 0 0 2px rgba(255,107,122,.35); }
+
+  .shirt-role { margin-top: -1px; font-size: 9px; font-weight: 900; letter-spacing: .6px;
+    color: #04120b; background: var(--muted); border-radius: 0 0 4px 4px; padding: 1px 7px; }
+  .shirt.offrole .shirt-role { background: var(--gold); }
+  .shirt.misfit .shirt-role { background: var(--bad); color: #fff; }
+  /* The name plate is allowed to be wider than the card it sits under: the
+     card's width is set by the kit, and a surname is the thing you actually
+     read. "Al-Shehri" truncating to "Al-Sh…" told nobody anything. */
+  .shirt-name { margin-top: 3px; font-size: 10.5px; font-weight: 700;
+    max-width: 88px; padding: 1px 4px; border-radius: 4px; background: rgba(4,18,11,.88);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .shirt:hover { transform: translate(-50%,-50%) scale(1.06); z-index: 3; }
+  .shirt.picked { z-index: 4; transform: translate(-50%,-50%) scale(1.12); }
+  .shirt.picked .shirt-kit { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 2px 8px rgba(0,0,0,.6); }
+  .shirt.empty { opacity: .5; }
+  .shirt.empty .shirt-kit { border-style: dashed; }
+
+  .pitch-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11.5px; margin-bottom: 2px; }
+  .pitch-actions { gap: 6px; align-items: center; }
+  .pitch-hint { font-size: 11px; }
+
+  .bench { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+  .bench-lab { font-size: 10px; letter-spacing: 1.4px; color: var(--muted); font-weight: 800; margin-bottom: 6px; }
+  .bench-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+  .bench-man { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1px;
+    width: 66px; padding: 5px 2px; border-radius: 8px; background: var(--bg2);
+    border: 1px solid var(--line); color: var(--txt); font-family: inherit; cursor: pointer; }
+  .bench-man:hover { border-color: var(--accent); }
+  .bench-ovr { font-weight: 900; font-size: 14px; }
+  .bench-ovr.elite { color: var(--rare); }
+  .bench-ovr.good { color: var(--accent); }
+  .bench-ovr.ok { color: var(--gold); }
+  .bench-ovr.poor { color: var(--bad); }
+  .bench-name { font-size: 10px; font-weight: 700; max-width: 62px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .bench-pos { font-size: 8.5px; color: var(--muted); font-weight: 800; }
+  .bench-man .cond { position: static; border: 0; width: 7px; height: 7px; }
+
+  /* Narrow phones: the card shrinks, the pitch shrinks with it. */
+  @media (max-width: 420px) {
+    .shirt { width: 70px; }
+    .shirt-kit { width: 38px; height: 31px; }
+    .shirt-badge { font-size: 15px; }
+    .shirt-name { font-size: 10px; max-width: 80px; }
+    .shirt-role { font-size: 8.5px; padding: 1px 6px; }
+  }
 
   .plan-seg { margin-bottom: 6px; }
   /* On the brief the pitch is a reference, not a control surface, so it sits
