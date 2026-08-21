@@ -3093,29 +3093,31 @@
     return { cls: "fresh", tip: "fresh" };
   }
 
-  /* GRADED AGAINST THE DIVISION, not against 99. On an absolute scale every
-   * player at a National League club reads red and every player at Manchester
-   * City reads purple, which tells a manager nothing about his own squad —
-   * the one thing the badge is for is spotting, at a glance, who is carrying
-   * the side and who is being carried. Against the level his division is
-   * actually played at, a 61 in the National League is a good player and a 61
-   * in the Premier League is a problem, which is true. */
-  function gradeOf(rating, level) {
-    const d = rating - level;
-    return d >= 10 ? "elite" : d >= 3 ? "good" : d >= -5 ? "ok" : "poor";
-  }
+  /* gradeOf lived here — a four-step quality grade used to colour the kit.
+   * The kit says POSITION now, which is the language every other rating badge
+   * in the game speaks, and quality rides on top as a ring at the two tails
+   * only (ratingTierClass). Grading the kit itself made a whole XI read purple
+   * and told you nothing about who played where. */
 
   function shirtHtml(r, i, mode, level) {
     const p = r.player;
     const fam = r.fam < 0.7 ? "misfit" : r.fam < 0.9 ? "offrole" : "";
     if (!p) {
       return `<button class="shirt empty" data-slot="${i}" style="left:${r.x}%;top:${r.y}%">
-        <span class="shirt-kit"><b class="shirt-badge">–</b></span>
+        <span class="shirt-kit empty-kit"><b class="shirt-badge">–</b></span>
         <span class="shirt-role">${esc(r.slot)}</span>
         <span class="shirt-name">EMPTY</span></button>`;
     }
     const cond = condOf(r);
-    const grade = gradeOf(r.rating, level);
+    /* The kit is POSITION-coloured — red forward, green midfield, blue
+     * defender, gold keeper — because that is the language every other rating
+     * badge in this game already speaks, and a shirt is the one place it most
+     * obviously belongs. Quality rides on top as a ring, and only at the two
+     * tails, exactly as .prating does: see ratingTierClass. Grading the kit
+     * itself by quality made a whole XI read purple and told you nothing about
+     * who played where. */
+    const pc = posClass(r.slot === "GK" ? "GK" : p.pos);
+    const tier = ratingTierClass(r.rating, level);
     const surname = p.name.split(" ").slice(-1)[0];
     const title = `${p.name} — ${r.rating} in this role, ${cond.tip}${r.warning ? `, ${r.warning}` : ""}`;
     /* Kit, role, name — the three rows a football manager reads off a pitch,
@@ -3125,7 +3127,7 @@
      * without reading a word. */
     return `<button class="shirt ${fam} ${mode === "swap" ? "swapping" : ""}" data-slot="${i}" data-pid="${p.id}"
         title="${esc(title)}" aria-label="${esc(title)}" style="left:${r.x}%;top:${r.y}%">
-      <span class="shirt-kit ${grade}"><b class="shirt-badge">${r.rating}</b><i class="cond ${cond.cls}"></i></span>
+      <span class="shirt-kit ${pc} ${tier}"><b class="shirt-badge">${r.rating}</b><i class="cond ${cond.cls}"></i></span>
       <span class="shirt-role">${esc(r.slot)}${r.warning ? " !" : ""}</span>
       <span class="shirt-name">${esc(surname)}</span>
     </button>`;
@@ -3135,7 +3137,11 @@
   /** The pitch, its markings, and eleven players standing on it. */
   function pitchHtml(c, comp, mode) {
     const report = MG.tactics.xiReport(c, comp);
-    const level = MG.clubs.LEAGUE_PLAYER_LEVEL[c.leagueId] != null ? MG.clubs.LEAGUE_PLAYER_LEVEL[c.leagueId] : 55;
+    /* The CLUB's own level, not the division's — the same reading the squad
+     * list uses. Against the division, every player at a big club is a
+     * standout and five of the eleven light up, which is the opposite of what
+     * a ring that only fires at the tails is for. */
+    const level = c.level != null ? c.level : MG.clubs.playerLevelFor(c);
     return `<div class="pitch-wrap">
       <div class="pitch-grass" data-pitch="${esc(comp)}" data-mode="${mode === "swap" ? "swap" : "view"}">
         <div class="mk-halfway"></div><div class="mk-centre"></div>
@@ -3197,7 +3203,6 @@
    * asked for is just the squad list again, and that already has a tab. */
   function benchHtml(c, comp) {
     const xi = new Set(MG.tactics.effectiveXI(c, comp).filter(Boolean).map((p) => p.id));
-    const level = MG.clubs.LEAGUE_PLAYER_LEVEL[c.leagueId] != null ? MG.clubs.LEAGUE_PLAYER_LEVEL[c.leagueId] : 55;
     const rest = c.squad.filter((p) => !xi.has(p.id))
       .sort((a, b) => b.overall - a.overall).slice(0, 12);
     if (!rest.length) return "";
@@ -3207,7 +3212,7 @@
         const out = (p.season && p.season.outBlocks) || 0;
         const cond = condOf({ out, injured: (p.season.injured || 0) > 0, fatigue: MG.blocks ? MG.blocks.fatigueOf(p) : 0 });
         return `<button class="bench-man" data-bench="${p.id}">
-          <span class="bench-ovr ${gradeOf(Math.round(p.overall), level)}">${Math.round(p.overall)}</span>
+          <span class="bench-ovr ${posClass(p.pos)}">${Math.round(p.overall)}</span>
           <span class="bench-name">${esc(p.name.split(" ").slice(-1)[0])}</span>
           <span class="bench-pos">${esc(p.pos)}</span><i class="cond ${cond.cls}"></i>
         </button>`;
