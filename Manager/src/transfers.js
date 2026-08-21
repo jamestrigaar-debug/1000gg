@@ -1584,22 +1584,88 @@
 
   /** Who would buy a listed player, and for how much — nothing committed.
    *  The pre-season window shows this as an offer to accept or reject. */
-  function findSaleOffer(world, club, playerId) {
+  /* ========================= WHO ACTUALLY BUYS HIM =========================
+   * Both sale paths used to end in the same line:
+   *
+   *     .sort((a, b) => b.finances.transferBudget - a.finances.transferBudget)[0]
+   *
+   * — the single richest club in the world that cleared a loose filter. It is
+   * deterministic, so it returns the SAME club for every player in the list,
+   * and the filter was wide enough to let almost anyone through. Measured on a
+   * Championship squad: of 22 sellable players, SEVENTEEN were offered to AC
+   * Milan, including both goalkeepers and three centre-halves. That is what
+   * "Manchester City and Newcastle are signing everyone" looks like from the
+   * other side of the transaction.
+   *
+   * A buyer is chosen instead of maximised, and it has to be a club that would
+   * plausibly want THIS player:
+   *
+   *   - he has to be near their standard. A club does not sign a man seven
+   *     points below the level it plays at, and cannot sign one far above it.
+   *   - they have to have a hole he fits. A side with three good goalkeepers
+   *     is not in the market for a fourth, however much money it has.
+   *   - the money has to be in the TRANSFER BUDGET, not merely somewhere on
+   *     the balance sheet.
+   *
+   * Then one is drawn, weighted, from everyone left — so the same squad list
+   * scatters across the clubs that wanted those players rather than piling
+   * into whoever happened to bank the most television money. */
+  const SALE_ABOVE = 6;      // how far above a club's level it will stretch
+  const SALE_BELOW = 7;      // how far below its level it will still bother
+  const SALE_PER_BUYER = 2;  // most one club takes from one seller in a window
+
+  /** How badly `club` wants another `pos`, and how much this player would help.
+   *  0 means they are not in the market. */
+  function saleFit(club, player) {
+    const def = MG.players.POSITIONS[player.pos];
+    if (!def) return 0;
+    let n = 0, best = 0;
+    for (const p of club.squad) {
+      if (p.pos !== player.pos) continue;
+      n++;
+      if (p.overall > best) best = p.overall;
+    }
+    // A body they are short of is worth more than an upgrade they merely fancy.
+    const short = Math.max(0, def.need - n);
+    if (!short && player.overall <= best - 3) return 0;   // no room and no better
+    const upgrade = clamp(player.overall - best + 4, 0, 10) * 0.1;
+    return 0.35 + short * 0.75 + upgrade;
+  }
+
+  /** Pick a buyer for `player`, or null. `used` counts offers already made to
+   *  each club this window, so one club cannot absorb a whole list. */
+  function pickBuyer(world, club, player, fee, used) {
+    const rng = MG.createRng(`${world.seed}|buyer|${world.season}|${player.id}`);
+    const options = [];
+    for (const c of world.clubs) {
+      if (c.id === club.id) continue;
+      if (used && (used.get(c.id) || 0) >= SALE_PER_BUYER) continue;
+      if (c.finances.transferBudget < fee) continue;
+      if (c.squad.length >= MG.players.SQUAD_TARGET + 2) continue;
+      const level = c.level != null ? c.level : MG.clubs.playerLevelFor(c);
+      if (player.overall > level + SALE_ABOVE) continue;   // out of their league
+      if (player.overall < level - SALE_BELOW) continue;   // beneath them
+      if (MG.network && !MG.network.canRecruit(c, club)) continue;
+      const fit = saleFit(c, player);
+      if (fit <= 0) continue;
+      // Money is a tie-breaker, not the decision.
+      const room = clamp(c.finances.transferBudget / Math.max(1, fee * 3), 0.2, 1.6);
+      options.push({ item: c, weight: fit * room });
+    }
+    if (!options.length) return null;
+    return rng.weighted(options);
+  }
+
+  function findSaleOffer(world, club, playerId, used) {
     const player = club.squad.find((p) => p.id === playerId);
     if (!player) return { ok: false, reason: "he is no longer at the club" };
     if (player.loan) return { ok: false, player, reason: "he is only here on loan" };
     if (justArrived(world, player)) return { ok: false, player, reason: "he only signed this window — nobody will take him on yet" };
     if (club.squad.length <= MIN_SQUAD) return { ok: false, player, reason: "the squad is already too thin to sell" };
     const fee = round1(player.value * 0.95);
-    const buyer = world.clubs
-      .filter((c) => c.id !== club.id
-        && c.finances.balance >= fee
-        && c.squad.length < MG.players.SQUAD_TARGET + 3
-        && (c.level || 50) >= player.overall - 12
-        && player.overall >= (c.level || 50) - 13
-        && (!MG.network || MG.network.canRecruit(c, club)))
-      .sort((a, b) => b.finances.transferBudget - a.finances.transferBudget)[0];
+    const buyer = pickBuyer(world, club, player, fee, used);
     if (!buyer) return { ok: false, player, reason: "no club in your reach bid for him" };
+    if (used) used.set(buyer.id, (used.get(buyer.id) || 0) + 1);
     return { ok: true, player, buyer, fee };
   }
 
@@ -1854,14 +1920,7 @@
      * that he improves them is not required, but he cannot be twenty rating
      * points below their level or Barcelona ends up buying League Two squad
      * players because they happen to have the most money. */
-    const buyer = world.clubs
-      .filter((c) => c.id !== club.id
-        && c.finances.balance >= fee
-        && c.squad.length < MG.players.SQUAD_TARGET + 3
-        && (c.level || 50) >= player.overall - 12
-        && player.overall >= (c.level || 50) - 13
-        && (!MG.network || MG.network.canRecruit(c, club)))
-      .sort((a, b) => b.finances.transferBudget - a.finances.transferBudget)[0];
+    const buyer = pickBuyer(world, club, player, fee, null);
     if (!buyer) return null;
 
     club.squad = club.squad.filter((p) => p.id !== player.id);

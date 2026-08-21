@@ -495,8 +495,11 @@
       if (cand) { taken.add(cand.player.id); proposals.push({ kind: "in", pos, cand }); }
       else proposals.push({ kind: "none", pos, label });
     }
+    /* One ledger for the whole list, so a single club cannot be named as the
+     * buyer for every player the board wants moved on — see pickBuyer. */
+    const usedBuyers = new Map();
     for (const id of (c.transferList || []).slice()) {
-      const offer = MG.transfers.findSaleOffer(world, c, id);
+      const offer = MG.transfers.findSaleOffer(world, c, id, usedBuyers);
       if (offer.ok) proposals.push({ kind: "out", offer });
       else if (offer.player) proposals.push({ kind: "nosale", player: offer.player, reason: offer.reason });
     }
@@ -3107,20 +3110,27 @@
     const fam = r.fam < 0.7 ? "misfit" : r.fam < 0.9 ? "offrole" : "";
     if (!p) {
       return `<button class="shirt empty" data-slot="${i}" style="left:${r.x}%;top:${r.y}%">
-        <span class="shirt-badge">–</span><span class="shirt-name">EMPTY</span>
-        <span class="shirt-role">${esc(r.slot)}</span></button>`;
+        <span class="shirt-kit"><b class="shirt-badge">–</b></span>
+        <span class="shirt-role">${esc(r.slot)}</span>
+        <span class="shirt-name">EMPTY</span></button>`;
     }
     const cond = condOf(r);
     const grade = gradeOf(r.rating, level);
     const surname = p.name.split(" ").slice(-1)[0];
     const title = `${p.name} — ${r.rating} in this role, ${cond.tip}${r.warning ? `, ${r.warning}` : ""}`;
+    /* Kit, role, name — the three rows a football manager reads off a pitch,
+     * in that order, with the rating living IN the kit where a squad number
+     * would be. The condition dot rides the kit's shoulder rather than sitting
+     * in the name row, so a glance across the pitch picks out the tired men
+     * without reading a word. */
     return `<button class="shirt ${fam} ${mode === "swap" ? "swapping" : ""}" data-slot="${i}" data-pid="${p.id}"
         title="${esc(title)}" aria-label="${esc(title)}" style="left:${r.x}%;top:${r.y}%">
-      <span class="shirt-top"><b class="shirt-badge ${grade}">${r.rating}</b><i class="cond ${cond.cls}"></i></span>
-      <span class="shirt-name">${esc(surname)}</span>
+      <span class="shirt-kit ${grade}"><b class="shirt-badge">${r.rating}</b><i class="cond ${cond.cls}"></i></span>
       <span class="shirt-role">${esc(r.slot)}${r.warning ? " !" : ""}</span>
+      <span class="shirt-name">${esc(surname)}</span>
     </button>`;
   }
+
 
   /** The pitch, its markings, and eleven players standing on it. */
   function pitchHtml(c, comp, mode) {
