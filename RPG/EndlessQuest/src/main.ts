@@ -29,6 +29,10 @@ async function main(): Promise<void> {
   globalObj.simulation = simulation;
   globalObj.ui = ui;
 
+  // Tells the boot guard in index.html that the game is actually running, so it knows
+  // not to step in. See the guard for what it does when this never gets set.
+  globalObj.__ENDLESSQUEST_BOOTED = true;
+
   console.log('EndlessQuest initialized');
 }
 
