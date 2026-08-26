@@ -36,6 +36,8 @@ import {
   FLEE_TENACITY_SCALE,
   FLEE_ROUND_RELIEF,
   FLEE_MIN_DC,
+  MORALE_DC,
+  MORALE_RESOLVE_SCALE,
 } from '../SimulationConstants';
 
 /**
@@ -131,6 +133,7 @@ export class CombatResolver {
       case 'attack':
       default:
         this.playerAttacks(state, threatId, threatStats, threatName, events);
+
         if (threatStats.hp <= 0) {
           const archetype = getArchetype(threatData.archetypeId);
           events.push({
@@ -145,6 +148,21 @@ export class CombatResolver {
           return events;
         }
         break;
+    }
+
+    // The source's morale rule, asked at the top of the creature's own turn rather than
+    // only after the player swings: a thing cut below half for the first time may decide
+    // it wants no more of this, whatever the character did that round. Without it every
+    // encounter is a duel to somebody's death, and fighting is never worth choosing over
+    // running.
+    if (
+      threatStats.hp > 0 &&
+      this.checksMorale(state, threatData, threatStats, threatName, events)
+    ) {
+      this.awardExperience(state, threatData, false, events);
+      this.endEncounter(state);
+      advanceTime(state, COMBAT_RESOLUTION_HOURS);
+      return events;
     }
 
     this.threatAttacks(state, playerStats, threatCombat, threatName, stance, events);
@@ -540,6 +558,44 @@ export class CombatResolver {
       data: { stance: 'intimidate' },
     });
     return false;
+  }
+
+  /**
+   * Asks whether a creature has had enough.
+   *
+   * Checked once per fight, the first time it is cut below half. The saving throw is the
+   * source's DC 10; tenacity stands in for the creature's own resolve, so the Sated do
+   * not run and a grave-wick very much does.
+   *
+   * @param state Mutable game state
+   * @param threatData The threat's record, which remembers whether it has been asked
+   * @param threatStats Its condition
+   * @param threatName What to call it
+   * @param events Event list to narrate into
+   * @returns true if it broke off
+   */
+  private checksMorale(
+    state: GameState,
+    threatData: ThreatComponent,
+    threatStats: StatsComponent,
+    threatName: string,
+    events: GameEvent[]
+  ): boolean {
+    if (threatData.testedMorale) return false;
+    if (threatStats.hp > threatStats.maxHp / 2) return false;
+
+    threatData.testedMorale = true;
+
+    const save = rollD20(state.rng) + Math.round(threatData.tenacity * MORALE_RESOLVE_SCALE);
+    if (save >= MORALE_DC) return false;
+
+    events.push({
+      tick: state.tick,
+      type: 'combat',
+      message: `${capitalize(threatName)} has had enough of you and goes, fast, without looking back. (morale ${save} vs DC ${MORALE_DC})`,
+      data: { morale: save, broke: true },
+    });
+    return true;
   }
 
   /**

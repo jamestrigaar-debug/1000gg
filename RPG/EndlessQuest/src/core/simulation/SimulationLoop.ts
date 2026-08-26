@@ -1,5 +1,5 @@
 import type { GameState } from '../state/GameState';
-import { createInitialGameState, revealArea } from '../state/GameState';
+import { createInitialGameState, recordEvent, revealArea } from '../state/GameState';
 import type { Command } from '../state/Commands';
 import { CommandHandler } from '../state/CommandHandler';
 import { World } from '../ecs/World';
@@ -230,7 +230,7 @@ export class SimulationLoop {
         message: line,
         data: { x: setup.startX, y: setup.startY, seed: this.state.seedString },
       };
-      this.state.log.push(event);
+      recordEvent(this.state, event);
       this.eventBus.emit(event);
     }
   }
@@ -386,7 +386,7 @@ export class SimulationLoop {
       message: `New game started. Seed: ${this.state.seedString}`,
       data: { seed: this.state.seedString },
     };
-    this.state.log.push(marker);
+    recordEvent(this.state, marker);
     this.eventBus.emit(marker);
 
     this.emitOpening(setup);
