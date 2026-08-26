@@ -1,10 +1,20 @@
 import type { Command, Direction } from './Commands';
 import type { GameState } from './GameState';
-import { advanceTime, getCurrentTile, revealArea } from './GameState';
+import { advanceTime, getCurrentTile, recordEvent, revealArea } from './GameState';
 import { addItem, countItem, removeItem } from './Inventory';
 import { settlementAt } from '../world/Settlement';
 import { atTree, vigilAt, vigilsKept } from '../world/Reckoning';
-import { peopleAt, regard, ROLE_TITLE } from '../world/People';
+import { peopleAt, ROLE_TITLE } from '../world/People';
+import { ask } from '../narrative/Knowledge';
+import {
+  addressee,
+  appealTo,
+  attitudeOf,
+  describeAttitude,
+  pressPerson,
+  readPerson,
+  Attitude,
+} from '../narrative/Social';
 import {
   ErrandState,
   canDischarge,
@@ -44,6 +54,8 @@ import { CombatResolver } from '../simulation/CombatResolver';
 import type { CombatStance } from '../simulation/CombatResolver';
 import { getItem } from '../lore/Items';
 import { drawWithoutRepeat } from '../lore/Sampler';
+import { waterWithinReach } from '../world/Water';
+import { roll } from '../rules/Dice';
 import {
   FORAGE_FAILURE_LINES,
   FORAGE_TABLE,
@@ -85,6 +97,10 @@ import {
   TALK_HOURS,
   TALK_MARK_PENALTY,
   TALK_DISPOSITION_SCALE,
+  CLEAN_WATER_RELIEF,
+  FOUL_WATER_RELIEF,
+  FOUL_WATER_DC,
+  FOUL_WATER_DICE,
 } from '../SimulationConstants';
 
 /**
@@ -172,7 +188,7 @@ export class CommandHandler implements ICommandHandler {
         break;
       }
       case 'TALK': {
-        events.push(...this.handleTalk(state));
+        events.push(...this.handleTalk(state, command.who));
         break;
       }
       case 'ACCEPT': {
@@ -181,6 +197,26 @@ export class CommandHandler implements ICommandHandler {
       }
       case 'GIVE': {
         events.push(...this.handleGive(state));
+        break;
+      }
+      case 'ASK': {
+        events.push(...ask(state, command.text));
+        break;
+      }
+      case 'DRINK': {
+        events.push(this.handleDrink(state));
+        break;
+      }
+      case 'READ': {
+        events.push(...readPerson(state, command.who));
+        break;
+      }
+      case 'APPEAL': {
+        events.push(...appealTo(state, command.who));
+        break;
+      }
+      case 'PRESS': {
+        events.push(...pressPerson(state, command.who));
         break;
       }
       case 'IMPROVISE': {
@@ -287,7 +323,7 @@ export class CommandHandler implements ICommandHandler {
    */
   private publish(events: GameEvent[], state: GameState): void {
     for (const e of events) {
-      state.log.push(e);
+      recordEvent(state, e);
       this.eventBus.emit(e);
     }
   }
@@ -622,7 +658,7 @@ export class CommandHandler implements ICommandHandler {
    * @param state Mutable game state
    * @returns What was said
    */
-  private handleTalk(state: GameState): GameEvent[] {
+  private handleTalk(state: GameState, who?: string): GameEvent[] {
     const pos = state.entities.getComponent<PositionComponent>(state.playerId, 'position');
     const here = pos ? peopleAt(state.people, pos.x, pos.y) : [];
 
@@ -634,13 +670,13 @@ export class CommandHandler implements ICommandHandler {
 
     advanceTime(state, TALK_HOURS);
 
-    // Somebody new speaks before somebody already met, and somebody with nothing open
-    // between you before somebody who has already asked -- otherwise the first person
-    // with an errand would be the only villager the character ever meets.
+    // Whoever was named. Failing that, somebody new speaks before somebody already met,
+    // and somebody with nothing open between you before somebody who has already asked,
+    // so that repeated talking works through a village rather than sticking on the first
+    // person in it.
     const speaker =
-      here.find((person) => !person.met) ??
+      addressee(state, who, (person) => !person.met) ??
       here.find((person) => !errandOf(state, person)) ??
-      here.find((person) => errandOf(state, person)?.state === ErrandState.OFFERED) ??
       here[0];
 
     const events: GameEvent[] = [];
@@ -651,25 +687,26 @@ export class CommandHandler implements ICommandHandler {
     const penalty = -markBand(mark?.intensity ?? 0) * TALK_MARK_PENALTY;
     const disposition = Math.round(speaker.disposition / TALK_DISPOSITION_SCALE);
     const reaction = this.oracle.ask('npc_reaction', state.rng, penalty + disposition);
+    const attitude = attitudeOf(state, speaker);
 
     if (first) {
       events.push({
         tick: state.tick,
         type: 'system',
-        message: `${speaker.name}, ${ROLE_TITLE[speaker.role]} of ${speaker.place}. ${reaction?.narration ?? ''}`.trim(),
+        message: `${speaker.name}, ${ROLE_TITLE[speaker.role]} of ${speaker.place} — ${describeAttitude(speaker, attitude)}. They talk ${speaker.mannerism}. ${reaction?.narration ?? ''}`.trim(),
         data: { person: speaker.id, reaction: reaction?.entry.result },
       });
     } else {
       events.push({
         tick: state.tick,
         type: 'system',
-        message: `${speaker.name} again, who ${regard(speaker.disposition)}. ${reaction?.narration ?? ''}`.trim(),
+        message: `${speaker.name} again — ${describeAttitude(speaker, attitude)}. ${reaction?.narration ?? ''}`.trim(),
         data: { person: speaker.id, reaction: reaction?.entry.result },
       });
     }
 
     // Somebody who has decided you are a problem does not ask you for favours.
-    const hostile = reaction?.entry.result === 'hostile' || speaker.disposition <= -60;
+    const hostile = reaction?.entry.result === 'hostile' || attitude === Attitude.HOSTILE;
     if (hostile) {
       events.push({
         tick: state.tick,
@@ -933,6 +970,84 @@ export class CommandHandler implements ICommandHandler {
       data: { victory: false, days: state.day, rites: kept },
     });
     return events;
+  }
+
+  /**
+   * Drinks from whatever open water is within reach.
+   *
+   * There was no way to do this, which is a strange hole in a game about walking across
+   * a country: a character could die of thirst standing on the bank of a river, because
+   * the only water in the world was what foraging happened to turn up. Measured over
+   * thirty runs, going without was among the commonest ways to die.
+   *
+   * Clean water is simply water. Standing water in a mire is a Constitution save, and
+   * failing it means drinking it anyway and regretting it, which is the honest outcome
+   * for a man with no other option.
+   *
+   * @param state Mutable game state
+   * @returns What came of it
+   */
+  private handleDrink(state: GameState): GameEvent {
+    const pos = state.entities.getComponent<PositionComponent>(state.playerId, 'position');
+    const stats = state.entities.getComponent<StatsComponent>(state.playerId, 'stats');
+    if (!pos || !stats) {
+      return { tick: state.tick, type: 'error', message: 'There is no water here.' };
+    }
+
+    const source = waterWithinReach(state, pos.x, pos.y);
+    if (!source) {
+      return {
+        tick: state.tick,
+        type: 'error',
+        message: 'There is no water here that you would put in your mouth.',
+      };
+    }
+
+    const before = snapshotNeeds(stats);
+    const inventory = state.entities.getComponent<InventoryComponent>(
+      state.playerId,
+      'inventory'
+    );
+
+    // Foul water is still water, and a thirsty man drinks it.
+    if (source === 'foul') {
+      const save = savingThrow(state, Ability.CON, FOUL_WATER_DC);
+      if (!save.success) {
+        const damage = roll(state.rng, FOUL_WATER_DICE).total;
+        stats.hp = Math.max(MIN_STAT_VALUE, stats.hp - damage);
+        stats.thirst = Math.max(MIN_STAT_VALUE, stats.thirst - FOUL_WATER_RELIEF);
+        return {
+          tick: state.tick,
+          type: 'danger',
+          message:
+            `You drink out of the mire because there is nothing else. ` +
+            `(Constitution save DC ${FOUL_WATER_DC}: ${save.total}. Failed. -${damage} hp) ` +
+            describeChange(before, stats),
+          data: { water: 'foul', failed: true },
+        };
+      }
+
+      stats.thirst = Math.max(MIN_STAT_VALUE, stats.thirst - CLEAN_WATER_RELIEF);
+      if (inventory) addItem(inventory, 'waterskin', 1);
+      return {
+        tick: state.tick,
+        type: 'rest',
+        message:
+          `You strain it through cloth and drink, and your stomach holds. ` +
+          `(Constitution save DC ${FOUL_WATER_DC}: ${save.total}) ${describeChange(before, stats)}`,
+        data: { water: 'foul', failed: false },
+      };
+    }
+
+    stats.thirst = Math.max(MIN_STAT_VALUE, stats.thirst - CLEAN_WATER_RELIEF);
+    if (inventory) addItem(inventory, 'waterskin', 1);
+
+    return {
+      tick: state.tick,
+      type: 'rest',
+      message: `You drink until your teeth ache with the cold of it, and fill what you carry. ${describeChange(before, stats)}`,
+      data: { water: 'clean' },
+    };
   }
 
   private handleConsume(itemId: string, state: GameState): GameEvent {

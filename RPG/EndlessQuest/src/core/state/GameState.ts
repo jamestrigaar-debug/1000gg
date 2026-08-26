@@ -184,6 +184,35 @@ function hashString(str: string): number {
 }
 
 /**
+ * Records an event in the chronicle, in the order it happened.
+ *
+ * Appending was not good enough. A command stamps its narration with the tick it
+ * finishes at -- eight hours of sleep is logged at the hour you wake -- and then the
+ * systems run and report each of the hours in between, which are all earlier. In a
+ * measured run, a quarter of the entries came out ahead of entries that preceded them,
+ * so the chronicle jumped backwards in time while the player was reading it.
+ *
+ * Inserting by tick fixes it for every reader at once. Almost everything belongs at the
+ * end, so the scan back is short, and events sharing a tick keep the order they were
+ * emitted in, which is the order they happened in.
+ *
+ * @param state Mutable game state
+ * @param event What happened
+ */
+export function recordEvent(state: GameState, event: GameEvent): void {
+  const log = state.log;
+
+  if (log.length === 0 || log[log.length - 1].tick <= event.tick) {
+    log.push(event);
+    return;
+  }
+
+  let at = log.length;
+  while (at > 0 && log[at - 1].tick > event.tick) at--;
+  log.splice(at, 0, event);
+}
+
+/**
  * Returns the tile occupied by the player character.
  * @param state Current GameState
  * @returns Tile or undefined if player has no position or position is out of bounds

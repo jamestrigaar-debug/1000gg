@@ -51,7 +51,7 @@ export interface SavePayload {
   /** Open narrative threads, so the world still owes what it owed before the reload */
   threads: Thread[];
   /** What each person has come to think of the character, by person id */
-  dispositions: Record<string, { disposition: number; met: boolean }>;
+  dispositions: Record<string, { disposition: number; met: boolean; read: boolean }>;
   /** Every errand raised this run, in whatever state it reached */
   errands: Errand[];
   gameOver: boolean;
@@ -142,7 +142,7 @@ export function serializeGameState(state: GameState): SavePayload {
     dispositions: Object.fromEntries(
       state.people.map((person) => [
         person.id,
-        { disposition: person.disposition, met: person.met },
+        { disposition: person.disposition, met: person.met, read: person.read },
       ])
     ),
     errands: state.errands.map((errand) => ({ ...errand })),
@@ -218,6 +218,7 @@ export function deserializeGameState(payload: SavePayload): GameState {
     if (remembered) {
       person.disposition = remembered.disposition;
       person.met = remembered.met;
+      person.read = remembered.read ?? false;
     }
   }
   state.errands = (payload.errands ?? []).map((errand) => ({ ...errand }));
