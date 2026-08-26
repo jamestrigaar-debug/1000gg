@@ -1,5 +1,6 @@
 import type { System } from '../../ecs/System';
 import type { GameState } from '../../state/GameState';
+import { recordEvent } from '../../state/GameState';
 import type { GameEvent } from '../../../events/GameEvent';
 import { EventBus } from '../../../events/EventBus';
 import { getSeason } from '../../world/TimeOfDay';
@@ -61,7 +62,7 @@ export class TimeSystem implements System {
           message: `Night falls. Day ${day} of year ${year} begins.`,
           data: { day, year },
         };
-        state.log.push(event);
+        recordEvent(state, event);
         this.eventBus.emit(event);
       } else if (hour === 6) {
         const event: GameEvent = {
@@ -70,7 +71,7 @@ export class TimeSystem implements System {
           message: `Dawn breaks on day ${day}.`,
           data: { day, hour },
         };
-        state.log.push(event);
+        recordEvent(state, event);
         this.eventBus.emit(event);
 
         // Seasonal transitions occur at dawn on the first day of each 90-day season
@@ -82,7 +83,7 @@ export class TimeSystem implements System {
             message: `${season} has arrived.`,
             data: { season, year },
           };
-          state.log.push(seasonEvent);
+          recordEvent(state, seasonEvent);
           this.eventBus.emit(seasonEvent);
         }
       }

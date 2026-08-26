@@ -1,5 +1,6 @@
 import type { System } from '../../ecs/System';
 import type { GameState } from '../../state/GameState';
+import { recordEvent } from '../../state/GameState';
 import type { AbilitiesComponent, StatsComponent } from '../../ecs/Component';
 import type { GameEvent } from '../../../events/GameEvent';
 import { EventBus } from '../../../events/EventBus';
@@ -271,7 +272,7 @@ export class NeedsSystem implements System {
    * Records an event in the log and broadcasts it.
    */
   private emit(state: GameState, event: GameEvent): void {
-    state.log.push(event);
+    recordEvent(state, event);
     this.eventBus.emit(event);
   }
 }

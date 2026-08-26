@@ -1,5 +1,6 @@
 import type { System } from '../../ecs/System';
 import type { GameState } from '../../state/GameState';
+import { recordEvent } from '../../state/GameState';
 import { EventBus } from '../../../events/EventBus';
 import { settleThreads } from '../../narrative/Threads';
 
@@ -43,7 +44,7 @@ export class NarrativeSystem implements System {
     this.lastProcessedTick = state.tick;
 
     for (const event of settleThreads(state)) {
-      state.log.push(event);
+      recordEvent(state, event);
       this.eventBus.emit(event);
     }
   }

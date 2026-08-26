@@ -1,6 +1,6 @@
 import type { System } from '../../ecs/System';
 import type { GameState } from '../../state/GameState';
-import { isNearSettlement } from '../../state/GameState';
+import { isNearSettlement, recordEvent } from '../../state/GameState';
 import type { MarkComponent, PositionComponent, StatsComponent } from '../../ecs/Component';
 import type { GameEvent } from '../../../events/GameEvent';
 import { EventBus } from '../../../events/EventBus';
@@ -141,7 +141,7 @@ export class MarkSystem implements System {
       message: MARK_ESCALATION_LINES[band],
       data: { mark: mark.intensity, band, label: MARK_BAND_LABELS[band], name: MARK_NAME },
     };
-    state.log.push(event);
+    recordEvent(state, event);
     this.eventBus.emit(event);
   }
 }

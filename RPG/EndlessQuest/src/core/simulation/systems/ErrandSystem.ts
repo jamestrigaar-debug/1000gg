@@ -1,5 +1,6 @@
 import type { System } from '../../ecs/System';
 import type { GameState } from '../../state/GameState';
+import { recordEvent } from '../../state/GameState';
 import type { PositionComponent } from '../../ecs/Component';
 import { EventBus } from '../../../events/EventBus';
 import { ErrandKind, ErrandState, failErrand } from '../../narrative/Errands';
@@ -60,7 +61,7 @@ export class ErrandSystem implements System {
           const person = personById(state.people, errand.personId);
           if (person) person.disposition = Math.min(100, person.disposition + 25);
         }
-        state.log.push(event);
+        recordEvent(state, event);
         this.eventBus.emit(event);
       }
     }
@@ -92,7 +93,7 @@ export class ErrandSystem implements System {
             : 'You have walked the ground they meant. Whatever was working it has moved on, or is under you. Somebody should be told.',
         data: { errand: errand.id, arrived: true },
       };
-      state.log.push(event);
+      recordEvent(state, event);
       this.eventBus.emit(event);
     }
   }
