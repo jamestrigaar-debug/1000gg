@@ -5,6 +5,7 @@ import { Skill } from '../rules/Skills';
 import { settlementAt } from '../world/Settlement';
 import { atTree, vigilAt } from '../world/Reckoning';
 import { getCurrentTile } from '../state/GameState';
+import { waterWithinReach } from '../world/Water';
 
 /**
  * Everything the world knows how to be told.
@@ -35,6 +36,8 @@ export enum Target {
   PERSON = 'person',
   /** A length of time: "sleep until morning" */
   HOURS = 'hours',
+  /** Something to ask about: "ask about the tree" */
+  TOPIC = 'topic',
 }
 
 /** Where an action belongs in the palette. */
@@ -152,9 +155,10 @@ export const ACTIONS: readonly ActionDef[] = [
   // --- Travel ------------------------------------------------------------------
   {
     id: 'go',
-    verbs: ['go', 'move', 'walk', 'head', 'travel', 'march', 'press', 'continue',
+    verbs: ['go', 'move', 'walk', 'head', 'travel', 'march', 'continue',
       'trek', 'wander', 'ride'],
-    phrases: ['set off', 'push on', 'carry on', 'make for', 'strike out', 'head for'],
+    phrases: ['set off', 'push on', 'press on', 'carry on', 'make for', 'strike out',
+      'head for'],
     summary: 'set off in a direction',
     group: ActionGroup.TRAVEL,
     target: Target.DIRECTION,
@@ -239,12 +243,29 @@ export const ACTIONS: readonly ActionDef[] = [
   },
   {
     id: 'eat',
-    verbs: ['eat', 'drink', 'consume', 'swallow', 'chew'],
+    verbs: ['eat', 'consume', 'swallow', 'chew'],
+    phrases: ['drink the', 'drink my', 'eat the', 'eat my'],
     summary: 'use something you are carrying',
     group: ActionGroup.SURVIVE,
     target: Target.ITEM,
     command: (item) => ({ type: 'CONSUME', item }),
     example: 'eat the bread',
+  },
+  {
+    id: 'drink',
+    verbs: ['drink'],
+    phrases: ['drink from', 'fill the waterskin', 'fill my skin', 'drink the water',
+      'get water', 'water myself'],
+    summary: 'drink from open water, if there is any within reach',
+    group: ActionGroup.SURVIVE,
+    target: Target.NONE,
+    command: () => ({ type: 'DRINK' }),
+    available: (state) => free(state) && waterWithinReach(
+      state,
+      state.entities.getComponent<PositionComponent>(state.playerId, 'position')?.x ?? -1,
+      state.entities.getComponent<PositionComponent>(state.playerId, 'position')?.y ?? -1
+    ) !== null,
+    example: 'drink from the stream',
   },
   {
     id: 'snare',
@@ -469,7 +490,7 @@ export const ACTIONS: readonly ActionDef[] = [
     summary: 'speak to whoever is here, and hear what they want',
     group: ActionGroup.TALK,
     target: Target.PERSON,
-    command: () => ({ type: 'TALK' }),
+    command: (who) => ({ type: 'TALK', who }),
     available: inSettlement,
     example: 'talk to them',
   },
@@ -498,12 +519,13 @@ export const ACTIONS: readonly ActionDef[] = [
   {
     id: 'enquire',
     verbs: ['ask', 'enquire', 'inquire', 'question'],
-    phrases: ['ask about', 'ask after'],
-    summary: 'ask about the country, the road, or what is wrong here',
+    phrases: ['ask about', 'ask after', 'what do you know about'],
+    summary: 'ask about the tree, the rites, the roads, the country, or this place',
     group: ActionGroup.TALK,
-    target: Target.NONE,
-    skill: Skill.PERSUASION,
-    example: 'ask about the road south',
+    target: Target.TOPIC,
+    command: (text) => ({ type: 'ASK', text }),
+    available: inSettlement,
+    example: 'ask about the rites',
   },
   {
     id: 'persuade',
@@ -525,12 +547,36 @@ export const ACTIONS: readonly ActionDef[] = [
   },
   {
     id: 'read_them',
-    verbs: ['gauge', 'judge', 'weigh'],
-    summary: 'work out whether they mean it',
+    verbs: ['gauge', 'judge', 'weigh', 'measure', 'study'],
+    phrases: ['take their measure', 'read them', 'size them up', 'watch them a while'],
+    summary: 'take somebody\u2019s measure, and learn what they hold to',
     group: ActionGroup.TALK,
-    target: Target.NONE,
-    skill: Skill.INSIGHT,
-    example: 'gauge whether they are lying',
+    target: Target.PERSON,
+    command: (who) => ({ type: 'READ', who }),
+    available: inSettlement,
+    example: 'take their measure',
+  },
+  {
+    id: 'press',
+    verbs: ['press', 'lean', 'blackmail'],
+    phrases: ['use what you know', 'press them', 'lean on them', 'hold it over them'],
+    summary: 'use what they are hiding; quicker than an appeal, and they will not forget',
+    group: ActionGroup.TALK,
+    target: Target.PERSON,
+    command: (who) => ({ type: 'PRESS', who }),
+    available: inSettlement,
+    example: 'press them with what you know',
+  },
+  {
+    id: 'appeal',
+    verbs: ['appeal', 'invoke'],
+    phrases: ['appeal to', 'put it to them', 'say it their way'],
+    summary: 'put it in the terms of what they care about',
+    group: ActionGroup.TALK,
+    target: Target.PERSON,
+    command: (who) => ({ type: 'APPEAL', who }),
+    available: inSettlement,
+    example: 'appeal to what they care about',
   },
   {
     id: 'calm',

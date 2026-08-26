@@ -75,7 +75,15 @@ export function interpret(input: string, state: GameState): Interpretation {
     };
   }
 
-  const match = findAction(words, state);
+  let match = findAction(words, state);
+
+  // "Drink from the waterskin" and "drink from the stream" are the same verb aimed at
+  // different things, and it is the object that decides which. Anything the character
+  // is actually carrying wins, because a man with a full skin who says he is drinking
+  // means the skin.
+  if (match?.id === 'drink' && matchCarried(words, state)) {
+    match = ACTIONS.find((action) => action.id === 'eat') ?? match;
+  }
   if (!match) {
     return {
       kind: 'unclear',
@@ -116,6 +124,18 @@ function resolveAction(
     case Target.HOURS: {
       const hours = Math.max(MIN_REST_HOURS, Math.min(MAX_REST_HOURS, readHours(words)));
       return { kind: 'command', command: action.command!(String(hours)), action };
+    }
+
+    case Target.PERSON: {
+      // The line travels intact so the handler can work out who was addressed. A player
+      // in a village of four means one of them, and usually says which.
+      return { kind: 'command', command: action.command!(raw), action };
+    }
+
+    case Target.TOPIC: {
+      // The whole line is handed on, because what was asked about is the answer's
+      // business rather than the ear's.
+      return { kind: 'command', command: action.command!(raw), action };
     }
 
     case Target.ITEM: {

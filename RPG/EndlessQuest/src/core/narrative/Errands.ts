@@ -2,7 +2,7 @@ import type { GameState } from '../state/GameState';
 import type { InventoryComponent } from '../ecs/Component';
 import type { GameEvent } from '../../events/GameEvent';
 import type { Person } from '../world/People';
-import { Role, ROLE_TITLE, personById } from '../world/People';
+import { BONDS, Role, ROLE_TITLE, personById } from '../world/People';
 import { TerrainType } from '../world/TerrainType';
 import { TERRAIN_NAME } from '../lore/Flavor';
 import { getItem } from '../lore/Items';
@@ -14,6 +14,7 @@ import {
   ERRAND_DISPOSITION_DONE,
   ERRAND_DISPOSITION_FAILED,
   HOURS_PER_DAY,
+  BOND_ERRAND_CHANCE,
 } from '../SimulationConstants';
 
 /**
@@ -111,6 +112,28 @@ const WANTS: Record<Role, readonly Want[]> = {
   [Role.MIDWIFE]: [
     {
       kind: ErrandKind.FETCH,
+      item: 'herbs',
+      terrain: TerrainType.FOREST,
+      days: 4,
+      ask: () =>
+        'I am out of everything that stops a bleed. There are herbs under the timber, if the wood will let you have them. I have two women near their time and no help coming.',
+      task: (where) => `Bring what grows under the timber in ${where}`,
+      cost: 'One of the two did not come through it. She is behind the church with the others now.',
+      reward: { items: { bandage: 2, feverfew: 1 } },
+    },
+    {
+      kind: ErrandKind.FEED,
+      item: 'raw_meat',
+      quantity: 1,
+      days: 3,
+      ask: () =>
+        'There is a woman in that house who has not eaten meat since the autumn and is feeding a child on nothing. I have asked everybody. You are what is left to ask.',
+      task: () => 'Bring meat to the house behind her',
+      cost: 'The child stopped feeding on the third day and did not start again.',
+      reward: { items: { herbal_poultice: 1, copper_coins: 2 } },
+    },
+    {
+      kind: ErrandKind.FETCH,
       item: 'feverfew',
       terrain: TerrainType.SWAMP,
       days: 3,
@@ -122,6 +145,17 @@ const WANTS: Record<Role, readonly Want[]> = {
     },
   ],
   [Role.SMITH]: [
+    {
+      kind: ErrandKind.FETCH,
+      item: 'ancient_coin',
+      terrain: TerrainType.HILLS,
+      days: 5,
+      ask: () =>
+        'There is old iron in the barrows up on the stone country. Not grave-goods, before you look at me like that -- iron. Bring me anything worked and I will make you something that holds an edge.',
+      task: (where) => `Bring worked metal out of the barrows in ${where}`,
+      cost: 'He melted down the chapel hinges instead. The parish has not forgiven him and neither has he.',
+      reward: { items: { hunting_knife: 1, copper_coins: 3 } },
+    },
     {
       kind: ErrandKind.FETCH,
       item: 'firewood',
@@ -136,6 +170,17 @@ const WANTS: Record<Role, readonly Want[]> = {
   ],
   [Role.PRIEST]: [
     {
+      kind: ErrandKind.FETCH,
+      item: 'feverfew',
+      terrain: TerrainType.SWAMP,
+      days: 4,
+      ask: () =>
+        'Half this parish is sweating through a fever I have no name for and the Church has sent nothing but a letter. Feverfew, out of the sour ground. As much as you can carry.',
+      task: (where) => `Bring feverfew out of ${where}`,
+      cost: 'It went through the houses on the north side and took the old first, as it does.',
+      reward: { items: { herbal_poultice: 2 }, knowledge: true },
+    },
+    {
       kind: ErrandKind.FIND,
       days: 5,
       ask: () =>
@@ -146,6 +191,15 @@ const WANTS: Record<Role, readonly Want[]> = {
     },
   ],
   [Role.REEVE]: [
+    {
+      kind: ErrandKind.FIND,
+      days: 5,
+      ask: () =>
+        'Two of mine went out to bring the flock down nine days ago. I have sent nobody after them because I have nobody to send. Go and find out, and come back and tell me either way.',
+      task: (where) => `Find out what became of them out in ${where}`,
+      cost: 'Whatever happened out there happened without anybody watching, and the reeve has stopped going as far as the gate.',
+      reward: { items: { copper_coins: 3, dried_meat: 1 }, knowledge: true },
+    },
     {
       kind: ErrandKind.CLEAR,
       days: 4,
@@ -158,6 +212,17 @@ const WANTS: Record<Role, readonly Want[]> = {
   ],
   [Role.WIDOW]: [
     {
+      kind: ErrandKind.FETCH,
+      item: 'wool_cloak',
+      terrain: TerrainType.HILLS,
+      days: 6,
+      ask: () =>
+        'He went out in his good cloak and they brought back neither. If it is still out there on him, bring it to me. I know what that sounds like. Bring it anyway.',
+      task: (where) => `Find what he was wearing, out in ${where}`,
+      cost: 'She has stopped asking after him, which is not the same as having stopped waiting.',
+      reward: { items: { copper_coins: 2 }, knowledge: true },
+    },
+    {
       kind: ErrandKind.FIND,
       days: 6,
       ask: () =>
@@ -168,6 +233,15 @@ const WANTS: Record<Role, readonly Want[]> = {
     },
   ],
   [Role.DROVER]: [
+    {
+      kind: ErrandKind.CLEAR,
+      days: 4,
+      ask: () =>
+        'Something is working the drove road and I cannot take beasts past it. I am not asking you to be brave, I am asking you to walk up there and come back and tell me it is done.',
+      task: (where) => `Walk the drove road through ${where} and see it clear`,
+      cost: 'He took them the long way round and lost four to the mire, which is four more than he had to spare.',
+      reward: { items: { dried_meat: 3, copper_coins: 2 } },
+    },
     {
       kind: ErrandKind.FETCH,
       item: 'rope',
@@ -209,6 +283,105 @@ const WANTS: Record<Role, readonly Want[]> = {
 };
 
 /**
+ * What a person wants on their own account, rather than on their trade's.
+ *
+ * A wider table of wants per role is still a table: every midwife is drawing from the
+ * midwife list, so the twentieth village's midwife is recognisably the first one's. What
+ * makes an errand belong to a *person* is that it comes out of what holds them, and
+ * every person is holding something different.
+ *
+ * So a bond can be the errand. The bond was already generated, already read out when
+ * somebody was measured, and already doing nothing. Now the child in the back room who
+ * is not getting better is a reason to go to the mire, and the daughter who has not
+ * written is a reason to go south, and neither of those is anybody's trade.
+ *
+ * @param person Whose bond it is
+ * @returns A want built from it, or undefined if that bond asks nothing of anybody
+ */
+function bondWant(person: Person): Want | undefined {
+  const index = BONDS.indexOf(person.bond);
+
+  const wants: readonly (Want | undefined)[] = [
+    // A daughter sent south, who has not written.
+    {
+      kind: ErrandKind.FIND,
+      days: 7,
+      ask: () =>
+        'I sent my daughter south before the burnings and she has not written, and I have stopped telling myself what that means. You are going that way. Ask at the crossing. Ask anybody.',
+      task: (where) => `Ask after her, out toward ${where}`,
+      cost: 'They have stopped asking travellers. That is the part that tells you what they have decided.',
+      reward: { knowledge: true },
+    },
+    // A brother hanged at the same tree, on the same morning.
+    {
+      kind: ErrandKind.FIND,
+      days: 6,
+      ask: () =>
+        'They hanged my brother the same morning they hanged you. Same tree. He is still on it, or he is under it, and either way somebody who has been up there ought to be the one who goes.',
+      task: (where) => `Find what is left of him, out in ${where}`,
+      cost: 'Nobody went. They have not said so, but they have stopped looking at your throat, which is worse.',
+      reward: { knowledge: true },
+    },
+    // The last marked man who came through.
+    {
+      kind: ErrandKind.FIND,
+      days: 5,
+      ask: () =>
+        'There was a man through here last winter with the same weal on him as you. He went out that way. I would like to know what became of him, and I think you would too.',
+      task: (where) => `Find where he got to, out in ${where}`,
+      cost: 'Whatever became of him became of him unwitnessed, which is what they are all afraid of.',
+      reward: { knowledge: true },
+    },
+    // Four generations of ground.
+    {
+      kind: ErrandKind.CLEAR,
+      days: 5,
+      ask: () =>
+        'My family has worked that ground for four generations and something has been on it since the thaw. I am too old to go up and I will not sell it. Go and stand on it and see.',
+      task: (where) => `Walk their ground in ${where} and see what is on it`,
+      cost: 'They have let it go. Four generations, and it goes back to thorn in one season.',
+      reward: { items: { copper_coins: 3, dried_meat: 2 } },
+    },
+    // The child in the back room.
+    {
+      kind: ErrandKind.FETCH,
+      item: 'feverfew',
+      terrain: TerrainType.SWAMP,
+      days: 3,
+      ask: () =>
+        'There is a child in the back room who is not getting better and I have run out of things to try. Feverfew. It grows in the sour ground and I cannot leave the house.',
+      task: (where) => `Bring feverfew from ${where}`,
+      cost: 'The back room is quiet now. Nobody in the house has said anything about it to anybody.',
+      reward: { items: { herbal_poultice: 1, bandage: 2 } },
+    },
+    // A debt in the next village.
+    {
+      kind: ErrandKind.FETCH,
+      item: 'copper_coins',
+      quantity: 2,
+      days: 6,
+      ask: () =>
+        'I owe money in the next village and I cannot go there and I cannot pay it. If you can put two coins in my hand I can send them and stop being a man who owes.',
+      task: () => 'Bring them two coins',
+      cost: 'Word came from the next village about what is owed. They did not put it politely.',
+      reward: { knowledge: true },
+    },
+    // The chapel bell.
+    {
+      kind: ErrandKind.FIND,
+      days: 6,
+      ask: () =>
+        'They took the bell out of our chapel and carted it off and nobody will say where. A parish without a bell cannot call anybody in off the road after dark. Find out where it went.',
+      task: (where) => `Find where the bell went, out toward ${where}`,
+      cost: 'No bell, and the nights are longer than they were. People stopped going out after dusk at all.',
+      reward: { items: { copper_coins: 2 }, knowledge: true },
+    },
+  ];
+
+  return index >= 0 ? wants[index] : undefined;
+}
+
+/**
  * Whether somebody has anything they want doing right now.
  *
  * @param state Current game state
@@ -236,10 +409,17 @@ export function errandOf(state: GameState, person: Person): Errand | undefined {
 export function raiseErrand(state: GameState, person: Person): Errand | undefined {
   if (errandOf(state, person)) return undefined;
 
+  // What holds a person comes before what they do for a living, when they have been
+  // measured -- somebody who has let you see what they care about asks you for that,
+  // not for firewood.
+  const personal = person.read ? bondWant(person) : undefined;
   const wants = WANTS[person.role];
-  if (!wants || wants.length === 0) return undefined;
+  if (!personal && (!wants || wants.length === 0)) return undefined;
 
-  const want = wants[state.rng.nextInt(0, wants.length - 1)];
+  const want =
+    personal && state.rng.nextFloat() < BOND_ERRAND_CHANCE
+      ? personal
+      : wants[state.rng.nextInt(0, wants.length - 1)];
 
   // Somewhere the answer actually is. For a fetch, that is the country the thing grows
   // in; for anything else, it is somewhere out from the village.
