@@ -56,6 +56,9 @@ road -- each opens a question the world returns to on its own clock, and pays of
 event rather than a line of prose. Threads are saved with the run.
 
 **The Reckoning**: The run has an objective and an ending that is not a death. A gallows-tree stands far from where the character wakes, and three vigils are strung along the road to it. Keeping a rite argues the debt down; arriving at the tree settles it against everything you did on the way, as three Constitution saves whose DC falls with each rite kept and rises with the Gallowsmark. Walking out of the Thornmarch alive is the win condition.
+- **Encounters built to a budget**: What the country sends is sized against the character who has to face it, by the Guide's own method — experience thresholds by level, four grades of encounter, monsters chosen to fit under the threshold being aimed at. The Gallowsmark no longer picks the monster; it picks the *grade*, from easy in cold country to deadly once the mark is open. Before this, a swordsman of the Iron Chain arrived on schedule around the fifth day and killed a second-level character in two blows, which is not a difficulty curve but a countdown.
+- **Morale**: The Guide's optional rule. A creature cut below half its hit points for the first time makes a DC 10 save, stiffened by its own tenacity, and a failure means it has had enough and goes. Fighting is worth choosing over running because some fights end when the other side decides they are over.
+- **Water**: There is water in the world and you can drink it. Running water within reach is clean; a mire is standing water and calls for a Constitution save, which a thirsty man makes anyway because there is nothing else. Before this a character could die of thirst on a riverbank, and measured over thirty runs, going without was among the commonest ways to die.
 - **Progression**: Surviving a threat earns experience -- all of it for killing, half for getting away -- up to fifth level, each level adding a hit die plus Constitution. A first-level character cannot fight their way across the map; the point is to become just hard enough to kill to walk out.
 - **Settlements**: Deterministically named villages that act as sanctuary — the Mark cools sharply and the encounter rate collapses within reach of one. Barter a coin for supplies.
 - **Save/Load**: Full run persistence to IndexedDB (localStorage fallback), including RNG state.
@@ -65,16 +68,32 @@ event rather than a line of prose. Threads are saved with the run.
 
 ## Deployment
 
-The build uses relative asset URLs, so the contents of `dist/` can be dropped into any
-directory on any host and will run from there -- `example.com/RPG/EndlessQuest/` as
-readily as the root of a domain. There is no server component and no runtime fetching:
-the whole game is the bundle. Saves go to IndexedDB under a namespaced key, with
-localStorage as a fallback.
+The game is a static bundle. There is no server component and nothing is fetched at
+runtime, so the built output runs from any directory on any host.
+
+**Deploy the contents of `dist/`, not the repository.** A web server cannot run
+`src/main.ts` — that only works under the dev server, which compiles TypeScript on the
+fly. Serving the repository as-is gives a black screen: the markup and styles paint, and
+then the browser is handed a `.ts` file it cannot execute.
 
 ```bash
-npm run build      # produces dist/
-# copy dist/* to wherever the game is to live
+npm install
+npm run build          # writes dist/
+# upload the CONTENTS of dist/ to wherever the game lives, e.g.
+#   dist/index.html  ->  example.com/RPG/EndlessQuest/index.html
+#   dist/assets/...  ->  example.com/RPG/EndlessQuest/assets/...
 ```
+
+A current build is committed to `dist/` so that the repository can be uploaded whole and
+still work: `index.html` at the root notices that it has not started, finds the build
+beside it, and redirects there. That is a safety net rather than the intended path — it
+costs a redirect and leaves `/dist/` in the URL. Uploading `dist/` directly is cleaner.
+
+If the game ever does come up blank, the page says why and what to do about it instead
+of staying black. Rebuild after changing any source, or the committed `dist/` will be
+serving an older game than the one in `src/`.
+
+Saves go to IndexedDB under a namespaced key, with localStorage as a fallback.
 
 ## Tech Stack
 
@@ -193,11 +212,18 @@ load like settlements; only which rites were kept is saved. The vigils are place
 the line from the character's waking place to the tree, with a wander, because a rite
 that costs two crossings of the Thornmarch is a rite no one will ever keep.
 
-**Balance**: Measured with a headless bot over 30 seeds. A character who walks straight
-at the tree reaches it perhaps a third of the time and, arriving owing everything, wins
-about 3% of runs; one who keeps the rites on the way wins about 20%. Fleeing is the
-first-level answer to almost everything, and gets easier every round contact is held,
-so breaking off is a bounded cost rather than a coin flip repeated until death.
+**Balance**: Held as a test rather than as a note. `tests/balance.test.ts` plays thirty
+worlds twice over with a deliberately mechanical player — one who flees everything, eats
+when hungry, drinks where there is water, and never uses a single clever thing the game
+offers — once rushing the tree and once keeping the rites found on the way, and asserts
+the shape of the result. The argument the game makes is that preparation is worth
+several times speed; that claim was previously measured by hand every time the rules
+moved, which left it one careless change away from quietly stopping being true. A character who walks straight at the tree now reaches it about half the
+time and, arriving owing everything, wins about 3% of runs — the debt is collected on
+the spot. One who keeps the rites found along the way wins about a third. Preparation
+multiplies the odds roughly tenfold, which is the shape the game is arguing for.
+Fleeing is cheap by design (two rounds and about three hit points, measured), because
+at first level running is the answer to almost everything.
 
 **Save/Load**: `SaveGame` serializes a run; the tile map is deliberately *not* stored,
 since it is a pure function of the seed and is regenerated on load. Only the fog-of-war
@@ -222,12 +248,20 @@ restored tick so a loaded game does not replay its own history.
 - **Combat**: natural 20 and natural 1 behaviour, AC derivation, bestiary consistency, engagement gating, fight termination, determinism.
 - **Save**: world round-trip, map regeneration from seed, RNG continuation, no history replay, version rejection.
 - **Settlements**: naming, determinism, isolation of naming from terrain draws, lookup, save regeneration, trade outcomes.
+- **Addressing people**: names, bynames, trades and possessives all resolving to the right person; falling back to the caller's preference only when nobody was named; pressing needing a read first, working once, costing the relationship and buying compliance.
+- **People and society**: everybody getting a manner, a belief, a bond and a secret; mannerisms written to finish the sentence they are dropped into; no two people of one name in a village; the attitude ladder and its conversation difficulties; a burning mark costing a step of goodwill; reading somebody and remembering it across a save; appealing blind being worse than not trying; and a sweep asserting no line ever opens with a lower-case article.
+- **Knowledge**: reading the topic out of an ordinary question, preferring the sharper reading when a line could be two things, refusing what the world does not hold, routing through the vocabulary, bearings to the tree, villages and rites landing on the chart, the Mark making answers harder to get, and the clock rolling the day over correctly across a question.
 - **People and errands**: seeded generation, everybody in a settlement, roles their own names do not contradict, wants that suit the person and point somewhere real, no two open errands on one person, accepting and discharging, refusing to be paid off early, an errand about a place completing by getting there, deadlines enforced by the world, a hostile person asking for nothing, knowledge putting a vigil on the chart, and a want for every role the game can generate.
 - **Interpretation**: the many ways people phrase a direction, how long a rest was meant to be, matching what the player calls a thing against what they carry, words meaning different things in a fight, attempts read onto the right skill, and asking rather than correcting when a line cannot be read.
 - **Adjudication**: an improvised attempt costing time and resolving as a check, a success spent on the world rather than narrated, difficulty rising with the Mark, and improvising mid-fight costing the round rather than the hour.
 - **The narrator**: the register ladder, silence while cold, lies only at the top of it, lies never touching a mechanical readout, and lies spaced apart.
 - **Threads**: opening without stacking, not settling early, each kind's payoffs, and surviving a save.
+- **Balance**: preparation beating haste several times over, a prepared run being winnable often enough to be worth trying, rushing almost never working, most runs reaching the tree, the journey lasting days rather than hours or months, and the character growing on the way.
+- **Chronicle order**: a long run's log asserted to run forwards in time, entry by entry.
 - **Soak**: five runs of fifteen hundred commands checking meter bounds, finite numbers, entity cleanup, bounded bookkeeping, save round-trips and determinism.
+- **Encounters**: budgets climbing with the character, the Mark grading the danger rather than choosing it, the worst of the bestiary staying away from a first-level character, every creature being reachable at some level, and a played-out check that nothing beyond a first-level budget is ever sent to one.
+- **Morale**: creatures both breaking off and being killed, and being asked only once in a fight.
+- **Water**: dry ground offering nothing, mires reading as foul and running water as clean, drinking slaking thirst and filling the skin, and a refusal where there is nothing to drink.
 - **Reckoning**: placement distance and terrain, vigils staying near the road, determinism from the seed, the rite's effect on the Mark, refusal away from the sites, the difference preparation makes to the ending, save round trip.
 - **Progression**: the experience ladder and its ceiling, a level always being worth a hit point, experience for surviving without killing.
 - **Consequences**: wounds, lost items, lost time, a fanned Mark and being followed all changing state, an empty pack costing nothing, table sampling not repeating itself.
