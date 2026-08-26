@@ -82,6 +82,20 @@ describe('Long runs stay coherent', () => {
     expect(sim.state.log.length).toBeLessThanOrEqual(2000);
   });
 
+  it('keeps the chronicle in the order things happened', () => {
+    // A command reports itself at the hour it finishes; the systems then report the
+    // hours in between, which are earlier. Before this was fixed, a quarter of the
+    // entries in a resting run came out ahead of entries that preceded them.
+    const sim = soak('soak-order', 900);
+
+    for (let i = 1; i < sim.state.log.length; i++) {
+      expect(
+        sim.state.log[i].tick,
+        `"${sim.state.log[i].message.slice(0, 40)}" precedes "${sim.state.log[i - 1].message.slice(0, 40)}"`
+      ).toBeGreaterThanOrEqual(sim.state.log[i - 1].tick);
+    }
+  });
+
   it('round-trips a long run through a save without changing it', () => {
     const sim = soak('soak-save', 900);
     const before = sim.state;

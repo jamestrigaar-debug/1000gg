@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { SimulationLoop } from '../src/core/simulation/SimulationLoop';
-import { populate, peopleAt, regard, Role } from '../src/core/world/People';
+import { populate, peopleAt, regard, Role, Trait } from '../src/core/world/People';
 import {
   ErrandKind,
   ErrandState,
@@ -300,6 +300,44 @@ describe('Errands grow out of what people are', () => {
     expect(sim.state.log.some((e) => e.message.includes('It is on your chart now'))).toBe(true);
   });
 
+  it('does not give every person of a trade the same errand', () => {
+    // A wider table is still a table. What makes an errand belong to somebody is that it
+    // comes out of what holds them, and everybody is holding something different.
+    const asks = new Set<string>();
+
+    for (let seed = 0; seed < 24; seed++) {
+      const sim = new SimulationLoop(`errand-variety-${seed}`);
+      for (const person of sim.state.people) {
+        person.read = true;
+        const errand = raiseErrand(sim.state, person);
+        if (errand) asks.add(errand.ask);
+      }
+    }
+
+    expect(asks.size).toBeGreaterThan(10);
+  });
+
+  it('asks for what holds them once they have been read', () => {
+    // Somebody who has let you see what they care about asks you about that, not about
+    // their trade.
+    let personal = 0;
+
+    for (let seed = 0; seed < 30; seed++) {
+      const sim = new SimulationLoop(`errand-bond-${seed}`);
+      for (const person of sim.state.people) {
+        person.read = true;
+        const errand = raiseErrand(sim.state, person);
+        // A bond errand quotes the bond's own subject back.
+        if (errand && person.bond.split(' ').filter((w) => w.length > 5)
+          .some((word) => errand.ask.toLowerCase().includes(word.toLowerCase()))) {
+          personal++;
+        }
+      }
+    }
+
+    expect(personal).toBeGreaterThan(0);
+  });
+
   it('has a want for every role it can generate', () => {
     const sim = new SimulationLoop('errand-coverage');
 
@@ -313,6 +351,12 @@ describe('Errands grow out of what people are', () => {
         y: sim.state.settlements[0].y,
         disposition: 0,
         met: false,
+        trait: Trait.HONEST,
+        mannerism: 'plainly',
+        ideal: 'that a debt is a debt',
+        bond: 'the parish',
+        secret: 'nothing worth keeping',
+        read: false,
       };
       sim.state.people.push(person);
 
