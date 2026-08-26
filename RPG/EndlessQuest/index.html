@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EndlessQuest</title>
+  <style>
+    /*
+      Chrome for a glyph-grid roguelike. The reference games are dense, monospaced, and
+      unapologetically textual; the departure here is the palette, which is ink on
+      near-black rather than the sixteen DOS colours, and bars drawn as glyph runs
+      rather than as CSS fills.
+    */
+    :root {
+      --void: #05060a;
+      --panel: #0a0c11;
+      --rule: #1c2028;
+      --bone: #d8d0c0;
+      --ash: #8a857c;
+      --iron: #5f6670;
+      --moss: #6b7a4a;
+      --rust: #8a5a3c;
+      --ember: #c8752c;
+      --blood: #8c2f2f;
+      --pale: #b6c2c9;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--void);
+      color: var(--bone);
+      font-family: Consolas, "DejaVu Sans Mono", "Courier New", monospace;
+      font-size: 13px;
+      line-height: 1.35;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      -webkit-font-smoothing: none;
+    }
+    #status-bar {
+      background: var(--panel);
+      border-bottom: 1px solid var(--rule);
+      display: flex;
+      align-items: stretch;
+      gap: 18px;
+      padding: 6px 12px;
+      font-size: 12px;
+      white-space: nowrap;
+      overflow-x: auto;
+    }
+    #main-area { flex: 1; display: flex; overflow: hidden; }
+    #map-container { flex: 1; position: relative; background: var(--void); overflow: hidden; }
+    #chart-overlay {
+      position: absolute; inset: 0; z-index: 20;
+      background: rgba(4, 5, 7, 0.94);
+      display: flex; flex-direction: column; align-items: center;
+      gap: 6px; padding: 14px; overflow: auto; cursor: pointer;
+    }
+    #chart-overlay[hidden] { display: none; }
+    #chart-overlay h3 { margin: 0; color: var(--bone); letter-spacing: 0.14em; text-transform: uppercase; font-size: 11px; }
+    #chart-overlay canvas { image-rendering: pixelated; border: 1px solid #1c2028; max-width: 100%; }
+    .chart-legend { display: flex; flex-direction: column; gap: 2px; text-align: center; }
+    .chart-place { margin: 0; color: var(--bone); font-size: 11px; }
+    #action-panel {
+      width: 268px;
+      background: var(--panel);
+      border-left: 1px solid var(--rule);
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      overflow-y: auto;
+    }
+    #action-panel h3 {
+      font-size: 11px;
+      font-weight: normal;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--moss);
+      margin: 10px 0 3px;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 2px;
+    }
+    #action-panel h3:first-child { margin-top: 0; }
+    #action-panel h3.panel-danger { color: var(--blood); }
+    #action-panel h3.panel-dead { color: #5e1616; }
+    #speak {
+      width: 100%; box-sizing: border-box;
+      background: #0b0d10; color: var(--bone);
+      border: 1px solid #2a2f38; border-radius: 2px;
+      padding: 6px 8px; font: inherit; font-size: 12px;
+    }
+    #speak::placeholder { color: #4a505c; }
+    #repertoire { margin-top: 4px; }
+    #repertoire summary {
+      cursor: pointer; color: var(--iron); font-size: 9.5px;
+      letter-spacing: 0.12em; text-transform: uppercase; padding: 3px 0;
+    }
+    #repertoire summary:hover { color: var(--bone); }
+    .verb-group { display: flex; flex-wrap: wrap; gap: 3px; align-items: baseline; margin-bottom: 3px; }
+    .verb-group-label {
+      color: #4a505c; font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.1em; width: 100%; margin-top: 3px;
+    }
+    button.verb {
+      background: #101318; color: var(--ash, #8a857c);
+      border: 1px solid #23272f; border-radius: 2px;
+      padding: 2px 6px; font: inherit; font-size: 10.5px; cursor: pointer;
+      width: auto; margin: 0;
+    }
+    .errand { display: flex; flex-direction: column; gap: 1px; margin-bottom: 5px; }
+    .errand-task { color: var(--bone); font-size: 11.5px; }
+    .errand-who { color: var(--iron); font-size: 9.5px; }
+    .errand.urgent .errand-task { color: var(--ember); }
+    .person { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
+    .person-name { color: var(--bone); font-size: 11.5px; }
+    .person-note { color: var(--iron); font-size: 9.5px; }
+    button.verb:hover { color: var(--bone); border-color: var(--ember); background: #161a20; }
+    #speak:focus { outline: none; border-color: var(--ember); }
+    #log-panel .log-entry.said { color: var(--pale, #b6c2c9); font-weight: bold; }
+    #action-panel h3.panel-won  { color: #b8a878; }
+    #action-panel button {
+      background: transparent;
+      color: var(--bone);
+      border: 1px solid var(--rule);
+      padding: 4px 7px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+      text-align: left;
+      transition: background 0.08s, border-color 0.08s;
+    }
+    #action-panel button:hover:not(:disabled) {
+      background: #141821;
+      border-color: var(--moss);
+      color: #fff;
+    }
+    #action-panel button:disabled { opacity: 0.32; cursor: not-allowed; }
+    #action-panel .panel-note {
+      font-size: 11px;
+      color: var(--ash);
+      margin: 1px 0 4px;
+    }
+    #movement-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2px;
+      margin-bottom: 6px;
+    }
+    #movement-grid button { aspect-ratio: 1; text-align: center; padding: 0; font-size: 13px; }
+    #log-panel {
+      height: 172px;
+      background: var(--panel);
+      border-top: 1px solid var(--rule);
+      padding: 6px 10px;
+      overflow-y: auto;
+      font-size: 12.5px;
+    }
+    #log-panel .log-entry { padding: 1px 0; }
+    #log-panel .log-entry.movement { color: var(--ash); }
+    #log-panel .log-entry.system   { color: var(--pale); }
+    #log-panel .log-entry.search   { color: var(--moss); }
+    #log-panel .log-entry.rest     { color: var(--iron); }
+    #log-panel .log-entry.combat   { color: var(--ember); }
+    #log-panel .log-entry.danger   { color: var(--blood); }
+    #log-panel .log-entry.death    { color: #ff4d4d; font-weight: bold; }
+    #log-panel .log-entry.error    { color: var(--rust); }
+
+    /* Status bar: label above a glyph-run bar, after the reference games' readouts. */
+    .status-item { display: flex; flex-direction: column; gap: 1px; }
+    .status-label {
+      font-size: 9.5px;
+      letter-spacing: 0.12em;
+      color: var(--iron);
+      text-transform: uppercase;
+    }
+    .status-value { color: var(--bone); }
+    .status-sub { font-size: 9.5px; color: var(--iron); text-transform: capitalize; }
+    .meter { letter-spacing: -1px; }
+    .meter .full { color: currentColor; }
+    .meter .empty { color: #22262e; }
+    .meter.hp     { color: var(--blood); }
+    .meter.hunger { color: var(--rust); }
+    .meter.thirst { color: #3d6b8a; }
+    .meter.fatigue{ color: #6a5a80; }
+    .meter.mark   { color: var(--ember); }
+    .meter.exhaustion { color: var(--rust); }
+
+    .abilities .status-value { display: flex; gap: 8px; flex-wrap: wrap; }
+    .ability { color: var(--iron); white-space: nowrap; }
+    .ability b { color: var(--bone); font-weight: 600; }
+    .threat-glyph { font-weight: bold; font-size: 15px; }
+    .mark-value.band-0 { color: var(--iron); }
+    .mark-value.band-1 { color: var(--bile, #7a7040); }
+    .mark-value.band-2 { color: var(--rust); }
+    .mark-value.band-3 { color: var(--blood); }
+    .mark-value.band-4 { color: #ff2d2d; text-shadow: 0 0 7px #ff2d2d; }
+  </style>
+</head>
+<body>
+  <div id="status-bar"></div>
+  <div id="main-area">
+    <div id="map-container"></div>
+    <div id="action-panel"></div>
+  </div>
+  <div id="log-panel"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
