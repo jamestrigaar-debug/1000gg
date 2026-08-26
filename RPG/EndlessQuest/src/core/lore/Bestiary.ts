@@ -36,7 +36,12 @@ export interface CreatureArchetype {
   readonly armorClass: number;
   /** Relative difficulty of disengaging, in [0, 1]; higher is harder to escape */
   readonly tenacity: number;
-  /** Experience earned for surviving this thing */
+  /**
+   * What this thing is worth, in the source's experience points.
+   *
+   * Used for two different jobs, as the source uses it: sizing an encounter against the
+   * character who will be in it, and paying them for having survived it.
+   */
   readonly xp: number;
   /** Relative sampling weight when this archetype is eligible */
   readonly weight: number;
@@ -76,7 +81,7 @@ export const BESTIARY: readonly CreatureArchetype[] = [
     damageDice: '1d4',
     attackBonus: 3,
     armorClass: 11,
-    xp: 12,
+    xp: 50,
     tenacity: 0.2,
     weight: 10,
     terrain: [],
@@ -98,7 +103,7 @@ export const BESTIARY: readonly CreatureArchetype[] = [
     damageDice: '1d6',
     attackBonus: 4,
     armorClass: 13,
-    xp: 20,
+    xp: 100,
     tenacity: 0.6,
     weight: 7,
     terrain: [TerrainType.FOREST, TerrainType.HILLS, TerrainType.PLAINS],
@@ -119,7 +124,7 @@ export const BESTIARY: readonly CreatureArchetype[] = [
     damageDice: '1d6+1',
     attackBonus: 3,
     armorClass: 13,
-    xp: 25,
+    xp: 100,
     tenacity: 0.35,
     weight: 8,
     terrain: [TerrainType.PLAINS, TerrainType.HILLS, TerrainType.FOREST],
@@ -141,7 +146,7 @@ export const BESTIARY: readonly CreatureArchetype[] = [
     damageDice: '1d8+1',
     attackBonus: 5,
     armorClass: 14,
-    xp: 40,
+    xp: 450,
     tenacity: 0.75,
     weight: 6,
     terrain: [TerrainType.SWAMP],
@@ -162,7 +167,7 @@ export const BESTIARY: readonly CreatureArchetype[] = [
     damageDice: '1d4',
     attackBonus: 2,
     armorClass: 12,
-    xp: 8,
+    xp: 25,
     tenacity: 0.05,
     weight: 5,
     terrain: [TerrainType.SWAMP, TerrainType.FOREST, TerrainType.MOUNTAIN],
@@ -183,7 +188,7 @@ export const BESTIARY: readonly CreatureArchetype[] = [
     damageDice: '1d8+2',
     attackBonus: 5,
     armorClass: 16,
-    xp: 45,
+    xp: 450,
     tenacity: 0.85,
     weight: 3,
     terrain: [TerrainType.PLAINS, TerrainType.HILLS],
@@ -204,7 +209,7 @@ export const BESTIARY: readonly CreatureArchetype[] = [
     damageDice: '2d6+2',
     attackBonus: 7,
     armorClass: 17,
-    xp: 80,
+    xp: 1100,
     tenacity: 0.95,
     weight: 1,
     terrain: [],
