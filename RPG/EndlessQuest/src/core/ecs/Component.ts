@@ -137,6 +137,8 @@ export interface ThreatComponent extends Component {
   archetypeId: string;
   /** Difficulty of disengaging, in [0, 1] */
   tenacity: number;
+  /** True once this creature has been asked whether it wants to go on fighting */
+  testedMorale?: boolean;
 }
 
 /**
