@@ -22,7 +22,7 @@ export const CHURCH_NAME = 'the Church of the Sealed Wound';
 export const INQUISITION_NAME = 'the Iron Chain';
 
 /** Those who accepted the Choir's bargain. */
-export const APOSTLE_NAME = 'the Sated';
+export const SATED_NAME = 'the Sated';
 
 /** The five voices that answer an opened Coin. */
 export const CHOIR_NAME = 'the Choir';
