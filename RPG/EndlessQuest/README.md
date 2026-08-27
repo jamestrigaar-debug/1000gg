@@ -1,8 +1,8 @@
 # EndlessQuest — The Thornmarch
 
 A deterministic, text-based roguelike world simulation set in a dark medieval
-borderland, tonally influenced by Kentaro Miura's *Berserk*. You have been hanged, and
-you did not die; what you carry away from the tree is a mark that the dark can see.
+borderland. You have been hanged, and you did not die; what you carry away from the
+tree is a mark that the dark can see.
 
 See [LORE.md](LORE.md) for the world bible, and
 `Advanced Simulation Mathematics & Systems Theory` for the mathematical design target.
@@ -69,29 +69,31 @@ event rather than a line of prose. Threads are saved with the run.
 ## Deployment
 
 The game is a static bundle. There is no server component and nothing is fetched at
-runtime, so the built output runs from any directory on any host.
+runtime.
 
-**Deploy the contents of `dist/`, not the repository.** A web server cannot run
-`src/main.ts` — that only works under the dev server, which compiles TypeScript on the
-fly. Serving the repository as-is gives a black screen: the markup and styles paint, and
-then the browser is handed a `.ts` file it cannot execute.
+**The simplest deployment is one file.** `npm run build` writes `EndlessQuest.html` to
+the root of the repository: the whole game, script inlined, no asset folder, no relative
+paths to resolve. Upload it wherever the game should live and rename it `index.html`.
+That is the entire procedure, and there is nothing in it to get half right.
 
 ```bash
 npm install
-npm run build          # writes dist/
-# upload the CONTENTS of dist/ to wherever the game lives, e.g.
-#   dist/index.html  ->  example.com/RPG/EndlessQuest/index.html
-#   dist/assets/...  ->  example.com/RPG/EndlessQuest/assets/...
+npm run build        # writes dist/ and EndlessQuest.html
+
+# then either:
+#   upload EndlessQuest.html and rename it index.html      (one file, nothing else)
+#   or upload the CONTENTS of dist/                         (conventional; index.html + assets/)
 ```
 
-A current build is committed to `dist/` so that the repository can be uploaded whole and
-still work: `index.html` at the root notices that it has not started, finds the build
-beside it, and redirects there. That is a safety net rather than the intended path — it
-costs a redirect and leaves `/dist/` in the URL. Uploading `dist/` directly is cleaner.
+Uploading the repository whole also works. The source `index.html` cannot run — a web
+server cannot execute TypeScript, which is what a black screen means — so it looks for a
+build beside it, finds `EndlessQuest.html` or `dist/`, and goes there. If it finds
+neither it says so in plain words rather than staying black.
 
-If the game ever does come up blank, the page says why and what to do about it instead
-of staying black. Rebuild after changing any source, or the committed `dist/` will be
-serving an older game than the one in `src/`.
+This has gone wrong twice, both times because the build did not travel: once because
+`dist/` was in `.gitignore`, and once because an upload carried the source and not the
+build. The single file exists because a folder is the thing that goes missing. Rebuild
+after changing any source, or what ships will be an older game than what is in `src/`.
 
 Saves go to IndexedDB under a namespaced key, with localStorage as a fallback.
 
@@ -256,6 +258,7 @@ restored tick so a loaded game does not replay its own history.
 - **Adjudication**: an improvised attempt costing time and resolving as a check, a success spent on the world rather than narrated, difficulty rising with the Mark, and improvising mid-fight costing the round rather than the hour.
 - **The narrator**: the register ladder, silence while cold, lies only at the top of it, lies never touching a mechanical readout, and lies spaced apart.
 - **Threads**: opening without stacking, not settling early, each kind's payoffs, and surviving a save.
+- **The shipped build**: the single file existing, asking the network for nothing, inlining the bundle exactly once, escaping closing tags inside it, and the source page knowing how to find either build.
 - **Balance**: preparation beating haste several times over, a prepared run being winnable often enough to be worth trying, rushing almost never working, most runs reaching the tree, the journey lasting days rather than hours or months, and the character growing on the way.
 - **Chronicle order**: a long run's log asserted to run forwards in time, entry by entry.
 - **Soak**: five runs of fifteen hundred commands checking meter bounds, finite numbers, entity cleanup, bounded bookkeeping, save round-trips and determinism.

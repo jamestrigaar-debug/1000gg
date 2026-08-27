@@ -7,9 +7,9 @@ This document is the creative spine of EndlessQuest. It exists so that every sys
 build has something to *mean*. Mechanics referenced here are implemented under
 `src/core/lore/` and the systems in `src/core/simulation/systems/`.
 
-Tonal reference: Kentaro Miura's *Berserk* — a late-medieval world of mud, iron, and
-institutional cruelty, where the supernatural is not wondrous but predatory, and where
-the worst monsters were people who chose it.
+Tone: a late-medieval world of mud, iron, and institutional cruelty, where the
+supernatural is not wondrous but predatory, and where the worst monsters were people who
+chose it.
 
 ---
 
