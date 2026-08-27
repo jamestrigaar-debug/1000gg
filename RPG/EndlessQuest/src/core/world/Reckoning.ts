@@ -3,6 +3,7 @@ import type { Tile } from './Tile';
 import { TerrainType } from './TerrainType';
 import {
   RECKONING_TREE_MIN_DISTANCE,
+  RECKONING_TREE_MAX_DISTANCE,
   VIGIL_COUNT,
   VIGIL_MIN_SEPARATION,
   VIGIL_WANDER,
@@ -116,12 +117,26 @@ export function placeReckoning(
     if (!suitable(x, y)) continue;
 
     const distance = chebyshev(x, y, startX, startY);
-    if (distance > bestDistance) {
-      bestDistance = distance;
-      treeX = x;
-      treeY = y;
+
+    // The walk to the tree is a fixed length of run, not a fraction of the map. Taking
+    // the furthest candidate found put the tree eighty miles out once the country grew
+    // to two hundred and forty squares a side, which turned a tuned endgame into a
+    // march nobody survived. What is wanted is a place inside the band: far enough to
+    // be a journey, near enough to be a journey anybody comes back from.
+    if (distance < RECKONING_TREE_MIN_DISTANCE || distance > RECKONING_TREE_MAX_DISTANCE) {
+      // Keep the best near miss, so a cramped map still gets a tree somewhere.
+      if (bestDistance < RECKONING_TREE_MIN_DISTANCE && distance > bestDistance) {
+        bestDistance = distance;
+        treeX = x;
+        treeY = y;
+      }
+      continue;
     }
-    if (bestDistance >= RECKONING_TREE_MIN_DISTANCE) break;
+
+    bestDistance = distance;
+    treeX = x;
+    treeY = y;
+    break;
   }
 
   // The vigils are strung along the road rather than scattered over the whole map. A

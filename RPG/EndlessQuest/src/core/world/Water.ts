@@ -1,6 +1,7 @@
 import type { GameState } from '../state/GameState';
 import { TerrainType } from './TerrainType';
-import { DRINKABLE_MOISTURE } from '../SimulationConstants';
+import { SiteKind, siteNear } from './Sites';
+import { DRINKABLE_MOISTURE, WATER_FROM_SPRING_RANGE } from '../SimulationConstants';
 
 /** What sort of water is at hand, if any. */
 export type WaterSource = 'clean' | 'foul' | null;
@@ -20,6 +21,11 @@ export type WaterSource = 'clean' | 'foul' | null;
 export function waterWithinReach(state: GameState, x: number, y: number): WaterSource {
   const here = state.map[y]?.[x];
   if (!here) return null;
+
+  // A spring is a spring. The country was scattered with them and not one of them gave
+  // anybody a drink, because nothing ever asked the sites what they were -- which is
+  // most of why a stress run of forty worlds died thirty-eight times of the same thing.
+  if (siteNear(state.sites, x, y, WATER_FROM_SPRING_RANGE, SiteKind.SPRING)) return 'clean';
 
   // Anything running, on any of the eight tiles around.
   for (let dy = -1; dy <= 1; dy++) {

@@ -26,8 +26,14 @@ import {
   MIN_SETTLEMENT_COUNT,
   MAX_SETTLEMENT_COUNT,
   SETTLEMENT_MARGIN,
+  NAME_REDRAWS,
+  SETTLEMENT_MIN_SEPARATION,
+  START_DISTANCE_FROM_VILLAGE,
+  TILES_PER_SETTLEMENT,
   MAX_SETTLEMENT_ATTEMPTS,
 } from '../SimulationConstants';
+import { generateSites } from './Sites';
+import type { Site } from './Sites';
 
 /**
  * Result structure returned from procedural map generation.
@@ -41,6 +47,8 @@ export interface MapGenerationResult {
   startY: number;
   /** Named settlements placed on the map */
   settlements: Settlement[];
+  /** Everything else standing out in the country */
+  sites: Site[];
 }
 
 /**
@@ -113,38 +121,77 @@ export class MapGenerator {
       map.push(row);
     }
 
-    // Place 2-4 settlements on passable plains/hills
+    // People live here. How many places there are is a function of how much country
+    // there is, and they are kept apart so that each one is its own walk.
     const settlements: Settlement[] = [];
-    const settlementCount = this.rng.nextInt(MIN_SETTLEMENT_COUNT, MAX_SETTLEMENT_COUNT);
+    const settlementCount = Math.max(
+      MIN_SETTLEMENT_COUNT,
+      Math.min(MAX_SETTLEMENT_COUNT, Math.round((width * height) / TILES_PER_SETTLEMENT))
+    );
     let placed = 0;
     let attempts = 0;
     while (placed < settlementCount && attempts < MAX_SETTLEMENT_ATTEMPTS) {
-      const sx = this.rng.nextInt(SETTLEMENT_MARGIN, width - SETTLEMENT_MARGIN);
-      const sy = this.rng.nextInt(SETTLEMENT_MARGIN, height - SETTLEMENT_MARGIN);
-      const tile = map[sy][sx];
-      if (tile.terrain === TerrainType.PLAINS || tile.terrain === TerrainType.HILLS) {
-        if (!tile.settlement) {
-          tile.settlement = true;
-          settlements.push({ x: sx, y: sy, name: '' });
-          placed++;
-        }
-      }
       attempts++;
+      const sx = this.rng.nextInt(SETTLEMENT_MARGIN, width - 1 - SETTLEMENT_MARGIN);
+      const sy = this.rng.nextInt(SETTLEMENT_MARGIN, height - 1 - SETTLEMENT_MARGIN);
+      const tile = map[sy][sx];
+      if (tile.terrain !== TerrainType.PLAINS && tile.terrain !== TerrainType.HILLS) continue;
+      if (tile.settlement) continue;
+      if (
+        settlements.some(
+          (s) => Math.max(Math.abs(s.x - sx), Math.abs(s.y - sy)) < SETTLEMENT_MIN_SEPARATION
+        )
+      ) {
+        continue;
+      }
+
+      tile.settlement = true;
+      settlements.push({ x: sx, y: sy, name: '', known: false });
+      placed++;
     }
 
     // Name the settlements only after placement, so that adding names cannot perturb
     // the RNG draws that decide the terrain and the placements themselves.
+    //
+    // Names have to be unique across the march. A person's identifier is built from the
+    // name of the village they live in, so two places called Boneford put two different
+    // people under one identifier -- which showed up as a villager's disposition being
+    // restored onto a stranger sixty miles away after a save.
+    const taken = new Set<string>();
     for (const settlement of settlements) {
-      settlement.name = generateSettlementName(this.rng);
+      let name = generateSettlementName(this.rng);
+      for (let attempt = 0; taken.has(name) && attempt < NAME_REDRAWS; attempt++) {
+        name = generateSettlementName(this.rng);
+      }
+      if (taken.has(name)) {
+        // The pool is finite and the country is large, so a name that will not come up
+        // unused is qualified the way real parishes distinguish themselves.
+        const qualifiers = ['Parva', 'Magna', 'Nether', 'Over', 'Little', 'Great', 'East', 'West'];
+        for (const qualifier of qualifiers) {
+          const qualified = `${name} ${qualifier}`;
+          if (!taken.has(qualified)) {
+            name = qualified;
+            break;
+          }
+        }
+      }
+      taken.add(name);
+      settlement.name = name;
     }
 
-    // Determine initial player start position on passable terrain near center
-    const startPos = this.findStartPosition(map, width, height);
+    // Everything else worth stopping at: water, holdings, stone, and other people's
+    // fires. These are what a day's walk is actually made of.
+    const sites = generateSites(map, this.rng, settlements);
+
+    // The run opens on a village road rather than in the middle of nowhere. A character
+    // put down in empty country has no way to learn that villages exist at all, which
+    // is exactly how an early playtest spent eleven days meeting nobody.
+    const startPos = this.findStartPosition(map, width, height, settlements);
 
     // Guarantee player starting vicinity has passable terrain
     this.ensurePlayableArea(map, startPos.x, startPos.y);
 
-    return { map, startX: startPos.x, startY: startPos.y, settlements };
+    return { map, startX: startPos.x, startY: startPos.y, settlements, sites };
   }
 
   /**
@@ -178,9 +225,41 @@ export class MapGenerator {
    * @param height Map height
    * @returns Coordinate { x, y }
    */
-  private findStartPosition(map: Tile[][], width: number, height: number): { x: number; y: number } {
-    const centerX = Math.floor(width / 2);
-    const centerY = Math.floor(height / 2);
+  private findStartPosition(
+    map: Tile[][],
+    width: number,
+    height: number,
+    settlements: readonly Settlement[] = []
+  ): { x: number; y: number } {
+    // Start within sight of the nearest village to the middle of the country: close
+    // enough to walk in before dark, not so close that the game opens indoors.
+    const centre = { x: Math.floor(width / 2), y: Math.floor(height / 2) };
+    const host = [...settlements].sort(
+      (a, b) =>
+        Math.max(Math.abs(a.x - centre.x), Math.abs(a.y - centre.y)) -
+        Math.max(Math.abs(b.x - centre.x), Math.abs(b.y - centre.y))
+    )[0];
+
+    if (host) {
+      for (let r = START_DISTANCE_FROM_VILLAGE; r <= START_DISTANCE_FROM_VILLAGE + 2; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+            const x = host.x + dx;
+            const y = host.y + dy;
+            if (x < 1 || x >= width - 1 || y < 1 || y >= height - 1) continue;
+            const tile = map[y][x];
+            if (tile.movementCost === Infinity || tile.settlement) continue;
+            if (this.countPassableNeighbors(map, x, y, width, height) >= 5) {
+              return { x, y };
+            }
+          }
+        }
+      }
+    }
+
+    const centerX = centre.x;
+    const centerY = centre.y;
     const maxRadius = Math.max(width, height);
 
     for (let r = 0; r < maxRadius; r++) {
