@@ -83,7 +83,13 @@ export class MapRenderer {
   private tileSize: number = TILE_SIZE;
   private offsetX: number = 0;
   private offsetY: number = 0;
-  private zoom: number = 1;
+  /**
+   * The board is a keyhole, not a document. Its column is roughly three hundred pixels
+   * wide, and at full size that is nine tiles across -- too little country to plan a
+   * step in. Drawn a little smaller it shows about sixteen tiles either way, which is a
+   * section of the march rather than a paving stone.
+   */
+  private zoom: number = 0.6;
   private initialized: boolean = false;
   /** Last state drawn, so a resize can repaint without waiting for a turn */
   private lastState: GameState | null = null;
