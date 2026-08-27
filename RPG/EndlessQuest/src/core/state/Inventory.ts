@@ -68,6 +68,15 @@ export function addItem(
 ): number {
   if (quantity <= 0) return 0;
 
+  // Coin goes in the purse, not in the pack. Every price in the catalog is in copper, so
+  // the currency items are worth exactly what they say and are counted rather than
+  // carried -- which also stops a hoard of coppers eating a character's carrying weight.
+  const asCoin = COIN_VALUES[itemId];
+  if (asCoin !== undefined) {
+    inventory.copper += asCoin * quantity;
+    return quantity;
+  }
+
   const unitWeight = getItem(itemId)?.weight ?? 0;
   let added = quantity;
 
@@ -81,6 +90,15 @@ export function addItem(
   }
   return added;
 }
+
+/**
+ * What each currency item is worth in copper, which is the unit every price is in.
+ */
+export const COIN_VALUES: Readonly<Record<string, number>> = {
+  copper_coins: 10,
+  silver_coins: 50,
+  ancient_coin: 50,
+};
 
 /**
  * Removes items if enough are held.

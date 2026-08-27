@@ -10,6 +10,7 @@ import type {
 } from '../ecs/Component';
 import { Ability, abilityModifier, proficiencyBonus } from '../rules/Abilities';
 import { Skill, SKILL_ABILITY, describeCheck } from '../rules/Skills';
+import { conditionPenalties } from './Conditions';
 import {
   CheckOutcome,
   CheckResult,
@@ -129,7 +130,19 @@ export function skillCheck(
   dc: number,
   extra: readonly RollMode[] = []
 ): CheckResult {
-  return rollAgainstDC(state.rng, skillModifier(state, skill), dc, checkMode(state, extra));
+  // Everything the character is carrying in the way of wounds, hunger and state of mind
+  // is felt here, which is the only place it needs to be felt for every check in the
+  // game to know about it.
+  const carried = conditionPenalties(state);
+  const ability = SKILL_ABILITY[skill];
+  const fromConditions = carried.checks + Math.floor((carried.abilities[ability] ?? 0) / 2);
+
+  return rollAgainstDC(
+    state.rng,
+    skillModifier(state, skill) + fromConditions,
+    dc,
+    checkMode(state, extra)
+  );
 }
 
 /**
@@ -153,7 +166,13 @@ export function savingThrow(
     ? proficiencyBonus(abilities.level)
     : 0;
 
-  const modifier = modifierOf(world, state.playerId, ability) + trained;
+  const carried = conditionPenalties(state);
+  const modifier =
+    modifierOf(world, state.playerId, ability) +
+    trained +
+    carried.checks +
+    Math.floor((carried.abilities[ability] ?? 0) / 2);
+
   return rollAgainstDC(state.rng, modifier, dc, attackMode(state, extra));
 }
 

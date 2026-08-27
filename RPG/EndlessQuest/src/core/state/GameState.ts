@@ -2,11 +2,14 @@ import { World } from '../ecs/World';
 import { SeededRNG } from '../rng/SeededRNG';
 import type { Tile } from '../world/Tile';
 import type { Settlement } from '../world/Settlement';
+import type { Site } from '../world/Sites';
+import type { Instance } from '../dm/Instance';
 import type { Reckoning } from '../world/Reckoning';
 import type { Thread } from '../narrative/Threads';
 import type { Person } from '../world/People';
 import { populate } from '../world/People';
 import type { Errand } from '../narrative/Errands';
+import { Difficulty } from '../rules/Difficulty';
 import { placeReckoning } from '../world/Reckoning';
 import type { CharacterBackground } from '../narrative/Background';
 import { FlawTrigger } from '../narrative/Background';
@@ -48,6 +51,11 @@ export interface GameState {
   map: Tile[][];
   /** Named settlements, regenerated from the seed rather than persisted */
   settlements: Settlement[];
+  /**
+   * Everything else standing out in the country, regenerated from the seed the same way.
+   * Which of them have been visited or emptied is progress, so that much is saved.
+   */
+  sites: Site[];
   /** Map width in tiles */
   mapWidth: number;
   /** Map height in tiles */
@@ -72,6 +80,32 @@ export interface GameState {
    * Set by oracle twists that draw notice; zero when nothing is on the trail.
    */
   stalkedUntil: number;
+  /**
+   * True while a journey is being resolved.
+   *
+   * A leg is simulated hour by hour but narrated once, so the per-step arrival prose is
+   * suppressed while this is set and the journey writes the account instead.
+   */
+  journeying: boolean;
+  /**
+   * How wide open the last blow left the character, and until when.
+   *
+   * Committing to a swing is a trade, and this is the half of it the character does not
+   * get to choose: what they left open is on the board for whatever is standing in front
+   * of them to use.
+   */
+  exposure: number;
+  exposedUntil: number;
+  /** The hour the character's calling has its one trick back */
+  knackReadyAt: number;
+  /**
+   * The adventure the character is currently inside, if any.
+   *
+   * While this is set the game is in its second layer: the overworld clock still runs,
+   * but what is being played is rooms, nerve and what is round the corner rather than
+   * miles and hunger.
+   */
+  instance: Instance | null;
   /**
    * Identity of the last entry drawn from each narration table, so a small table
    * consulted twice running does not give the same answer twice running.
@@ -102,6 +136,11 @@ export interface GameState {
   people: Person[];
   /** What people have asked for, and where each of those asks has got to */
   errands: Errand[];
+  /**
+   * How hard this run is. Read by the Mark, the encounter rate, the needs and the
+   * reckoning, so that the setting means numbers rather than a word on a menu.
+   */
+  difficulty: Difficulty;
 }
 
 /**
@@ -114,8 +153,10 @@ export function createInitialGameState(
   playerId: EntityId,
   rng: SeededRNG,
   settlements: Settlement[] = [],
+  sites: Site[] = [],
   startX: number = 0,
-  startY: number = 0
+  startY: number = 0,
+  difficulty: Difficulty = Difficulty.MARKED
 ): GameState {
   const seedString = typeof seed === 'string' ? seed : seed.toString();
   const numericSeed = typeof seed === 'number' ? seed : hashString(seed);
@@ -130,6 +171,7 @@ export function createInitialGameState(
     entities: world,
     map,
     settlements,
+    sites,
     mapWidth: MAP_WIDTH,
     mapHeight: MAP_HEIGHT,
     rng,
@@ -138,11 +180,17 @@ export function createInitialGameState(
     encounterId: null,
     encounterRound: 0,
     stalkedUntil: 0,
+    journeying: false,
+    exposure: 0,
+    exposedUntil: 0,
+    knackReadyAt: 0,
+    instance: null,
     lastDraw: {},
     victory: false,
     threads: [],
     people: populate(seedString, settlements),
     errands: [],
+    difficulty,
     advantageNextAttack: false,
     gameOver: false,
     causeOfDeath: null,

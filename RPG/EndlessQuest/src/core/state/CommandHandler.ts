@@ -1,4 +1,9 @@
 import type { Command, Direction } from './Commands';
+import { DIRECTION_DELTAS } from './Commands';
+import { applyTreatment, restTreats } from './Conditions';
+import { raiseCharge } from '../narrative/Charges';
+import { priceFor, purseOf, stockOf } from '../world/Market';
+import { delve, enter, leave, ransack, strike, useKnack } from '../dm/Delve';
 import type { GameState } from './GameState';
 import { advanceTime, getCurrentTile, recordEvent, revealArea } from './GameState';
 import { addItem, countItem, removeItem } from './Inventory';
@@ -6,6 +11,7 @@ import { settlementAt } from '../world/Settlement';
 import { atTree, vigilAt, vigilsKept } from '../world/Reckoning';
 import { peopleAt, ROLE_TITLE } from '../world/People';
 import { ask } from '../narrative/Knowledge';
+import { settingsFor } from '../rules/Difficulty';
 import {
   addressee,
   appealTo,
@@ -104,16 +110,6 @@ import {
 } from '../SimulationConstants';
 
 /**
- * Directional coordinate offsets.
- */
-const DIRECTION_DELTAS: Record<Direction, { dx: number; dy: number }> = {
-  north: { dx: 0, dy: -1 },
-  south: { dx: 0, dy: 1 },
-  east: { dx: 1, dy: 0 },
-  west: { dx: -1, dy: 0 },
-};
-
-/**
  * Command handler interface.
  */
 export interface ICommandHandler {
@@ -127,6 +123,15 @@ export interface ICommandHandler {
  * further orders, and a character with something already on them may only fight or run.
  */
 export class CommandHandler implements ICommandHandler {
+  /**
+   * What a rest or a treatment mended this turn.
+   *
+   * The handlers that see to a wound return one line about the thing they did; what the
+   * wound did in answer is collected here and drained by the command that caused it, so
+   * the player is told their ribs have stopped hurting rather than left to infer it.
+   */
+  private mended: GameEvent[] = [];
+
   private combat: CombatResolver = new CombatResolver();
   private oracle: OracleEngine = new OracleEngine(ORACLE_TABLES);
 
@@ -157,6 +162,7 @@ export class CommandHandler implements ICommandHandler {
       case 'REST': {
         const ev = this.handleRest(command.hours, state);
         events.push(ev);
+        events.push(...this.mended.splice(0));
         break;
       }
       case 'SEARCH': {
@@ -167,6 +173,23 @@ export class CommandHandler implements ICommandHandler {
       case 'CONSUME': {
         const ev = this.handleConsume(command.item, state);
         events.push(ev);
+        events.push(...this.mended.splice(0));
+        break;
+      }
+      case 'KNACK': {
+        events.push(...useKnack(state));
+        break;
+      }
+      case 'DROP': {
+        events.push(this.handleDrop(state, command.item, command.count));
+        break;
+      }
+      case 'BUY': {
+        events.push(this.handleBuy(state, command.item, command.count ?? 1));
+        break;
+      }
+      case 'SELL': {
+        events.push(this.handleSell(state, command.item, command.count ?? 1));
         break;
       }
       case 'TRADE': {
@@ -201,6 +224,22 @@ export class CommandHandler implements ICommandHandler {
       }
       case 'ASK': {
         events.push(...ask(state, command.text));
+        break;
+      }
+      case 'ENTER': {
+        events.push(...enter(state));
+        break;
+      }
+      case 'DELVE': {
+        events.push(...delve(state, command.room));
+        break;
+      }
+      case 'RANSACK': {
+        events.push(...ransack(state));
+        break;
+      }
+      case 'LEAVE': {
+        events.push(...leave(state));
         break;
       }
       case 'DRINK': {
@@ -240,6 +279,11 @@ export class CommandHandler implements ICommandHandler {
         break;
       }
       case 'ATTACK':
+        // Inside a place, the fight belongs to the Dungeon Master running it.
+        if (state.instance) {
+          events.push(...strike(state, command.said ?? []));
+          break;
+        }
         events.push(...this.combat.resolveRound(state, 'attack' as CombatStance));
         break;
       case 'DEFEND':
@@ -307,11 +351,22 @@ export class CommandHandler implements ICommandHandler {
       };
     }
 
-    if (state.encounterId === null && isCombatCommand) {
+    // Inside a place there is no overworld encounter, but there is very often something
+    // in the room, and the Dungeon Master running the place owns that fight.
+    if (state.encounterId === null && isCombatCommand && !state.instance) {
       return {
         tick: state.tick,
         type: 'error',
         message: 'There is nothing here to fight.',
+      };
+    }
+
+    // The country is outside. Crossing it is not something you do from a cellar.
+    if (state.instance && (command.type === 'TRAVEL' || command.type === 'MOVE')) {
+      return {
+        tick: state.tick,
+        type: 'error',
+        message: 'Not in here. Go on into the next room, or get out first.',
       };
     }
 
@@ -418,6 +473,9 @@ export class CommandHandler implements ICommandHandler {
           )}`
         : '';
 
+    // A journey narrates itself once, at the end, instead of a line per mile.
+    if (state.journeying) return null;
+
     const told = narrate(state, `${arrival}${settlementMsg}${site}${ambience}`);
 
     return {
@@ -436,6 +494,26 @@ export class CommandHandler implements ICommandHandler {
   }
 
   /**
+   * Fills whatever the character is carrying that will hold water.
+   *
+   * An empty skin used to be permanent dead weight: drinking added a full one and never
+   * touched the empties, so a stress run collected seven hundred and fifty-six attempts
+   * to drink from a skin that could never be filled.
+   *
+   * @param inventory What they are carrying, mutated
+   * @returns How many skins were filled
+   */
+  private fillSkinsIn(inventory: InventoryComponent): number {
+    const empties = countItem(inventory, 'waterskin_empty');
+    if (empties > 0) {
+      removeItem(inventory, 'waterskin_empty', empties);
+      return addItem(inventory, 'waterskin', empties);
+    }
+    // Nothing to fill, so they drink their fill and carry a skinful away if they can.
+    return addItem(inventory, 'waterskin', 1);
+  }
+
+  /**
    * Handles resting for a duration, recovering fatigue.
    *
    * Hunger and thirst are not touched here: NeedsSystem is the sole source of need
@@ -447,6 +525,7 @@ export class CommandHandler implements ICommandHandler {
 
     const stats = state.entities.getComponent<StatsComponent>(state.playerId, 'stats');
     let change = '';
+    let rested = false;
     if (stats) {
       // The meters are read before the clock is wound forward by the systems, so what is
       // reported is what the rest itself was worth.
@@ -463,6 +542,21 @@ export class CommandHandler implements ICommandHandler {
         stats.hunger < NEED_WARNING_THRESHOLD &&
         stats.thirst < NEED_WARNING_THRESHOLD
       ) {
+        // A night's sleep takes a level of exhaustion off the ladder, which is the
+        // handbook's rule and, it turns out, the difference between a game and a
+        // death sentence: nothing anywhere in this simulation reduced exhaustion, so
+        // it was a one-way ratchet and thirty-nine runs in forty ended at the sixth
+        // level with the same line. It has to be earned the same way the healing is --
+        // eight unbroken hours, fed and watered.
+        if (stats.exhaustion > 0) {
+          stats.exhaustion = Math.max(0, stats.exhaustion - 1);
+          rested = true;
+        }
+
+        // And a night's sleep sees to what sleep sees to: a concussion, cracked ribs, a
+        // turned ankle, a fright.
+        this.mended.push(...restTreats(state));
+
         const ceiling = Math.floor(stats.maxHp * hpMaxMultiplier(stats.exhaustion));
         const recovered = Math.ceil(stats.maxHp * LONG_REST_HEAL_FRACTION);
         stats.hp = Math.min(ceiling, stats.hp + recovered);
@@ -474,8 +568,11 @@ export class CommandHandler implements ICommandHandler {
     return {
       tick: state.tick,
       type: 'rest',
-      message: `You stop for ${clamped} hour${clamped > 1 ? 's' : ''}. Sleep out here is a thing you take in pieces. ${change}`.trimEnd(),
-      data: { hours: clamped },
+      message:
+        `You stop for ${clamped} hour${clamped > 1 ? 's' : ''}. ` +
+        `Sleep out here is a thing you take in pieces. ${change}` +
+        (rested ? ' Some of it comes back to you.' : ''),
+      data: { hours: clamped, exhaustionEased: rested },
     };
   }
 
@@ -739,7 +836,12 @@ export class CommandHandler implements ICommandHandler {
       return events;
     }
 
-    const raised = raiseErrand(state, speaker);
+    // What the parish wants doing about the place down the road comes first: a village
+    // living next to a bandit camp has that on its mind before it has feverfew on it.
+    const charge = raiseCharge(state, speaker);
+    if (charge) state.errands.push(charge);
+
+    const raised = charge ?? raiseErrand(state, speaker);
     if (raised) {
       events.push({
         tick: state.tick,
@@ -928,7 +1030,10 @@ export class CommandHandler implements ICommandHandler {
     const kept = vigilsKept(state.reckoning);
     const dc = Math.max(
       MIN_RECKONING_DC,
-      RECKONING_BASE_DC - kept * RECKONING_VIGIL_RELIEF + band * RECKONING_BAND_PENALTY
+      RECKONING_BASE_DC -
+        kept * RECKONING_VIGIL_RELIEF +
+        band * RECKONING_BAND_PENALTY +
+        settingsFor(state.difficulty).reckoningDC
     );
 
     let successes = 0;
@@ -1028,7 +1133,7 @@ export class CommandHandler implements ICommandHandler {
       }
 
       stats.thirst = Math.max(MIN_STAT_VALUE, stats.thirst - CLEAN_WATER_RELIEF);
-      if (inventory) addItem(inventory, 'waterskin', 1);
+      if (inventory) this.fillSkinsIn(inventory);
       return {
         tick: state.tick,
         type: 'rest',
@@ -1040,12 +1145,15 @@ export class CommandHandler implements ICommandHandler {
     }
 
     stats.thirst = Math.max(MIN_STAT_VALUE, stats.thirst - CLEAN_WATER_RELIEF);
-    if (inventory) addItem(inventory, 'waterskin', 1);
+    const filled = inventory ? this.fillSkinsIn(inventory) : 0;
 
     return {
       tick: state.tick,
       type: 'rest',
-      message: `You drink until your teeth ache with the cold of it, and fill what you carry. ${describeChange(before, stats)}`,
+      message:
+        `You drink until your teeth ache with the cold of it` +
+        (filled > 0 ? `, and fill what you carry` : '') +
+        `. ${describeChange(before, stats)}`,
       data: { water: 'clean' },
     };
   }
@@ -1063,10 +1171,15 @@ export class CommandHandler implements ICommandHandler {
     }
 
     if (!definition.consumable) {
+      // The item's own description used to be handed back as the refusal, which read as
+      // nonsense: trying to eat a fishing net answered with the words "Catch fish", and
+      // an empty waterskin answered with its own flavour text. Fifteen hundred of these
+      // in one stress run.
       return {
         tick: state.tick,
         type: 'error',
-        message: `${definition.description}`,
+        message: `${definition.name} is not something you can eat or drink.`,
+        data: { item: itemId },
       };
     }
 
@@ -1074,7 +1187,14 @@ export class CommandHandler implements ICommandHandler {
       return { tick: state.tick, type: 'error', message: 'You have none left.' };
     }
 
+    // Anything that is good for a wound is used on the wound. This is what makes a
+    // bandage worth carrying rather than worth its weight in nothing.
+    this.mended.push(...applyTreatment(state, itemId));
+
     removeItem(inventory, itemId);
+    // A skin that is drunk is a skin that is empty, not a skin that ceases to exist.
+    // That is what gives filling one at a stream a point.
+    if (itemId === 'waterskin') addItem(inventory, 'waterskin_empty', 1);
     const before = snapshotNeeds(stats);
 
     stats.hunger = Math.max(MIN_STAT_VALUE, stats.hunger - (definition.hunger ?? 0));
@@ -1143,6 +1263,154 @@ export class CommandHandler implements ICommandHandler {
         `A woman in ${settlement.name} takes the coin without touching your hand, and puts ` +
         'the goods on the step rather than passing them to you.',
       data: { settlement: settlement.name, forage, water, linen },
+    };
+  }
+
+  /**
+   * Puts something down.
+   *
+   * A pack with no room in it and no way to empty it is a dead end, and the stress
+   * harness walked into one ninety-three times in a single run: a shield on the floor of
+   * a dungeon, a full pack, and nothing to be done about either.
+   *
+   * @param state Game state
+   * @param itemId What they are putting down
+   * @param count How many, or all of them
+   * @returns What happened
+   */
+  private handleDrop(state: GameState, itemId: string, count?: number): GameEvent {
+    const inventory = state.entities.getComponent<InventoryComponent>(
+      state.playerId,
+      'inventory'
+    );
+    const definition = getItem(itemId);
+    const have = inventory ? countItem(inventory, itemId) : 0;
+
+    if (!inventory || !definition || have <= 0) {
+      return { tick: state.tick, type: 'error', message: 'You are not carrying that.' };
+    }
+
+    const shed = Math.max(1, Math.min(count ?? have, have));
+    removeItem(inventory, itemId, shed);
+
+    return {
+      tick: state.tick,
+      type: 'system',
+      message: `You put down ${definition.name}${shed > 1 ? ` \u00d7${shed}` : ''} and leave it.`,
+      data: { dropped: itemId, count: shed },
+    };
+  }
+
+  /**
+   * Buys something off a village's counter.
+   *
+   * @param state Game state
+   * @param itemId What they want
+   * @param count How many
+   * @returns What happened
+   */
+  private handleBuy(state: GameState, itemId: string, count: number): GameEvent {
+    const pos = state.entities.getComponent<PositionComponent>(state.playerId, 'position');
+    const inventory = state.entities.getComponent<InventoryComponent>(
+      state.playerId,
+      'inventory'
+    );
+    const settlement = pos ? settlementAt(state.settlements, pos.x, pos.y) : undefined;
+
+    if (!settlement || !inventory) {
+      return { tick: state.tick, type: 'error', message: 'There is nobody here selling anything.' };
+    }
+
+    const offer = stockOf(state, settlement).find((candidate) => candidate.itemId === itemId);
+    if (!offer) {
+      return {
+        tick: state.tick,
+        type: 'error',
+        message: `Nobody in ${settlement.name} has that to sell.`,
+      };
+    }
+
+    const wanted = Math.max(1, Math.min(count, offer.count));
+    const owed = offer.price * wanted;
+
+    if (purseOf(inventory) < owed) {
+      return {
+        tick: state.tick,
+        type: 'error',
+        message: `${offer.item.name} costs ${owed} copper. You have ${purseOf(inventory)}.`,
+      };
+    }
+
+    const taken = addItem(inventory, itemId, wanted);
+    if (taken === 0) {
+      return {
+        tick: state.tick,
+        type: 'error',
+        message: `You have no room for ${offer.item.name}.`,
+      };
+    }
+
+    inventory.copper -= offer.price * taken;
+    advanceTime(state, 1);
+
+    return {
+      tick: state.tick,
+      type: 'system',
+      message:
+        `${offer.item.name}${taken > 1 ? ` \u00d7${taken}` : ''}, for ${offer.price * taken} copper. ` +
+        `(purse ${inventory.copper})`,
+      data: { bought: itemId, count: taken, paid: offer.price * taken },
+    };
+  }
+
+  /**
+   * Sells something out of the pack.
+   *
+   * @param state Game state
+   * @param itemId What they are parting with
+   * @param count How many
+   * @returns What happened
+   */
+  private handleSell(state: GameState, itemId: string, count: number): GameEvent {
+    const pos = state.entities.getComponent<PositionComponent>(state.playerId, 'position');
+    const inventory = state.entities.getComponent<InventoryComponent>(
+      state.playerId,
+      'inventory'
+    );
+    const settlement = pos ? settlementAt(state.settlements, pos.x, pos.y) : undefined;
+
+    if (!settlement || !inventory) {
+      return { tick: state.tick, type: 'error', message: 'There is nobody here buying anything.' };
+    }
+
+    const definition = getItem(itemId);
+    const have = countItem(inventory, itemId);
+
+    if (!definition || have <= 0) {
+      return { tick: state.tick, type: 'error', message: 'You are not carrying that.' };
+    }
+    if (definition.value <= 0) {
+      return {
+        tick: state.tick,
+        type: 'error',
+        message: `Nobody is going to give you anything for ${definition.name}.`,
+      };
+    }
+
+    const parting = Math.max(1, Math.min(count, have));
+    const price = priceFor(state, definition, 'sell');
+
+    removeItem(inventory, itemId, parting);
+    inventory.copper += price * parting;
+    advanceTime(state, 1);
+
+    return {
+      tick: state.tick,
+      type: 'system',
+      message:
+        `They take ${definition.name}${parting > 1 ? ` \u00d7${parting}` : ''} and count out ` +
+        `${price * parting} copper. (purse ${inventory.copper})`,
+      data: { sold: itemId, count: parting, paid: price * parting },
     };
   }
 

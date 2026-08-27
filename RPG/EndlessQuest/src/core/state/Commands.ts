@@ -4,17 +4,56 @@
 export type Direction = 'north' | 'south' | 'east' | 'west';
 
 /**
+ * Directional coordinate offsets.
+ *
+ * Lives with the direction itself rather than in the command handler, because a journey
+ * needs to step the same way a single move does.
+ */
+export const DIRECTION_DELTAS: Record<Direction, { dx: number; dy: number }> = {
+  north: { dx: 0, dy: -1 },
+  south: { dx: 0, dy: 1 },
+  east: { dx: 1, dy: 0 },
+  west: { dx: -1, dy: 0 },
+};
+
+/**
  * Discriminated union of all executable player and system simulation commands.
  */
 export type Command =
   | { type: 'MOVE'; direction: Direction }
+  /** Go in to whatever is standing here */
+  | { type: 'ENTER' }
+  /** Walk on to another room of the place you are in */
+  | { type: 'DELVE'; room?: number }
+  /** Go over this room for what it is hiding */
+  | { type: 'RANSACK' }
+  /** Come back out into the country */
+  | { type: 'LEAVE' }
+  | {
+      /**
+       * Cover ground. The unit of play out of doors: hold a bearing, or make for a place
+       * you know of, until something is worth stopping for.
+       */
+      type: 'TRAVEL';
+      direction?: Direction;
+      /** A place the character knows of, by name */
+      toward?: string;
+      /** Hours to spend at most; a day's march by default */
+      hours?: number;
+      /** Whether to keep walking after dark */
+      throughNight?: boolean;
+    }
   | { type: 'REST'; hours: number }
   | { type: 'SEARCH' }
   | { type: 'NEW_GAME'; seed?: string | number }
   /** Consume a carried item by its key in lore/Items */
   | { type: 'CONSUME'; item: string }
   /** Strike at the threat currently engaged */
-  | { type: 'ATTACK' }
+  | {
+      type: 'ATTACK';
+      /** The words the player used, so a blow can be aimed */
+      said?: readonly string[];
+    }
   /** Cover up: trade the initiative for armour and recovered wind */
   | { type: 'DEFEND' }
   /** Attempt to break off an engagement */
@@ -25,6 +64,22 @@ export type Command =
   | { type: 'INTIMIDATE' }
   /** Barter a coin for supplies; only valid while standing in a settlement */
   | { type: 'TRADE' }
+  /** Buy something off a village's counter */
+  | { type: 'BUY'; item: string; count?: number }
+  /** Sell something out of the pack */
+  | { type: 'SELL'; item: string; count?: number }
+  /** Put something down and leave it */
+  | { type: 'DROP'; item: string; count?: number }
+  /** The one thing your calling can do that the others cannot */
+  | { type: 'KNACK' }
+  /** Buy something off a village's counter */
+  | { type: 'BUY'; item: string; count?: number }
+  /** Sell something out of the pack */
+  | { type: 'SELL'; item: string; count?: number }
+  /** Put something down and leave it */
+  | { type: 'DROP'; item: string; count?: number }
+  /** The one thing your calling can do that the others cannot */
+  | { type: 'KNACK' }
   /** Wear or wield a carried item */
   | { type: 'EQUIP'; item: string }
   /** Empty an equipment slot */
