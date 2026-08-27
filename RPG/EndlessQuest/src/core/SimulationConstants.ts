@@ -15,8 +15,8 @@ export const INITIAL_DAY = 1;
 export const INITIAL_YEAR = 1;
 
 // World & Map Dimensions
-export const DEFAULT_MAP_WIDTH = 100;
-export const DEFAULT_MAP_HEIGHT = 100;
+export const DEFAULT_MAP_WIDTH = 240;
+export const DEFAULT_MAP_HEIGHT = 240;
 export const DEFAULT_TILE_SIZE = 32;
 export const DEFAULT_VIEWPORT_WIDTH = 20;
 export const DEFAULT_VIEWPORT_HEIGHT = 15;
@@ -59,10 +59,162 @@ export const FOREST_HILLS_ELEVATION_THRESHOLD = 0.65;
 export const FOREST_MOISTURE_THRESHOLD = 0.55;
 
 // Settlement Placement
-export const MIN_SETTLEMENT_COUNT = 2;
-export const MAX_SETTLEMENT_COUNT = 4;
-export const SETTLEMENT_MARGIN = 10;
-export const MAX_SETTLEMENT_ATTEMPTS = 500;
+/**
+ * How much country there is per inhabited place.
+ *
+ * The march used to carry two to four single-tile villages in ten thousand squares,
+ * which is why a playtest could walk eleven days without meeting anybody: the odds of
+ * stumbling onto one by accident were roughly nil. One holding per nine hundred squares
+ * puts a village within a day or two of wherever you are standing, which is what a
+ * borderland with people still living in it should feel like.
+ */
+export const TILES_PER_SETTLEMENT = 900;
+/** Never fewer than this many, whatever the map size. */
+export const MIN_SETTLEMENT_COUNT = 8;
+/** Nor more than this, so the country is inhabited rather than suburban. */
+export const MAX_SETTLEMENT_COUNT = 90;
+/** Villages this close together would read as one place. */
+export const SETTLEMENT_MIN_SEPARATION = 9;
+export const SETTLEMENT_MARGIN = 6;
+export const MAX_SETTLEMENT_ATTEMPTS = 8000;
+
+/**
+ * How far outside a village the run begins.
+ *
+ * Close enough that the smoke is visible and the walk in is short; far enough that the
+ * character wakes under the tree they were hanged on rather than in somebody's doorway.
+ */
+export const START_DISTANCE_FROM_VILLAGE = 3;
+
+/**
+ * The level a need has to reach before a journey stops for it.
+ *
+ * High enough that a leg is not interrupted every hour, low enough that the character
+ * never walks blithely into the state an early playtest died in.
+ */
+export const TRAVEL_STOP_NEED = 70;
+
+/**
+ * The most miles one journey will resolve before it gives up.
+ *
+ * Purely a guard against a bearing walked into a corner; the hours asked for are what
+ * actually ends a leg.
+ */
+export const MAX_JOURNEY_STEPS = 200;
+
+/** Hours in a day's march before the body wants talking into more. */
+export const TRAVEL_DAY_HOURS = 8;
+
+/**
+ * How much hunger a day's foraging on the march relieves.
+ *
+ * Enough to keep a walker walking, not enough to make a pack of food pointless: a good
+ * day off the country is most of a meal, and a bad one is nothing at all.
+ */
+export const FORAGE_YIELD = 30;
+
+/**
+ * How much thirst a day's foraging relieves, before the country's own dryness is applied.
+ *
+ * Deliberately less than a spring or a stream, which slake it entirely: what you scrape
+ * out of dew and roots keeps you walking toward water, it is not water.
+ */
+export const FORAGE_WATER_YIELD = 45;
+
+/** How many times a duplicate name is redrawn before it is qualified instead. */
+export const NAME_REDRAWS = 24;
+
+/**
+ * How many rooms an instance is laid out in.
+ *
+ * Short enough to be one sitting, long enough to have a shape: a way in, a decision or
+ * two about which way, and an end.
+ */
+/**
+ * The number a thing inside an instance has to beat to land a blow.
+ *
+ * The instance skirmish is deliberately its own, simpler ledger: what matters in a
+ * dungeon is the shape of the fight, not another armour calculation.
+ */
+export const DM_GUARD_CLASS = 12;
+
+/** How many of the player's actions the Dungeon Master keeps in mind. */
+export const BLACKBOARD_MEMORY = 24;
+
+/**
+ * How good a plan has to look before the Dungeon Master bothers.
+ *
+ * A DM that plays every card it holds every turn is exhausting. Most turns should be
+ * the things in the room simply fighting, with the table's attention spent sparingly.
+ */
+export const PLAN_DRAMA_FLOOR = 4;
+
+/** How far word of a place being cleared travels. */
+export const RELIEF_RANGE = 30;
+
+/** How much a parish's opinion moves when somebody does something about their problem. */
+export const REPUTATION_STEP = 22;
+
+/** How long whoever got out of a place stays interested, in hours. */
+export const GRUDGE_RANGE = 72;
+
+/** How long a room takes to cross or turn over, in hours of the overworld clock. */
+export const DELVE_HOURS_PER_ROOM = 1;
+
+/** How low a thing's nerve check has to come in before it leaves. */
+export const DM_MORALE_FLOOR = 12;
+
+/** Below this share of hit points the DM eases off rather than pressing. */
+export const DM_PRESSURE_EASE = 0.35;
+
+/** How many turns into a place before the DM will spend its reinforcement. */
+export const DM_REINFORCE_TURN = 4;
+
+export const INSTANCE_ROOMS = { min: 5, max: 9 } as const;
+
+/** How many ordinary caches an instance carries beyond the lair and the secret room. */
+export const INSTANCE_PRIZE_ROOMS = 3;
+
+/**
+ * How much bigger the thing at the end is than the same creature met on the road.
+ *
+ * A boss is a fight with a shape to it, and a shape needs rounds to happen in.
+ */
+export const INSTANCE_BOSS_MULTIPLIER = 2.2;
+
+/**
+ * How close a spring has to be to drink from it.
+ *
+ * Standing on it, or the tile beside it. Springs are the country's answer to thirst and
+ * the whole reason they are placed in the hills and the deep wood.
+ */
+export const WATER_FROM_SPRING_RANGE = 1;
+
+/** How many known places the interface lists before it stops. */
+export const KNOWN_PLACES_SHOWN = 6;
+
+/** How far off a village's smoke can be seen and named. */
+export const SETTLEMENT_SIGHT = 6;
+
+/**
+ * How far the talk in a village carries.
+ *
+ * People know their neighbours. Standing in one place and asking is the main way the
+ * country becomes navigable at all.
+ */
+export const VILLAGE_TALK_RANGE = 34;
+
+/** How far a finger-post at a crossroads names places. */
+export const SIGNPOST_RANGE = 26;
+
+/** One site per this many squares of country. */
+export const SITE_DENSITY = 150;
+/** Sites closer than this read as one cluttered place. */
+export const SITE_MIN_SEPARATION = 4;
+/** Placement tries per site before giving up on the target count. */
+export const SITE_PLACEMENT_ATTEMPTS = 40;
+/** Sites are not placed within this of the map edge. */
+export const SITE_MARGIN = 4;
 
 // Player & Stat Dynamics
 export const DEFAULT_MAX_HP = 100;
@@ -211,6 +363,14 @@ export const XP_SURVIVED_FRACTION = 0.5;
 // The Reckoning - the objective, and the only ending that is not a death
 /** How far from the character's waking place the gallows-tree is put, in tiles. */
 export const RECKONING_TREE_MIN_DISTANCE = 26;
+/**
+ * And no further.
+ *
+ * The endgame is a fixed length of run rather than a share of the map, so that making
+ * the country bigger adds places to go rather than lengthening the one walk the whole
+ * run is about.
+ */
+export const RECKONING_TREE_MAX_DISTANCE = 42;
 /** How many vigils a world carries. */
 export const VIGIL_COUNT = 3;
 /** Minimum distance between the tree, the vigils, and the character's start. */
@@ -285,6 +445,14 @@ export const IMPROVISE_MARK_STEP = 1;
 export const IMPROVISE_REVEAL_BONUS = 3;
 /** Gallowsmark intensity taken off by successfully going to ground. */
 export const IMPROVISE_MARK_RELIEF = 6;
+
+/**
+ * Hunger and thirst relieved by a successful piece of woodcraft.
+ *
+ * Deliberately less than a meal out of the pack: what you scrape out of the country in
+ * an hour keeps you going, it does not set you up.
+ */
+export const IMPROVISE_FORAGE_RELIEF = 10;
 
 // The narrator - how loudly the thing watching speaks, by Mark band
 /** Chance the narrator interjects, indexed by register. */
@@ -364,6 +532,44 @@ export const PEOPLE_PER_SETTLEMENT = { min: 2, max: 4 } as const;
 
 // Settlements - what a coin buys from people who would rather you moved on
 /** Catalog item used as currency for barter. */
+/** What a village adds to an item's worth to sell it to you. */
+export const MARKET_BUY_MARKUP = 1.35;
+
+/** What a village will give you for a thing, as a share of its worth. */
+export const MARKET_SELL_RATE = 0.55;
+
+/**
+ * How much worse trade gets per band of the Gallowsmark.
+ *
+ * Nobody wants to be seen dealing with somebody the dark is looking for, and being
+ * unwelcome is expensive.
+ */
+export const MARKET_MARK_SURCHARGE = 0.14;
+
+/** How many things beyond the staples a village happens to have in. */
+export const MARKET_STOCK_MIN = 4;
+export const MARKET_STOCK_MAX = 9;
+
+/**
+ * How far from a village a place has to be for anybody there to care about it.
+ *
+ * Near enough that the parish has been living with it, and near enough to be worth the
+ * walk: a problem forty miles off is somebody else's problem.
+ */
+export const CHARGE_RANGE = 16;
+
+/** How long a village will wait for somebody to do something about it, in days. */
+export const CHARGE_DAYS = 12;
+
+/** How many of a village's offers the interface shows at once. */
+export const MARKET_SHOWN = 8;
+
+/** How often a village's stock turns over, in days. */
+export const MARKET_RESTOCK_DAYS = 6;
+
+/** What a run starts with in its purse, in copper. */
+export const STARTING_COPPER = 24;
+
 export const TRADE_CURRENCY_ITEM = 'copper_coins';
 export const TRADE_COIN_COST = 1;
 export const TRADE_FORAGE_YIELD = 2;
