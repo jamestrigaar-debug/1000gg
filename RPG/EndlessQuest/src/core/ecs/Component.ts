@@ -56,6 +56,34 @@ export interface StatsComponent extends Component {
 }
 
 /**
+ * A condition the character is holding: a wound, a state of the body, a state of mind.
+ */
+export interface HeldCondition {
+  /** Which card, by the catalog's identifier */
+  readonly id: string;
+  /** The hour it was taken */
+  readonly since: number;
+  /**
+   * The hour it lifts on its own, or null when it holds until it is seen to.
+   *
+   * A broken leg does not heal because time passed; a fright does.
+   */
+  readonly until: number | null;
+}
+
+/**
+ * Everything currently wrong with -- or right about -- the character.
+ *
+ * Wounds accumulate, states of the body come and go with the meters, and states of mind
+ * follow what has happened. They are held in one place because everything that asks a
+ * question of the character has to ask this too.
+ */
+export interface ConditionsComponent extends Component {
+  type: 'conditions';
+  held: HeldCondition[];
+}
+
+/**
  * The six ability scores, the character's level, and what they are trained in.
  *
  * Everything uncertain resolves as a d20 plus the relevant ability modifier, plus the
@@ -108,6 +136,13 @@ export interface InventoryComponent extends Component {
   type: 'inventory';
   /** Item key to quantity held */
   items: Record<string, number>;
+  /**
+   * Coin, in copper.
+   *
+   * Kept as a number rather than as an item because a purse is not a thing you carry,
+   * it is a quantity you have, and every price in the catalog is already in copper.
+   */
+  copper: number;
 }
 
 /**
@@ -172,6 +207,7 @@ export interface ComponentMap {
   stats: StatsComponent;
   mark: MarkComponent;
   inventory: InventoryComponent;
+  conditions: ConditionsComponent;
   combatant: CombatantComponent;
   threat: ThreatComponent;
   abilities: AbilitiesComponent;
