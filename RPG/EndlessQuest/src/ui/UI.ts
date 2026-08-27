@@ -15,6 +15,8 @@ import { loadFromSlot, saveToSlot } from '../core/state/SaveStore';
  */
 export class UI {
   private mapRenderer: MapRenderer;
+  /** The board's own element, so it can give its space back when there is no board */
+  private mapContainer: HTMLElement;
   private chart: Chart;
   private statusPanel: StatusPanel;
   private actionPanel: ActionPanel;
@@ -40,15 +42,28 @@ export class UI {
     const actionPanelEl = document.getElementById('action-panel')!;
     const logPanelEl = document.getElementById('log-panel')!;
 
+    // The controls are spread across the layout rather than stacked in one column, so
+    // that nothing the player needs to see is below a fold. Any of these missing simply
+    // falls back to the action panel.
+    const slots = {
+      here: document.getElementById('here-panel') ?? undefined,
+      movement: document.getElementById('movement-panel') ?? undefined,
+      speak: document.getElementById('speak-bar') ?? undefined,
+      character: document.getElementById('character-panel') ?? undefined,
+    };
+
+    this.mapContainer = mapContainer;
     this.mapRenderer = new MapRenderer(
       mapContainer,
       simulation.state.mapWidth,
       simulation.state.mapHeight
     );
     this.statusPanel = new StatusPanel(statusBar);
-    this.actionPanel = new ActionPanel(actionPanelEl, simulation);
+    this.actionPanel = new ActionPanel(actionPanelEl, simulation, slots);
     this.logPanel = new LogPanel(logPanelEl);
-    this.chart = new Chart(mapContainer);
+    // The chart is a full-window overlay: the map column is a keyhole, and the whole
+    // point of the chart is to be the opposite of that.
+    this.chart = new Chart(document.body);
 
     this.centerMapListener = () => {
       const pos = this.simulation.state.entities.getComponent<PositionComponent>(
@@ -114,6 +129,14 @@ export class UI {
 
     const draw = (): void => {
       this.redrawPending = false;
+      // The board shows the country, and the country is outside. While the character is
+      // under a hill it is a black rectangle, so it gives its space back to the column.
+      const underground = this.simulation.state.instance !== null;
+      if (this.mapContainer) {
+        this.mapContainer.style.height = underground ? '0' : '';
+        this.mapContainer.style.borderBottom = underground ? 'none' : '';
+      }
+
       this.logPanel.render(this.simulation.state.log);
       this.statusPanel.render(this.simulation.state);
       this.actionPanel.render();
@@ -180,6 +203,14 @@ export class UI {
 
       this.simulation.restoreState(deserializeGameState(payload));
       this.logPanel.clear();
+      // The board shows the country, and the country is outside. While the character is
+      // under a hill it is a black rectangle, so it gives its space back to the column.
+      const underground = this.simulation.state.instance !== null;
+      if (this.mapContainer) {
+        this.mapContainer.style.height = underground ? '0' : '';
+        this.mapContainer.style.borderBottom = underground ? 'none' : '';
+      }
+
       this.logPanel.render(this.simulation.state.log);
       this.update(this.simulation.state);
       this.centerMapListener();
