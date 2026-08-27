@@ -6,6 +6,9 @@ import type { GameEvent } from '../../../events/GameEvent';
 import { EventBus } from '../../../events/EventBus';
 import { clamp } from '../../../utils/math';
 import { savingThrow } from '../../state/Checks';
+import { settingsFor } from '../../rules/Difficulty';
+import { tickConditions } from '../../state/Conditions';
+import { hurt } from '../../state/Harm';
 import { Ability, abilityModifier } from '../../rules/Abilities';
 import { DC } from '../../rules/Check';
 import {
@@ -58,6 +61,15 @@ export class NeedsSystem implements System {
   readonly name = 'NeedsSystem';
   private eventBus: EventBus;
   private lastProcessedTick: number = 0;
+  /**
+   * The best the character managed today, which is what deprivation is judged on.
+   *
+   * Starts at infinity rather than at zero: initialising to zero told the first day of
+   * every run that the character had been perfectly watered, whatever state they were
+   * actually in.
+   */
+  private lowestThirstToday: number = Number.POSITIVE_INFINITY;
+  private lowestHungerToday: number = Number.POSITIVE_INFINITY;
   private warned: Set<string> = new Set();
 
   /**
@@ -92,11 +104,22 @@ export class NeedsSystem implements System {
       return;
     }
 
+    // How fast a body spends itself is one of the things the difficulty setting means.
+    const wear = settingsFor(state.difficulty).needsRate;
+    const before = this.lastProcessedTick;
+
     for (let t = this.lastProcessedTick + 1; t <= state.tick; t++) {
-      stats.hunger = clamp(stats.hunger + HUNGER_PER_HOUR, MIN_STAT_VALUE, MAX_STAT_VALUE);
-      stats.thirst = clamp(stats.thirst + THIRST_PER_HOUR, MIN_STAT_VALUE, MAX_STAT_VALUE);
+      // What the day was actually like, rather than what midnight happened to catch.
+      // Settling deprivation on the stroke of the hour alone told a character who drank
+      // at noon that they had gone six days without water, because thirst had climbed
+      // back over the line by the time the day turned.
+      this.lowestThirstToday = Math.min(this.lowestThirstToday, stats.thirst);
+      this.lowestHungerToday = Math.min(this.lowestHungerToday, stats.hunger);
+
+      stats.hunger = clamp(stats.hunger + HUNGER_PER_HOUR * wear, MIN_STAT_VALUE, MAX_STAT_VALUE);
+      stats.thirst = clamp(stats.thirst + THIRST_PER_HOUR * wear, MIN_STAT_VALUE, MAX_STAT_VALUE);
       stats.fatigue = clamp(
-        stats.fatigue + FATIGUE_PER_HOUR_AWAKE,
+        stats.fatigue + FATIGUE_PER_HOUR_AWAKE * wear,
         MIN_STAT_VALUE,
         MAX_STAT_VALUE
       );
@@ -106,6 +129,8 @@ export class NeedsSystem implements System {
       // Deprivation is settled once a day, at the turn of the day.
       if (t % HOURS_PER_DAY === 0) {
         this.settleDeprivation(state, stats, t);
+        this.lowestThirstToday = stats.thirst;
+        this.lowestHungerToday = stats.hunger;
         if (state.gameOver) {
           this.lastProcessedTick = t;
           return;
@@ -130,6 +155,13 @@ export class NeedsSystem implements System {
       }
     }
 
+    // Wounds bleed whether the character is fighting, walking or asleep, and the states
+    // of the body follow the meters they are named for.
+    for (const event of tickConditions(state, before, state.tick)) {
+      recordEvent(state, event);
+      this.eventBus.emit(event);
+    }
+
     this.lastProcessedTick = state.tick;
   }
 
@@ -143,8 +175,9 @@ export class NeedsSystem implements System {
     );
     const conModifier = abilities ? abilityModifier(abilities.scores[Ability.CON]) : 0;
 
-    // Food. A day counts as gone hungry if the meter is high at the turn of the day.
-    if (stats.hunger >= NEED_WARNING_THRESHOLD) {
+    // Food. A day counts as gone hungry only if the character never got a proper meal
+    // in it, not merely if they are hungry again by midnight.
+    if (this.lowestHungerToday >= NEED_WARNING_THRESHOLD) {
       stats.daysWithoutFood += 1;
       const endurance = Math.max(1, DAYS_WITHOUT_FOOD_BASE + conModifier);
 
@@ -165,16 +198,18 @@ export class NeedsSystem implements System {
 
     // Water. Going short calls for a Constitution save; failing costs a level, and two
     // if the character is already exhausted.
-    if (stats.thirst >= NEED_WARNING_THRESHOLD) {
+    if (this.lowestThirstToday >= NEED_WARNING_THRESHOLD) {
       stats.daysWithoutWater += 1;
       const save = savingThrow(state, Ability.CON, WATER_SAVE_DC);
 
       if (!save.success) {
-        const levels = stats.exhaustion > 0 ? 2 : 1;
+        // One level a day, which is the handbook's rule. Doubling it once the character
+        // was already exhausted turned three failed saves into a death: a stress run of
+        // forty worlds ended thirty-eight of them this way, always with the same line.
         this.addExhaustion(
           state,
           stats,
-          levels,
+          1,
           tick,
           `Constitution save DC ${WATER_SAVE_DC}: ${save.total}. Failed. There has been no clean water for ${stats.daysWithoutWater} days.`
         );
@@ -212,9 +247,25 @@ export class NeedsSystem implements System {
       data: { exhaustion: stats.exhaustion, reason },
     });
 
-    // The fourth level halves the hit point maximum, which can drop a character.
+    // The fourth level halves the hit point maximum, which can drop a character -- and
+    // dropping a character is a thing with consequences. Clamping the number and saying
+    // nothing left them at nought hit points, neither down nor gone, which is a state
+    // the game has no answer for.
     const ceiling = Math.floor(stats.maxHp * hpMaxMultiplier(stats.exhaustion));
-    if (stats.hp > ceiling) stats.hp = ceiling;
+    if (stats.hp > ceiling) {
+      const lost = stats.hp - ceiling;
+      stats.hp = ceiling;
+
+      if (ceiling <= 0) {
+        for (const event of hurt(state, lost, {
+          cause: 'What was left of you was not enough to keep standing.',
+          canWound: false,
+        }).events) {
+          recordEvent(state, event);
+          this.eventBus.emit(event);
+        }
+      }
+    }
 
     if (isFatal(stats.exhaustion)) {
       state.gameOver = true;

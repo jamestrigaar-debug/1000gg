@@ -19,6 +19,7 @@ import { BESTIARY } from '../../lore/Bestiary';
 import type { CreatureArchetype } from '../../lore/Bestiary';
 import { pick } from '../../lore/Flavor';
 import { markBand } from './MarkSystem';
+import { settingsFor } from '../../rules/Difficulty';
 import {
   DIFFICULTY_ORDER,
   difficultyForBand,
@@ -79,7 +80,17 @@ export class EncounterSystem implements System {
    * @param state Current GameState
    */
   update(state: GameState): void {
-    if (state.gameOver || state.encounterId !== null || state.tick <= this.lastProcessedTick) {
+    // Nothing comes off the road while the character is under a hill. Inside a place the
+    // Dungeon Master decides what is in the room, and letting the country's own process
+    // fire as well produced a threat the character could not reach: the combat commands
+    // route to the instance, which had nothing in it, and a stress run collected eleven
+    // hundred refusals of "there is nothing here to hit" while something waited outside.
+    if (
+      state.gameOver ||
+      state.instance !== null ||
+      state.encounterId !== null ||
+      state.tick <= this.lastProcessedTick
+    ) {
       this.lastProcessedTick = Math.max(this.lastProcessedTick, state.tick);
       return;
     }
@@ -99,12 +110,9 @@ export class EncounterSystem implements System {
 
       const hour = (t + INITIAL_HOUR) % HOURS_PER_DAY;
       const phase = getDayPhase(hour);
-      const probability = hourlyEncounterProbability(
-        intensity,
-        phase,
-        sanctuary,
-        t <= state.stalkedUntil
-      );
+      const probability =
+        hourlyEncounterProbability(intensity, phase, sanctuary, t <= state.stalkedUntil) *
+        settingsFor(state.difficulty).encounterRate;
 
       if (state.rng.nextFloat() < probability) {
         const archetype = this.selectArchetype(state, phase, intensity, state.rng);

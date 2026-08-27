@@ -1,6 +1,7 @@
 import type { System } from '../../ecs/System';
 import type { GameState } from '../../state/GameState';
 import { isNearSettlement, recordEvent } from '../../state/GameState';
+import { settingsFor } from '../../rules/Difficulty';
 import type { MarkComponent, PositionComponent, StatsComponent } from '../../ecs/Component';
 import type { GameEvent } from '../../../events/GameEvent';
 import { EventBus } from '../../../events/EventBus';
@@ -112,16 +113,24 @@ export class MarkSystem implements System {
     const tile = state.map[pos.y]?.[pos.x];
     const affinity = tile ? TERRAIN_MARK_AFFINITY[tile.terrain] : 1;
 
+    // The difficulty setting is a multiplier on how fast the weal burns, and its inverse
+    // on how fast it cools -- a harder run heats quicker and lets go slower.
+    const burn = settingsFor(state.difficulty).markRise;
+
     switch (phase) {
       case DayPhase.NIGHT:
-        return MARK_NIGHT_RISE_PER_HOUR * affinity * (1 + MARK_WOUND_COEFFICIENT * woundFraction);
+        return (
+          MARK_NIGHT_RISE_PER_HOUR * affinity * burn * (1 + MARK_WOUND_COEFFICIENT * woundFraction)
+        );
       case DayPhase.DUSK:
-        return MARK_DUSK_RISE_PER_HOUR * affinity * (1 + MARK_WOUND_COEFFICIENT * woundFraction);
+        return (
+          MARK_DUSK_RISE_PER_HOUR * affinity * burn * (1 + MARK_WOUND_COEFFICIENT * woundFraction)
+        );
       case DayPhase.DAWN:
-        return -MARK_DAWN_FALL_PER_HOUR;
+        return -MARK_DAWN_FALL_PER_HOUR / burn;
       case DayPhase.DAY:
       default:
-        return -MARK_DAY_FALL_PER_HOUR;
+        return -MARK_DAY_FALL_PER_HOUR / burn;
     }
   }
 
