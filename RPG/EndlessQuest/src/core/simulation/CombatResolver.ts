@@ -12,6 +12,7 @@ import type {
 import type { GameEvent } from '../../events/GameEvent';
 import { getArchetype, ThreatKind } from '../lore/Bestiary';
 import { capitalize } from '../lore/Flavor';
+import { conditionPenalties, woundFrom } from '../state/Conditions';
 import { getItem } from '../lore/Items';
 import { EquipSlot } from '../lore/items/ItemTypes';
 import { Ability, proficiencyBonus } from '../rules/Abilities';
@@ -199,9 +200,12 @@ export class CombatResolver {
     const extra = state.advantageNextAttack ? [RollMode.ADVANTAGE] : [];
     state.advantageNextAttack = false;
 
+    // A broken arm is felt in the swing, not just in the prose.
+    const carried = conditionPenalties(state);
+
     const attack = rollAgainstDC(
       state.rng,
-      abilityMod + proficiency,
+      abilityMod + proficiency + carried.attack,
       targetAC,
       attackMode(state, extra)
     );
@@ -337,6 +341,13 @@ export class CombatResolver {
         : `${capitalize(threatName)} hits you for ${damage}. (d20 ${natural}+${threatCombat.attackBonus} = ${total} vs AC ${playerAC})`,
       data: { damage, critical, playerHp: playerStats.hp },
     });
+
+    // A blow that took a real share of the character leaves something behind. This is
+    // what makes a run accumulate a history rather than a hit point total: a character
+    // on day forty is not one on day one with different numbers, they are one with a
+    // limp and a cough and a hand that does not close properly.
+    const wound = woundFrom(state, damage);
+    if (wound) events.push(wound);
 
     if (playerStats.hp <= 0) {
       // Damage at or above the hit point maximum kills outright; otherwise the
