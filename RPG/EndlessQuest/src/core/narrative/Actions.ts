@@ -6,6 +6,7 @@ import { settlementAt } from '../world/Settlement';
 import { atTree, vigilAt } from '../world/Reckoning';
 import { getCurrentTile } from '../state/GameState';
 import { waterWithinReach } from '../world/Water';
+import { knackFor } from '../dm/Tactics';
 
 /**
  * Everything the world knows how to be told.
@@ -166,6 +167,81 @@ export const ACTIONS: readonly ActionDef[] = [
     available: free,
     example: 'go north',
   },
+  // --- Inside a place ----------------------------------------------------------
+  {
+    id: 'enter',
+    verbs: ['enter', 'delve', 'descend'],
+    phrases: ['go in', 'go inside', 'head in'],
+    summary: 'go into whatever stands here',
+    group: ActionGroup.TRAVEL,
+    target: Target.NONE,
+    command: () => ({ type: 'ENTER' }),
+    available: (state) => {
+      if (state.instance) return false;
+      const pos = state.entities.getComponent<PositionComponent>(state.playerId, 'position');
+      if (!pos) return false;
+      const site = state.sites.find((candidate) => candidate.x === pos.x && candidate.y === pos.y);
+      return site?.instance !== undefined;
+    },
+    example: 'go in',
+  },
+  {
+    id: 'onward',
+    verbs: ['onward', 'deeper', 'further'],
+    phrases: ['go on', 'press on', 'carry on', 'go deeper'],
+    summary: 'walk on into the next room',
+    group: ActionGroup.TRAVEL,
+    target: Target.NONE,
+    command: () => ({ type: 'DELVE' }),
+    available: (state) => state.instance !== null,
+    example: 'go on',
+  },
+  {
+    id: 'ransack',
+    verbs: ['ransack', 'loot', 'rifle', 'plunder'],
+    phrases: ['turn it over', 'go over the room'],
+    summary: 'go over this room for what it is hiding',
+    group: ActionGroup.SURVIVE,
+    target: Target.NONE,
+    command: () => ({ type: 'RANSACK' }),
+    available: (state) => state.instance !== null,
+    example: 'ransack',
+  },
+  {
+    id: 'leave',
+    verbs: ['leave', 'withdraw'],
+    phrases: ['go out', 'get out', 'back out'],
+    summary: 'come back out into the country',
+    group: ActionGroup.TRAVEL,
+    target: Target.NONE,
+    command: () => ({ type: 'LEAVE' }),
+    available: (state) => state.instance !== null,
+    example: 'get out',
+  },
+  {
+    id: 'knack',
+    verbs: ['break', 'slip', 'vanish', 'melt', 'reason', 'plead', 'parley', 'batter', 'bull'],
+    phrases: ['break them', 'slip away', 'talk them down'],
+    summary: 'the one thing your calling can do that the others cannot',
+    group: ActionGroup.FIGHT,
+    target: Target.NONE,
+    command: () => ({ type: 'KNACK' }),
+    // Only a calling that actually has one. Offering a trick the character does not have
+    // is how a bot spent eight thousand commands being told it had no such trick.
+    available: (state) => knackFor(state.background?.origin.id) !== undefined,
+    example: 'break them',
+  },
+  {
+    id: 'drop',
+    verbs: ['drop', 'discard', 'ditch', 'abandon'],
+    phrases: ['put down', 'leave it', 'set down'],
+    summary: 'put something down and leave it',
+    group: ActionGroup.SURVIVE,
+    target: Target.ITEM,
+    command: (item) => ({ type: 'DROP', item: item as string }),
+    available: free,
+    example: 'drop the knife',
+  },
   {
     id: 'chart',
     verbs: ['chart', 'map', 'bearings'],
@@ -302,7 +378,7 @@ export const ACTIONS: readonly ActionDef[] = [
   },
   {
     id: 'trade',
-    verbs: ['trade', 'barter', 'buy', 'sell', 'haggle'],
+    verbs: ['trade', 'barter', 'haggle'],
     summary: 'put a coin down for supplies',
     group: ActionGroup.TALK,
     target: Target.NONE,

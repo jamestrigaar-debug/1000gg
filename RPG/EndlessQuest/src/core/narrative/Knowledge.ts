@@ -18,7 +18,7 @@ import {
   MARK_NAME,
   CHURCH_NAME,
   INQUISITION_NAME,
-  APOSTLE_NAME,
+  SATED_NAME,
   CHOIR_NAME,
 } from '../lore/Lore';
 import {
@@ -381,7 +381,7 @@ function answerFor(
 
     case Topic.CHOIR:
       return {
-        text: `"${opening(APOSTLE_NAME)} were people once. They opened a coin at the floor of their despair and ${CHOIR_NAME} answered, and something was traded that they did not know the price of. If you find one of those coins, put it in the deepest water you can reach."`,
+        text: `"${opening(SATED_NAME)} were people once. They opened a coin at the floor of their despair and ${CHOIR_NAME} answered, and something was traded that they did not know the price of. If you find one of those coins, put it in the deepest water you can reach."`,
         events,
       };
 

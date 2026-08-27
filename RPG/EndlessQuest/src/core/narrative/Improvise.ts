@@ -20,6 +20,7 @@ import {
   IMPROVISE_MARK_STEP,
   IMPROVISE_REVEAL_BONUS,
   IMPROVISE_MARK_RELIEF,
+  IMPROVISE_FORAGE_RELIEF,
   MARK_MIN,
   MARK_MAX,
 } from '../SimulationConstants';
@@ -156,13 +157,79 @@ function spendSuccess(state: GameState, skill: Skill, outcome: CheckOutcome): Ga
 
   const clean = outcome === CheckOutcome.CRITICAL_SUCCESS;
 
+  /**
+   * Says what the success bought, so the payout is not invisible to the player.
+   *
+   * Every one of these is tagged as a payout, which is what lets a test assert the thing
+   * that actually matters: that no skill can succeed, cost an hour, and buy nothing.
+   */
+  const gained = (message: string, data: Record<string, unknown> = {}): void => {
+    events.push({ tick: state.tick, type: 'system', message, data: { ...data, payout: skill } });
+  };
+
   switch (skill) {
     case Skill.PERCEPTION:
     case Skill.INVESTIGATION:
-    case Skill.NATURE:
+    case Skill.NATURE: {
       // You learn the country.
       if (pos) {
-        revealArea(state, pos.x, pos.y, IMPROVISE_REVEAL_BONUS + (clean ? 2 : 0));
+        const radius = IMPROVISE_REVEAL_BONUS + (clean ? 2 : 0);
+        revealArea(state, pos.x, pos.y, radius);
+        gained(`You have the lie of the ground for ${radius} miles about. (M to see it)`, {
+          revealed: radius,
+        });
+      }
+      break;
+    }
+
+    case Skill.SURVIVAL: {
+      // Woodcraft pays in the only currency the road takes: something to eat, something
+      // to drink, and knowing which way you are facing.
+      const got: string[] = [];
+      if (stats) {
+        const food = Math.min(stats.hunger, IMPROVISE_FORAGE_RELIEF * (clean ? 2 : 1));
+        const water = Math.min(stats.thirst, IMPROVISE_FORAGE_RELIEF * (clean ? 2 : 1));
+        stats.hunger -= food;
+        stats.thirst -= water;
+        if (food > 0) got.push(`hunger −${Math.round(food)}`);
+        if (water > 0) got.push(`thirst −${Math.round(water)}`);
+      }
+      if (pos) {
+        const radius = Math.max(1, IMPROVISE_REVEAL_BONUS - 1 + (clean ? 2 : 0));
+        revealArea(state, pos.x, pos.y, radius);
+        got.push(`ground read ${radius} miles on`);
+      }
+      if (got.length > 0) {
+        gained(`What the country gave up: ${got.join(', ')}.`, { survival: got });
+      }
+      break;
+    }
+
+    case Skill.ATHLETICS:
+    case Skill.ACROBATICS:
+    case Skill.SLEIGHT_OF_HAND:
+    case Skill.INSIGHT:
+      // Footing, position, and knowing what the other thing means to do all cash out the
+      // same way: you are better placed when it starts.
+      state.advantageNextAttack = true;
+      gained('You are better placed for whatever comes next. (advantage on your next strike)');
+      break;
+
+    case Skill.ANIMAL_HANDLING:
+      // Whatever was minded to follow you thinks better of it.
+      if (mark) {
+        const before = mark.intensity;
+        mark.intensity = clamp(
+          mark.intensity - IMPROVISE_MARK_RELIEF * (clean ? 1.5 : 0.5),
+          MARK_MIN,
+          MARK_MAX
+        );
+        if (Math.round(before) !== Math.round(mark.intensity)) {
+          gained(
+            `Nothing follows you out of it. (mark ${Math.round(before)} → ${Math.round(mark.intensity)})`,
+            { mark: mark.intensity }
+          );
+        }
       }
       break;
 
@@ -177,12 +244,10 @@ function spendSuccess(state: GameState, skill: Skill, outcome: CheckOutcome): Ga
           MARK_MAX
         );
         if (Math.round(before) !== Math.round(mark.intensity)) {
-          events.push({
-            tick: state.tick,
-            type: 'system',
-            message: `The weal cools a little. (mark ${Math.round(before)} → ${Math.round(mark.intensity)})`,
-            data: { mark: mark.intensity },
-          });
+          gained(
+            `The weal cools a little. (mark ${Math.round(before)} → ${Math.round(mark.intensity)})`,
+            { mark: mark.intensity }
+          );
         }
       }
       break;
@@ -192,12 +257,7 @@ function spendSuccess(state: GameState, skill: Skill, outcome: CheckOutcome): Ga
       if (stats && stats.hp < stats.maxHp) {
         const healed = Math.min(stats.maxHp - stats.hp, clean ? 6 : 3);
         stats.hp += healed;
-        events.push({
-          tick: state.tick,
-          type: 'system',
-          message: `You see to yourself as best you can. (+${healed} hp)`,
-          data: { healed },
-        });
+        gained(`You see to yourself as best you can. (+${healed} hp)`, { healed });
       }
       break;
 
@@ -206,9 +266,13 @@ function spendSuccess(state: GameState, skill: Skill, outcome: CheckOutcome): Ga
     case Skill.PERSUASION:
       // Talking your way through something leaves you better placed for the next thing.
       state.advantageNextAttack = true;
+      gained('You have the better of them for now. (advantage on your next strike)');
       break;
 
     default:
+      // Every skill the interpreter can read an attempt as pays out above. If this is
+      // ever reached, a success has cost the player an hour and bought them nothing,
+      // which is the one thing improvising must never do.
       break;
   }
 
@@ -233,7 +297,7 @@ function describeSuccess(state: GameState, skill: Skill, outcome: CheckOutcome):
     [Skill.RELIGION]: 'The old words still fit in your mouth. Something slackens.',
     [Skill.MEDICINE]: 'You do what can be done with what you have.',
     [Skill.PERCEPTION]: `You stop, and look, and ${where} resolves into detail.`,
-    [Skill.SURVIVAL]: 'You make the country give you what you need.',
+    [Skill.SURVIVAL]: `You work ${where} the way you were taught to, and it yields.`,
     [Skill.INSIGHT]: 'You read it right. You are fairly sure you read it right.',
     [Skill.ANIMAL_HANDLING]: 'It settles. Whatever it is, it settles.',
     [Skill.DECEPTION]: 'It goes down whole, and nobody asks the second question.',

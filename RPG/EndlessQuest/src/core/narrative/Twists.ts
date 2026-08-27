@@ -1,5 +1,6 @@
 import type { GameState } from '../state/GameState';
-import { advanceTime } from '../state/GameState';
+import { advanceTime, recordEvent } from '../state/GameState';
+import { hurt } from '../state/Harm';
 import { removeItem } from '../state/Inventory';
 import { getItem } from '../lore/Items';
 import { roll } from '../rules/Dice';
@@ -70,10 +71,18 @@ function wound(state: GameState): string | null {
   if (!stats || stats.hp <= 0) return null;
 
   const damage = roll(state.rng, TWIST_WOUND_DICE).total;
-  stats.hp = Math.max(MIN_STAT_VALUE, stats.hp - damage);
+
+  // Through the one place that knows what nought hit points means. This was the fourth
+  // and last of the places that took hit points off the character on their own terms,
+  // and it could leave somebody standing at nought with nothing following.
+  const done = hurt(state, damage, {
+    cause: 'The country opened you up and kept opening you up.',
+  });
 
   // An open wound is a question the world will come back and ask again.
   openThread(state, ThreadKind.WOUND);
+
+  for (const event of done.events) recordEvent(state, event);
 
   return `(-${damage} hp)`;
 }

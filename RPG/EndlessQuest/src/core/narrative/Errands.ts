@@ -85,6 +85,13 @@ export interface ErrandReward {
   readonly items?: Readonly<Record<string, number>>;
   /** Told where one of the vigils stands, which is worth more than anything carried */
   readonly knowledge?: boolean;
+  /**
+   * Coin, in copper.
+   *
+   * A village asking a stranger to go into a hole in the ground has to be able to pay
+   * for it, and now that there is somewhere to spend money there is something to pay in.
+   */
+  readonly copper?: number;
 }
 
 /**
@@ -534,6 +541,16 @@ export function dischargeErrand(state: GameState, errand: Errand): GameEvent[] {
         data: { reward: errand.reward.items },
       });
     }
+  }
+
+  if (errand.reward.copper && inventory) {
+    inventory.copper += errand.reward.copper;
+    events.push({
+      tick: state.tick,
+      type: 'system',
+      message: `They count it out where you can see them counting it. (+${errand.reward.copper} copper)`,
+      data: { paid: errand.reward.copper },
+    });
   }
 
   if (errand.reward.knowledge) {

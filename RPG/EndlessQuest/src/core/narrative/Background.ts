@@ -166,6 +166,48 @@ export const ORIGINS: readonly Origin[] = [
 ];
 
 /**
+ * The three origins offered at embark, and how each of them plays.
+ *
+ * The game has three ways through it -- fight, endure, talk -- and these are one apiece.
+ * The rest of the origins above are still dealt to the people you meet and to a random
+ * embark, but a player choosing for themselves should be choosing between things that
+ * play differently, not between seven flavours of the same walk.
+ */
+export const PLAYABLE_CLASSES: readonly {
+  readonly originId: string;
+  readonly calling: string;
+  readonly plays: string;
+}[] = [
+  {
+    originId: 'free_company',
+    calling: 'The Sword',
+    plays:
+      'Carries the only real weapon and armour anybody starts with. Can stand and fight what the others must run from, and levels fastest for it.',
+  },
+  {
+    originId: 'poacher',
+    calling: 'The Quiet',
+    plays:
+      'Reads the country, finds food where there is none, and goes unnoticed. Meets less on the road, and survives what it does meet by not being there.',
+  },
+  {
+    originId: 'penitent',
+    calling: 'The Tongue',
+    plays:
+      'Gets answers out of people who would rather not give them. Villages open up: where the rites are, what is out there, who owes what. Weakest in a fight.',
+  },
+];
+
+/**
+ * Finds an origin by its identifier.
+ * @param id Origin identifier
+ * @returns The origin, or undefined
+ */
+export function getOrigin(id: string): Origin | undefined {
+  return ORIGINS.find((origin) => origin.id === id);
+}
+
+/**
  * The goals a character can be dealt.
  */
 export const GOALS: readonly Goal[] = [
@@ -233,9 +275,13 @@ export const FLAWS: readonly Flaw[] = [
  * @param rng Seeded generator, so a seed produces the same character
  * @returns The dealt origin, goal, bond, and flaw
  */
-export function rollBackground(rng: RNG): CharacterBackground {
+export function rollBackground(rng: RNG, originId?: string): CharacterBackground {
+  // What the player chose, if they chose. Everything else about who they were is still
+  // dealt: the goal, the bond and the flaw are the game's, not the menu's.
+  const chosen = originId ? getOrigin(originId) : undefined;
+
   return {
-    origin: ORIGINS[rng.nextInt(0, ORIGINS.length - 1)],
+    origin: chosen ?? ORIGINS[rng.nextInt(0, ORIGINS.length - 1)],
     goal: GOALS[rng.nextInt(0, GOALS.length - 1)],
     bond: BONDS[rng.nextInt(0, BONDS.length - 1)],
     flaw: FLAWS[rng.nextInt(0, FLAWS.length - 1)],

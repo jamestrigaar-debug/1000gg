@@ -3,6 +3,7 @@ import type { GameState } from '../state/GameState';
 import type { InventoryComponent } from '../ecs/Component';
 import { Skill } from '../rules/Skills';
 import { getItem } from '../lore/Items';
+import { ITEMS } from '../lore/items/Catalog';
 import { ACTIONS, Target, allVerbs, type ActionDef } from './Actions';
 import { MAX_REST_HOURS, MIN_REST_HOURS } from '../SimulationConstants';
 
@@ -38,6 +39,34 @@ const DIRECTIONS: Record<Direction, readonly string[]> = {
 };
 
 /**
+ * Verbs that mean cover ground, as opposed to taking one step.
+ *
+ * Kept narrow on purpose. An earlier draft included "strike" and "make", which turned
+ * "strike at it" into a journey toward somewhere called "it" -- a verb list this thing
+ * reads before the action table has to be unambiguous, or it steals lines that belong
+ * to somebody else.
+ */
+const JOURNEY_VERBS = ['go', 'head', 'travel', 'march', 'walk', 'journey', 'ride', 'trek'];
+
+/** The parts of a thing a blow can be aimed at. */
+const BODY_PARTS = [
+  'head', 'skull', 'face', 'throat', 'neck',
+  'arm', 'arms', 'hand', 'hands', 'wrist',
+  'leg', 'legs', 'knee', 'knees', 'foot', 'feet',
+];
+
+/** The words that separate the verb from the place in "head for the Cold Well". */
+const TOWARD_WORDS = ['to', 'for', 'toward', 'towards'];
+
+/** How long a leg is when the player says so rather than taking the default. */
+const SPANS: readonly { readonly words: readonly string[]; readonly hours: number }[] = [
+  { words: ['day', 'all-day', 'dawn'], hours: 8 },
+  { words: ['morning', 'afternoon', 'half'], hours: 4 },
+  { words: ['hour', 'while', 'bit', 'little', 'short'], hours: 2 },
+  { words: ['night', 'through'], hours: 8 },
+];
+
+/**
  * Words that carry no instruction, skipped when looking for the leading verb.
  */
 const FILLER = [
@@ -66,11 +95,30 @@ export function interpret(input: string, state: GameState): Interpretation {
 
   const direction = readDirection(words);
 
-  // A bare direction is a move, because that is what a player typing "north" means.
+  // A bare direction is one step, because a player typing "north" is picking their way
+  // round something rather than setting out.
   if (direction && words.every((word) => FILLER.includes(word) || isDirectionWord(word))) {
     return {
       kind: 'command',
       command: { type: 'MOVE', direction },
+      action: ACTIONS.find((a) => a.id === 'go')!,
+    };
+  }
+
+  // Buying and selling name a thing and a side of the counter, so they are read before
+  // the verb table rather than through it: "sell the shovel" is not a use of a shovel.
+  const dealt = readTrade(words, state);
+  if (dealt) {
+    return { kind: 'command', command: dealt, action: ACTIONS.find((a) => a.id === 'trade')! };
+  }
+
+  // Naming somewhere is the strongest thing a travel line can do, so it is read before
+  // the verb table: "make for Aldenhollow" is a journey, not a walk in its direction.
+  const journey = readJourney(raw, words, direction, state);
+  if (journey) {
+    return {
+      kind: 'command',
+      command: journey,
       action: ACTIONS.find((a) => a.id === 'go')!,
     };
   }
@@ -81,7 +129,18 @@ export function interpret(input: string, state: GameState): Interpretation {
   // different things, and it is the object that decides which. Anything the character
   // is actually carrying wins, because a man with a full skin who says he is drinking
   // means the skin.
-  if (match?.id === 'drink' && matchCarried(words, state)) {
+  // While something is on you, naming a part of it is aiming at it. "Go for its legs"
+  // is a blow, not a journey to a place called its legs, and the leading verb is the
+  // wrong thing to read it by.
+  const fighting = state.encounterId !== null || state.instance !== null;
+  if (fighting && words.some((word) => BODY_PARTS.includes(word))) {
+    const attack = ACTIONS.find((action) => action.id === 'attack');
+    if (attack) {
+      return { kind: 'command', command: { type: 'ATTACK', said: words }, action: attack };
+    }
+  }
+
+  if (match?.id === 'drink' && matchCarried(words, state, 'usable')) {
     match = ACTIONS.find((action) => action.id === 'eat') ?? match;
   }
   if (!match) {
@@ -139,7 +198,13 @@ function resolveAction(
     }
 
     case Target.ITEM: {
-      const item = matchCarried(words, state);
+      // Eating and drinking want the thing that can actually be eaten or drunk; wearing
+      // and wielding want whatever was named.
+      const item = matchCarried(
+        words,
+        state,
+        action.id === 'eat' || action.id === 'drink' ? 'usable' : 'any'
+      );
       if (!item) {
         return {
           kind: 'unclear',
@@ -157,7 +222,13 @@ function resolveAction(
   // Some actions mean one thing in a fight and another out of it: threatening a person
   // across a fire is a check, threatening the thing already on you is a stance.
   if (action.command && (action.available?.(state) ?? true)) {
-    return { kind: 'command', command: action.command(''), action };
+    const command = action.command('');
+    // A blow can be aimed, so the words the player used travel with it. "Go for its
+    // legs" and "swing wildly" are the same verb meaning different things.
+    if (command.type === 'ATTACK') {
+      return { kind: 'command', command: { ...command, said: words }, action };
+    }
+    return { kind: 'command', command, action };
   }
 
   if (action.skill) {
@@ -366,7 +437,11 @@ function readHours(words: readonly string[]): number {
  * Players say "eat the bread", not "consume stale_bread", so both the catalog id and the
  * item's proper name are matched a word at a time.
  */
-function matchCarried(words: readonly string[], state: GameState): string | null {
+function matchCarried(
+  words: readonly string[],
+  state: GameState,
+  prefer: 'any' | 'usable' = 'any'
+): string | null {
   const inventory = state.entities.getComponent<InventoryComponent>(
     state.playerId,
     'inventory'
@@ -376,7 +451,8 @@ function matchCarried(words: readonly string[], state: GameState): string | null
   let best: { id: string; score: number } | null = null;
 
   for (const id of Object.keys(inventory.items)) {
-    const name = (getItem(id)?.name ?? id).toLowerCase();
+    const definition = getItem(id);
+    const name = (definition?.name ?? id).toLowerCase();
     const tokens = new Set([...id.split('_'), ...name.split(/[^a-z0-9]+/)].filter(Boolean));
 
     let score = 0;
@@ -386,8 +462,142 @@ function matchCarried(words: readonly string[], state: GameState): string | null
       else if ([...tokens].some((token) => token.startsWith(word) && word.length >= 4)) score += 1;
     }
 
+    // A character with a full skin and three empty ones who says they are drinking means
+    // the full one. Without this the pack fills with empties and every attempt to drink
+    // picks one of them: a stress run collected nearly six thousand refusals that way.
+    if (prefer === 'usable' && score > 0 && definition?.consumable) score += 3;
+
     if (score > 0 && (!best || score > best.score)) best = { id, score };
   }
 
   return best?.id ?? null;
+}
+
+
+/**
+ * Reads a line as a journey, if it is one.
+ *
+ * Two shapes of it: a bearing held for a stretch ("head north", "walk east for a day"),
+ * and a place made for ("make for the Cold Well"). Anything else is somebody else's
+ * verb, and this returns null so the table can have it.
+ *
+ * @param raw The line as typed, for lifting a place name out of it
+ * @param words The tokenised line
+ * @param direction The bearing in the line, if there is one
+ * @returns A travel command, or null
+ */
+function readJourney(
+  raw: string,
+  words: readonly string[],
+  direction: Direction | null,
+  state: GameState
+): Command | null {
+  const lead = words.find((word) => !FILLER.includes(word));
+  if (!lead || !JOURNEY_VERBS.includes(lead)) return null;
+
+  // "for a day", "through the night", "for an hour" -- how much of the clock to spend.
+  const hours = SPANS.find((span) => span.words.some((word) => words.includes(word)))?.hours;
+  const throughNight = words.includes('night') || words.includes('through');
+
+  if (direction) {
+    return { type: 'TRAVEL', direction, hours, throughNight };
+  }
+
+  // Everything after the first joining word is the name of the place, taken from the
+  // line as typed so that its capitals and apostrophes survive for the lookup.
+  const joinIndex = words.findIndex((word) => TOWARD_WORDS.includes(word));
+  if (joinIndex < 0) return null;
+
+  const after = words.slice(joinIndex + 1).filter((word) => word !== 'the');
+  if (after.length === 0) return null;
+
+  const needle = after.join(' ');
+  const start = raw.toLowerCase().indexOf(after[0]);
+  const toward = start >= 0 ? raw.slice(start).trim() : needle;
+
+  // Only somewhere that exists. Without this the parser invented destinations out of
+  // whatever followed the word: "go for its legs" became a journey to a place called
+  // "its legs" rather than a blow aimed at a knee.
+  return namesAPlace(toward, state) ? { type: 'TRAVEL', toward, hours, throughNight } : null;
+}
+
+
+/**
+ * Reads a line as buying or selling, if it is one.
+ *
+ * Selling names something carried; buying names something on the counter, which the ear
+ * does not know about, so anything not carried is taken as a thing to buy.
+ *
+ * @param words The tokenised line
+ * @param state Game state, for what is carried
+ * @returns A trade command, or null
+ */
+function readTrade(words: readonly string[], state: GameState): Command | null {
+  const lead = words.find((word) => !FILLER.includes(word));
+  if (lead !== 'buy' && lead !== 'sell' && lead !== 'purchase') return null;
+
+  const rest = words.filter((word) => word !== lead && !FILLER.includes(word));
+  if (rest.length === 0) return null;
+
+  const count = rest.map((word) => Number.parseInt(word, 10)).find((n) => Number.isFinite(n));
+
+  if (lead === 'sell') {
+    const carried = matchCarried(rest, state);
+    if (!carried) return null;
+    return { type: 'SELL', item: carried, count };
+  }
+
+  // Buying: match against the catalog rather than the pack.
+  const wanted = matchCatalog(rest);
+  return wanted ? { type: 'BUY', item: wanted, count } : null;
+}
+
+/**
+ * Matches words against everything the world has names for.
+ *
+ * @param words What the player called it
+ * @returns The catalog identifier, or null
+ */
+function matchCatalog(words: readonly string[]): string | null {
+  let best: { id: string; score: number } | null = null;
+
+  for (const item of Object.values(ITEMS)) {
+    const tokens = new Set(
+      [...item.id.split('_'), ...item.name.toLowerCase().split(/[^a-z0-9]+/)].filter(Boolean)
+    );
+
+    let score = 0;
+    for (const word of words) {
+      if (FILLER.includes(word)) continue;
+      if (tokens.has(word)) score += 2;
+      else if ([...tokens].some((token) => token.startsWith(word) && word.length >= 4)) score += 1;
+    }
+
+    if (score > 0 && (!best || score > best.score)) best = { id: item.id, score };
+  }
+
+  return best?.id ?? null;
+}
+
+
+/**
+ * Whether a phrase names somewhere the character could actually set out for.
+ *
+ * @param name What they called it
+ * @param state Game state
+ * @returns True if the country has such a place and the character knows of it
+ */
+function namesAPlace(name: string, state: GameState): boolean {
+  const wanted = name.trim().toLowerCase();
+  if (wanted.length === 0) return false;
+
+  const matches = (candidate: string): boolean => {
+    const lower = candidate.toLowerCase();
+    return lower === wanted || lower.includes(wanted) || wanted.includes(lower);
+  };
+
+  if (state.settlements.some((place) => place.known && matches(place.name))) return true;
+  if (state.sites.some((site) => (site.seen || site.visited) && matches(site.name))) return true;
+  if (state.reckoning.vigils.some((vigil) => matches(vigil.name))) return true;
+  return matches('the gallows-tree') || matches('the tree');
 }
