@@ -1,0 +1,70 @@
+{
+  "teams": [
+    {
+      "id": "riverside",
+      "name": "Riverside United",
+      "shortName": "RIV",
+      "kit": {
+        "primary": "0xd11f2a",
+        "secondary": "0xffffff",
+        "number": "0xffffff",
+        "gkPrimary": "0x2ad14f",
+        "gkSecondary": "0x101418",
+        "gkNumber": "0x101418"
+      },
+      "players": [
+        { "name": "K. Vandel", "number": 1, "position": "GK", "quality": 14 },
+        { "name": "T. Okafor", "number": 2, "position": "DR", "quality": 13 },
+        { "name": "M. Brandt", "number": 5, "position": "DC", "quality": 15 },
+        { "name": "J. Ferreira", "number": 6, "position": "DC", "quality": 14 },
+        { "name": "L. Arnesen", "number": 3, "position": "DL", "quality": 13 },
+        { "name": "P. Kovac", "number": 4, "position": "DM", "quality": 14 },
+        { "name": "S. Delgado", "number": 8, "position": "MC", "quality": 15 },
+        { "name": "R. Whitmore", "number": 7, "position": "MR", "quality": 14 },
+        { "name": "A. Nakamura", "number": 10, "position": "AM", "quality": 16 },
+        { "name": "D. Byrne", "number": 11, "position": "ML", "quality": 14 },
+        { "name": "C. Mensah", "number": 9, "position": "ST", "quality": 16 },
+        { "name": "E. Sorensen", "number": 13, "position": "GK", "quality": 11 },
+        { "name": "V. Petrov", "number": 15, "position": "DC", "quality": 12 },
+        { "name": "N. Haddad", "number": 16, "position": "MC", "quality": 12 },
+        { "name": "O. Lindqvist", "number": 17, "position": "ML", "quality": 12 },
+        { "name": "B. Achterberg", "number": 19, "position": "ST", "quality": 13 },
+        { "name": "F. Duarte", "number": 21, "position": "DR", "quality": 11 },
+        { "name": "G. Iversen", "number": 23, "position": "AM", "quality": 12 }
+      ]
+    },
+    {
+      "id": "kingsport",
+      "name": "Kingsport Athletic",
+      "shortName": "KIN",
+      "kit": {
+        "primary": "0x1746a2",
+        "secondary": "0xf2c14e",
+        "number": "0xffffff",
+        "gkPrimary": "0xf25c05",
+        "gkSecondary": "0x101418",
+        "gkNumber": "0x101418"
+      },
+      "players": [
+        { "name": "H. Baumann", "number": 1, "position": "GK", "quality": 13 },
+        { "name": "W. Oyelaran", "number": 2, "position": "DR", "quality": 12 },
+        { "name": "I. Radic", "number": 5, "position": "DC", "quality": 14 },
+        { "name": "Y. Tanaka", "number": 6, "position": "DC", "quality": 13 },
+        { "name": "Z. Marchetti", "number": 3, "position": "DL", "quality": 12 },
+        { "name": "Q. Ashworth", "number": 4, "position": "DM", "quality": 13 },
+        { "name": "U. Bekele", "number": 8, "position": "MC", "quality": 14 },
+        { "name": "X. Moreau", "number": 7, "position": "MR", "quality": 13 },
+        { "name": "R. Vlahovic", "number": 10, "position": "AM", "quality": 14 },
+        { "name": "S. Adeyemi", "number": 11, "position": "ML", "quality": 13 },
+        { "name": "T. Halvorsen", "number": 9, "position": "ST", "quality": 15 },
+        { "name": "A. Kirsch", "number": 12, "position": "GK", "quality": 10 },
+        { "name": "L. Osei", "number": 14, "position": "DC", "quality": 11 },
+        { "name": "M. Sandoval", "number": 18, "position": "MC", "quality": 12 },
+        { "name": "C. Nyland", "number": 20, "position": "MR", "quality": 11 },
+        { "name": "D. Fabbri", "number": 22, "position": "ST", "quality": 12 },
+        { "name": "J. Kowalski", "number": 24, "position": "DL", "quality": 11 },
+        { "name": "P. Vogel", "number": 26, "position": "AM", "quality": 11 }
+      ]
+    }
+  ]
+}

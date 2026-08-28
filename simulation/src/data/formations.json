@@ -1,0 +1,470 @@
+{
+  "4-4-2": {
+    "id": "4-4-2",
+    "name": "4-4-2",
+    "blurb": "Two banks of four and a strike partnership. Nothing clever, hard to break.",
+    "bias": {
+      "attack": 1,
+      "midfield": 0,
+      "defence": 1
+    },
+    "slots": [
+      {
+        "position": "GK",
+        "managerSlot": "GK",
+        "ax": 0.07,
+        "ay": 0.5
+      },
+      {
+        "position": "DR",
+        "managerSlot": "FB",
+        "ax": 0.27,
+        "ay": 0.14
+      },
+      {
+        "position": "DC",
+        "managerSlot": "CB",
+        "ax": 0.22,
+        "ay": 0.37
+      },
+      {
+        "position": "DC",
+        "managerSlot": "CB",
+        "ax": 0.22,
+        "ay": 0.63
+      },
+      {
+        "position": "DL",
+        "managerSlot": "FB",
+        "ax": 0.27,
+        "ay": 0.86
+      },
+      {
+        "position": "MR",
+        "managerSlot": "WG",
+        "ax": 0.53,
+        "ay": 0.12
+      },
+      {
+        "position": "MC",
+        "managerSlot": "CM",
+        "ax": 0.49,
+        "ay": 0.38
+      },
+      {
+        "position": "MC",
+        "managerSlot": "CM",
+        "ax": 0.49,
+        "ay": 0.62
+      },
+      {
+        "position": "ML",
+        "managerSlot": "WG",
+        "ax": 0.53,
+        "ay": 0.88
+      },
+      {
+        "position": "ST",
+        "managerSlot": "FW",
+        "ax": 0.81,
+        "ay": 0.36
+      },
+      {
+        "position": "ST",
+        "managerSlot": "FW",
+        "ax": 0.81,
+        "ay": 0.64
+      }
+    ]
+  },
+  "4-3-3": {
+    "id": "4-3-3",
+    "name": "4-3-3",
+    "blurb": "Width and a front three. Commits bodies forward.",
+    "bias": {
+      "attack": 3,
+      "midfield": 1,
+      "defence": -1
+    },
+    "slots": [
+      {
+        "position": "GK",
+        "managerSlot": "GK",
+        "ax": 0.07,
+        "ay": 0.5
+      },
+      {
+        "position": "DR",
+        "managerSlot": "FB",
+        "ax": 0.27,
+        "ay": 0.14
+      },
+      {
+        "position": "DC",
+        "managerSlot": "CB",
+        "ax": 0.22,
+        "ay": 0.37
+      },
+      {
+        "position": "DC",
+        "managerSlot": "CB",
+        "ax": 0.22,
+        "ay": 0.63
+      },
+      {
+        "position": "DL",
+        "managerSlot": "FB",
+        "ax": 0.27,
+        "ay": 0.86
+      },
+      {
+        "position": "MC",
+        "managerSlot": "CM",
+        "ax": 0.47,
+        "ay": 0.28
+      },
+      {
+        "position": "MC",
+        "managerSlot": "CM",
+        "ax": 0.42,
+        "ay": 0.5
+      },
+      {
+        "position": "MC",
+        "managerSlot": "CM",
+        "ax": 0.47,
+        "ay": 0.72
+      },
+      {
+        "position": "MR",
+        "managerSlot": "WG",
+        "ax": 0.76,
+        "ay": 0.14
+      },
+      {
+        "position": "ST",
+        "managerSlot": "FW",
+        "ax": 0.85,
+        "ay": 0.5
+      },
+      {
+        "position": "ML",
+        "managerSlot": "WG",
+        "ax": 0.76,
+        "ay": 0.86
+      }
+    ]
+  },
+  "4-2-3-1": {
+    "id": "4-2-3-1",
+    "name": "4-2-3-1",
+    "blurb": "A double pivot behind a three. The modern default.",
+    "bias": {
+      "attack": 1,
+      "midfield": 3,
+      "defence": 1
+    },
+    "slots": [
+      {
+        "position": "GK",
+        "managerSlot": "GK",
+        "ax": 0.07,
+        "ay": 0.5
+      },
+      {
+        "position": "DR",
+        "managerSlot": "FB",
+        "ax": 0.27,
+        "ay": 0.14
+      },
+      {
+        "position": "DC",
+        "managerSlot": "CB",
+        "ax": 0.22,
+        "ay": 0.37
+      },
+      {
+        "position": "DC",
+        "managerSlot": "CB",
+        "ax": 0.22,
+        "ay": 0.63
+      },
+      {
+        "position": "DL",
+        "managerSlot": "FB",
+        "ax": 0.27,
+        "ay": 0.86
+      },
+      {
+        "position": "DM",
+        "managerSlot": "DM",
+        "ax": 0.41,
+        "ay": 0.36
+      },
+      {
+        "position": "DM",
+        "managerSlot": "DM",
+        "ax": 0.41,
+        "ay": 0.64
+      },
+      {
+        "position": "MR",
+        "managerSlot": "WG",
+        "ax": 0.65,
+        "ay": 0.14
+      },
+      {
+        "position": "AM",
+        "managerSlot": "AM",
+        "ax": 0.65,
+        "ay": 0.5
+      },
+      {
+        "position": "ML",
+        "managerSlot": "WG",
+        "ax": 0.65,
+        "ay": 0.86
+      },
+      {
+        "position": "ST",
+        "managerSlot": "FW",
+        "ax": 0.87,
+        "ay": 0.5
+      }
+    ]
+  },
+  "3-5-2": {
+    "id": "3-5-2",
+    "name": "3-5-2",
+    "blurb": "Wing-backs and a packed middle. Owns the centre, exposed wide.",
+    "bias": {
+      "attack": 2,
+      "midfield": 4,
+      "defence": -2
+    },
+    "slots": [
+      {
+        "position": "GK",
+        "managerSlot": "GK",
+        "ax": 0.07,
+        "ay": 0.5
+      },
+      {
+        "position": "DC",
+        "managerSlot": "CB",
+        "ax": 0.22,
+        "ay": 0.28
+      },
+      {
+        "position": "DC",
+        "managerSlot": "CB",
+        "ax": 0.19,
+        "ay": 0.5
+      },
+      {
+        "position": "DC",
+        "managerSlot": "CB",
+        "ax": 0.22,
+        "ay": 0.72
+      },
+      {
+        "position": "DR",
+        "managerSlot": "FB",
+        "ax": 0.49,
+        "ay": 0.1
+      },
+      {
+        "position": "MC",
+        "managerSlot": "CM",
+        "ax": 0.46,
+        "ay": 0.32
+      },
+      {
+        "position": "MC",
+        "managerSlot": "CM",
+        "ax": 0.42,
+        "ay": 0.5
+      },
+      {
+        "position": "MC",
+        "managerSlot": "CM",
+        "ax": 0.46,
+        "ay": 0.68
+      },
+      {
+        "position": "DL",
+        "managerSlot": "FB",
+        "ax": 0.49,
+        "ay": 0.9
+      },
+      {
+        "position": "ST",
+        "managerSlot": "FW",
+        "ax": 0.83,
+        "ay": 0.38
+      },
+      {
+        "position": "ST",
+        "managerSlot": "FW",
+        "ax": 0.83,
+        "ay": 0.62
+      }
+    ]
+  },
+  "5-3-2": {
+    "id": "5-3-2",
+    "name": "5-3-2",
+    "blurb": "A back five. Concede the ball and dare them to break you down.",
+    "bias": {
+      "attack": -2,
+      "midfield": 0,
+      "defence": 5
+    },
+    "slots": [
+      {
+        "position": "GK",
+        "managerSlot": "GK",
+        "ax": 0.07,
+        "ay": 0.5
+      },
+      {
+        "position": "DR",
+        "managerSlot": "FB",
+        "ax": 0.33,
+        "ay": 0.1
+      },
+      {
+        "position": "DC",
+        "managerSlot": "CB",
+        "ax": 0.21,
+        "ay": 0.3
+      },
+      {
+        "position": "DC",
+        "managerSlot": "CB",
+        "ax": 0.18,
+        "ay": 0.5
+      },
+      {
+        "position": "DC",
+        "managerSlot": "CB",
+        "ax": 0.21,
+        "ay": 0.7
+      },
+      {
+        "position": "DL",
+        "managerSlot": "FB",
+        "ax": 0.33,
+        "ay": 0.9
+      },
+      {
+        "position": "MC",
+        "managerSlot": "CM",
+        "ax": 0.49,
+        "ay": 0.3
+      },
+      {
+        "position": "MC",
+        "managerSlot": "CM",
+        "ax": 0.45,
+        "ay": 0.5
+      },
+      {
+        "position": "MC",
+        "managerSlot": "CM",
+        "ax": 0.49,
+        "ay": 0.7
+      },
+      {
+        "position": "ST",
+        "managerSlot": "FW",
+        "ax": 0.83,
+        "ay": 0.38
+      },
+      {
+        "position": "ST",
+        "managerSlot": "FW",
+        "ax": 0.83,
+        "ay": 0.62
+      }
+    ]
+  },
+  "4-5-1": {
+    "id": "4-5-1",
+    "name": "4-5-1",
+    "blurb": "Five across the middle and a lone striker. Suffocating, blunt.",
+    "bias": {
+      "attack": -1,
+      "midfield": 4,
+      "defence": 2
+    },
+    "slots": [
+      {
+        "position": "GK",
+        "managerSlot": "GK",
+        "ax": 0.07,
+        "ay": 0.5
+      },
+      {
+        "position": "DR",
+        "managerSlot": "FB",
+        "ax": 0.27,
+        "ay": 0.14
+      },
+      {
+        "position": "DC",
+        "managerSlot": "CB",
+        "ax": 0.22,
+        "ay": 0.37
+      },
+      {
+        "position": "DC",
+        "managerSlot": "CB",
+        "ax": 0.22,
+        "ay": 0.63
+      },
+      {
+        "position": "DL",
+        "managerSlot": "FB",
+        "ax": 0.27,
+        "ay": 0.86
+      },
+      {
+        "position": "MR",
+        "managerSlot": "WG",
+        "ax": 0.57,
+        "ay": 0.12
+      },
+      {
+        "position": "MC",
+        "managerSlot": "CM",
+        "ax": 0.53,
+        "ay": 0.35
+      },
+      {
+        "position": "DM",
+        "managerSlot": "DM",
+        "ax": 0.41,
+        "ay": 0.5
+      },
+      {
+        "position": "MC",
+        "managerSlot": "CM",
+        "ax": 0.53,
+        "ay": 0.65
+      },
+      {
+        "position": "ML",
+        "managerSlot": "WG",
+        "ax": 0.57,
+        "ay": 0.88
+      },
+      {
+        "position": "ST",
+        "managerSlot": "FW",
+        "ax": 0.85,
+        "ay": 0.5
+      }
+    ]
+  }
+}
