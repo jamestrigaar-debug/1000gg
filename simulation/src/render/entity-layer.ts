@@ -23,6 +23,31 @@ function surnameOf(name: string): string {
   return parts.length > 1 ? (parts[parts.length - 1] as string) : name;
 }
 
+/**
+ * Cubic Hermite between two snapshots, using the velocities they carry.
+ *
+ * Every snapshot has always carried velocity, and the renderer had always
+ * thrown it away and drawn a straight line between positions instead. On a
+ * ball bending round a wall, or a winger turning inside, a straight line
+ * between samples 33 ms apart cuts the corner and then snaps back on the next
+ * sample — small, constant, and exactly the flicker that reads as jank. Using
+ * the velocity as the tangent makes the drawn path continuous THROUGH the
+ * samples rather than merely passing between them.
+ *
+ * Falls back to a plain lerp when the samples are effectively coincident.
+ */
+function hermite(p0: number, v0: number, p1: number, v1: number, t: number, span: number): number {
+  if (span < 1e-6) return lerp(p0, p1, t);
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return (
+    (2 * t3 - 3 * t2 + 1) * p0 +
+    (t3 - 2 * t2 + t) * v0 * span +
+    (-2 * t3 + 3 * t2) * p1 +
+    (t3 - t2) * v1 * span
+  );
+}
+
 interface Dot {
   root: Container;
   body: Graphics;
@@ -105,19 +130,20 @@ export class EntityLayer {
   }
 
   /**
-   * Draw the world at `alpha` between two snapshots. Velocity is used as a
-   * fallback when a player is new to the second snapshot, so a substitute
-   * appearing mid-frame does not streak in from the origin.
+   * Draw the world at `alpha` between two snapshots, `span` match-seconds
+   * apart. A player who is new to the second snapshot is drawn from his own
+   * sample, so a substitute appearing mid-frame does not streak in from the
+   * origin.
    */
-  render(prev: RenderSnapshot, next: RenderSnapshot, alpha: number): void {
+  render(prev: RenderSnapshot, next: RenderSnapshot, alpha: number, span: number): void {
     const byId = new Map(prev.players.map((p) => [p.id, p]));
     for (const p of next.players) {
       const dot = this.dotFor(p);
       dot.root.visible = p.onPitch;
       if (!p.onPitch) continue;
       const a = byId.get(p.id) ?? p;
-      dot.root.x = lerp(a.pos.x, p.pos.x, alpha) * this.ppm;
-      dot.root.y = lerp(a.pos.y, p.pos.y, alpha) * this.ppm;
+      dot.root.x = hermite(a.pos.x, a.vel.x, p.pos.x, p.vel.x, alpha, span) * this.ppm;
+      dot.root.y = hermite(a.pos.y, a.vel.y, p.pos.y, p.vel.y, alpha, span) * this.ppm;
       dot.name.visible = this.showNames;
       // A tiring player's dot dims a little: fatigue you can see at a glance.
       dot.root.alpha = 0.65 + 0.35 * Math.max(p.stamina, 0);
@@ -125,9 +151,9 @@ export class EntityLayer {
 
     const b0 = prev.ball;
     const b1 = next.ball;
-    const bx = lerp(b0.x, b1.x, alpha) * this.ppm;
-    const by = lerp(b0.y, b1.y, alpha) * this.ppm;
-    const bz = Math.max(0, lerp(b0.z, b1.z, alpha));
+    const bx = hermite(b0.x, b0.vx, b1.x, b1.vx, alpha, span) * this.ppm;
+    const by = hermite(b0.y, b0.vy, b1.y, b1.vy, alpha, span) * this.ppm;
+    const bz = Math.max(0, hermite(b0.z, b0.vz, b1.z, b1.vz, alpha, span));
 
     // The shadow is the ball's ground truth; the sprite lifts away from it.
     this.ballShadow.x = bx;

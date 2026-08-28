@@ -1,22 +1,38 @@
 /* ============================================================================
  * MATCH VIEW — PixiJS application, snapshot buffer, interpolated draw loop.
  *
- * The renderer holds exactly two snapshots: the last one it drew from and the
- * newest one that arrived. Every frame it computes alpha from how far wall
- * time has advanced between their match times and draws the world in between.
- * If snapshots stop arriving (paused, or a hitch), alpha saturates at 1 and
- * the picture simply holds — it never extrapolates into a lie.
+ * WHY THIS IS A QUEUE AND NOT TWO SNAPSHOTS
+ *
+ * The renderer used to hold the last snapshot and the newest one, and work out
+ * how fast to advance the picture by measuring how far apart in match time
+ * they were. That measurement was the jank. A worker's setTimeout fires
+ * anywhere between 33 and 60 ms, so the gap between snapshots was never the
+ * same twice; the drawn clock was therefore always slightly too fast or too
+ * slow, and since it was clamped to the newest snapshot it spent the whole
+ * match alternately catching up and freezing against that clamp. Every hitch
+ * you could see was the picture hitting the end of the data and waiting.
+ *
+ * So: the worker now advances the simulation by a FIXED slice of match time
+ * per snapshot and says outright what the time scale is. The renderer keeps a
+ * short queue of snapshots and plays it back on its own clock, deliberately
+ * running a couple of frames BEHIND the newest one it holds. That lag is the
+ * whole trick — it is the slack that absorbs a late frame, so a hiccup in the
+ * worker is spent out of the buffer instead of being shown on the pitch.
+ *
+ * When the buffer drifts away from its target depth the clock is nudged by a
+ * few percent rather than jumped, which is invisible to the eye. When the
+ * buffer runs dry the picture holds rather than extrapolating into a lie.
  * ========================================================================== */
 
 import { Application, Container } from "pixi.js";
-import { SNAPSHOT_HZ } from "../worker/protocol";
+import { SNAPSHOT_DT } from "../worker/protocol";
 import { PITCH_LENGTH } from "../core/constants";
-import { clamp } from "../core/math";
 import type { RenderSnapshot } from "../core/snapshot";
 import type { TeamKit } from "../core/types";
 import { Camera, type CameraMode, type Orientation } from "./camera";
 import { EntityLayer } from "./entity-layer";
 import { buildPitch } from "./pitch-layer";
+import { SnapshotBuffer } from "./snapshot-buffer";
 
 /** Pixels per metre at scale 1. The camera scales the whole world from here,
  *  so this only sets the resolution the vector pitch is baked at. */
@@ -27,11 +43,9 @@ export class MatchView {
   readonly camera = new Camera(PPM);
   private readonly world = new Container();
   private entities!: EntityLayer;
-
-  private prev: RenderSnapshot | null = null;
-  private next: RenderSnapshot | null = null;
-  /** Match seconds drawn so far; chases next.matchSecond. */
-  private drawnSecond = 0;
+  /** The playback clock and the frames waiting on it. All the timing lives
+   *  in here, and it is tested on its own in tests/render.test.ts. */
+  private readonly buffer = new SnapshotBuffer<RenderSnapshot>(SNAPSHOT_DT);
 
   async init(
     canvasParent: HTMLElement,
@@ -69,42 +83,18 @@ export class MatchView {
   }
 
   /** Feed a snapshot from the worker. */
-  push(snapshot: RenderSnapshot): void {
-    if (!this.next) {
-      this.prev = snapshot;
-      this.next = snapshot;
-      this.drawnSecond = snapshot.matchSecond;
-      return;
-    }
-    // A seek jumps the clock; drop the interpolation rather than smear across.
-    if (Math.abs(snapshot.matchSecond - this.next.matchSecond) > 5) {
-      this.prev = snapshot;
-      this.drawnSecond = snapshot.matchSecond;
-    } else {
-      this.prev = this.next;
-    }
-    this.next = snapshot;
+  push(snapshot: RenderSnapshot, cut = false, timeScale?: number): void {
+    this.buffer.push(snapshot, cut, timeScale);
   }
 
   private draw(dtSeconds: number): void {
-    const prev = this.prev;
-    const next = this.next;
-    if (!prev || !next) return;
+    this.buffer.advance(dtSeconds);
+    const frame = this.buffer.pair();
+    if (!frame) return;
 
-    const span = next.matchSecond - prev.matchSecond;
-    if (span > 1e-6) {
-      // Advance the drawn clock at the rate the snapshots themselves imply,
-      // so the picture runs at whatever time scale the sim is running at.
-      this.drawnSecond += dtSeconds * this.impliedScale(span);
-      this.drawnSecond = clamp(this.drawnSecond, prev.matchSecond, next.matchSecond);
-    } else {
-      this.drawnSecond = next.matchSecond;
-    }
+    this.entities.render(frame.prev, frame.next, frame.alpha, frame.span);
 
-    const alpha = span > 1e-6 ? clamp((this.drawnSecond - prev.matchSecond) / span, 0, 1) : 1;
-    this.entities.render(prev, next, alpha);
-
-    const b = next.ball;
+    const b = frame.next.ball;
     this.camera.apply(this.world, this.app.screen.width, this.app.screen.height, {
       x: b.x,
       y: b.y,
@@ -113,29 +103,21 @@ export class MatchView {
     });
   }
 
-  /** Snapshots arrive at a fixed wall rate, so the match seconds between two
-   *  of them is the current time scale. Smoothed so a jittery frame does not
-   *  make the picture surge. */
-  private impliedScale(span: number): number {
-    const raw = span * SNAPSHOT_HZ;
-    this.scaleEstimate = this.scaleEstimate * 0.8 + raw * 0.2;
-    return this.scaleEstimate;
-  }
-  private scaleEstimate = 1;
-
   /** Forget the match being drawn. Called when the fixture changes: the next
    *  snapshot to arrive belongs to a different match and must not be
    *  interpolated against the last one from the old one. */
   reset(): void {
-    this.prev = null;
-    this.next = null;
-    this.drawnSecond = 0;
-    this.scaleEstimate = 1;
+    this.buffer.reset();
+  }
+
+  /** The match second actually on screen — what the clock should read. */
+  drawnSecond(): number {
+    return this.buffer.second;
   }
 
   /** Latest snapshot, for the UI panels (which read the event stream from it). */
   latest(): RenderSnapshot | null {
-    return this.next;
+    return this.buffer.newest();
   }
 
   static get pitchLengthMetres(): number {
