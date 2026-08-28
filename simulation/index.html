@@ -49,6 +49,19 @@
       button.on { border-color: var(--accent); color: var(--accent); }
       #kickoff { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 
+      body { grid-template-rows: auto auto 1fr; }
+      .picker {
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        padding: 7px 14px; background: #12171e; border-bottom: 1px solid var(--line);
+        font-size: 12.5px; color: var(--muted);
+      }
+      .picker label { display: flex; align-items: center; gap: 5px; }
+      .picker select, .picker input {
+        background: #21262d; color: var(--text); border: 1px solid var(--line);
+        border-radius: 5px; padding: 4px 6px; font: inherit; max-width: 320px;
+      }
+      .picker select.narrow { max-width: 130px; }
+      .picker .vs { color: var(--text); font-weight: 700; padding: 0 4px; }
       main { display: grid; grid-template-columns: 1fr 380px; min-height: 0; }
       .left { min-height: 0; overflow-y: auto; padding: 14px; }
       aside {
@@ -115,6 +128,7 @@
       .ratings li { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid #21262d; }
       h3 { font-size: 13px; margin: 14px 0 4px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
     </style>
+    <script type="module" crossorigin src="./assets/index-CZ3AJvZb.js"></script>
   </head>
   <body>
     <header>
@@ -130,6 +144,23 @@
       <button id="mode-comprehensive">Comprehensive</button>
       <button id="mode-full">Full</button>
     </header>
+    <div class="picker">
+      <label>Home
+        <select id="home-team"></select>
+      </label>
+      <select id="home-formation" class="narrow"></select>
+      <select id="home-style" class="narrow"></select>
+      <span class="vs">v</span>
+      <label>Away
+        <select id="away-team"></select>
+      </label>
+      <select id="away-formation" class="narrow"></select>
+      <select id="away-style" class="narrow"></select>
+      <label class="seed-label">Seed
+        <input id="seed" type="text" size="10" />
+      </label>
+      <button id="shuffle" title="A new seed is a new match">New seed</button>
+    </div>
     <main>
       <div class="left">
         <div id="stage-wrap" class="hidden">
@@ -156,6 +187,5 @@
         <div id="stats"></div>
       </aside>
     </main>
-    <script type="module" src="/src/ui/main.ts"></script>
   </body>
 </html>

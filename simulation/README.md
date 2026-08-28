@@ -10,10 +10,12 @@ here, and lands in `/Manager` once approved; nothing in `src/core` depends on
 anything outside this folder, which is what makes that move a copy rather than
 a rewrite.
 
-**Status: playable match day.** Pre-match comparison → a text match of
-highlights → click any line to watch that passage in 2D. The Manager bridge
-(formations, playstyles, squads) is in. See [Milestones](#milestones) for what
-is real and what is still a deliberate placeholder.
+**Status: playable match day, served as a static folder.** Pick two real teams
+→ pre-match comparison → a text match of highlights → click any line to watch
+that passage in 2D. Fouls, cards, penalties, aerial duels, headers, crossing
+and set-piece routines are in; so is the move playbook and the tactical intent
+layer. See [Milestones](#milestones) for what is real and
+[docs/AUDIT.md](docs/AUDIT.md) for what is known to be wrong.
 
 ---
 
@@ -22,11 +24,34 @@ is real and what is still a deliberate placeholder.
 ```bash
 cd simulation
 npm install
-npm run dev        # http://localhost:5173 — live 2D match view
-npm test           # 34 tests: determinism, physics, geometry, layering
-npm run typecheck  # tsc --strict, no emit
-npm run build      # production bundle
+npm run dev        # http://localhost:5173 — live match day
+npm test           # the suite: determinism, physics, laws, the bridge
+npm run batch      # headless balance run against the target table
+npm run record     # mine new moves for the playbook from simulated matches
+npm run deploy     # build, and copy the output up into simulation/
 ```
+
+### It is served as a static folder
+
+`1000goals.co.uk` has no build step: what is in the repository is what the
+browser gets. `npm run deploy` builds the app and copies `index.html` and
+`assets/` into `simulation/` itself, so **https://1000goals.co.uk/simulation/**
+loads the match engine directly — no server, no redirect, no bundler at
+runtime. Those built files are committed on purpose; the sources live in
+`src/`, `app/` and `tests/`.
+
+### Picking teams
+
+The team list is generated from the site's own database (`src/data.js` at the
+repository root) by `tools/extract-teams.mjs`: the twenty Premier League squads
+of 2024 plus sixteen sides worth watching — the Invincibles, the Treble side,
+Leicester 5000-1, the Entertainers. Every squad carries the club's tactical
+style and the Manager's own attribute derivations, so picking *Arsenal 2003*
+gives you Wenger's side playing Possession football, not a generic team with
+their badge on.
+
+Pick the two teams, the shapes and the styles from the strip at the top of the
+screen; the URL carries the fixture, so a match is a link.
 
 ---
 
@@ -163,11 +188,55 @@ engine lands in that codebase. In short:
 | M2 | Movement / shape | **done for the block** — per-phase anchors, a compact defensive band with a line of engagement, marking with hand-overs, onside support runs. Role deltas and set-piece shapes still to come |
 | M3 | Possession loop | **done, first cut** — utility scoring over shoot / pass / carry / clear in one currency (goal probability), vision gating options, decisions gating noise, xT-style zone value |
 | M4 | GK + shots + xG | **done** — logistic xG, PSxG from placement and pace, save model with held/parried/beaten, keeper claims, rush-outs and rebounds |
-| M5 | Laws / set pieces | **partial** — offside judged at kick-commit, throws, corners, goal kicks, free kicks for offside. Fouls, cards, walls, penalties and scripted corner routines still to come |
-| M6 | Director + UI editing | **partial** — speed, cameras, highlight modes. Live tactics editing still to come |
+| M5 | Laws / set pieces | **done** — offside at kick-commit; fouls from the challenge with an advantage rule; cards with a persistence model and sendings-off; penalties from box fouls; corner routines (near/far/edge/short) with runners; free kicks over a real wall; throws and goal kicks |
+| M6 | Director + UI editing | **partial** — speed, cameras, highlight modes, team/shape/style pickers. The intent layer that makes live tactics possible is in (`core/intent.ts`); the in-match editing panel is not |
 | M7 | Stats / commentary | **done, first cut** — stats and 6–10 player ratings derived from the event stream, templated commentary with anti-repeat |
 | M8 | Highlights / replay | **done** — keyframe ring, exact seek, highlight windows with merge |
-| M9 | Balance CI + polish | **partial** — headless batch runner with the target table; goals per match still runs high (see Known gaps) |
+| M9 | Balance CI + polish | **partial** — the batch runner now measures fouls, cards, penalties, corners, offsides, aerial duels, headed goals and set-piece xG alongside the shooting numbers |
+
+### Aerial duels, headers and crossing
+
+A ball genuinely put in the air is contested, once, on the way down, by whoever
+can reach it: heading, jumpReach, strength, bravery and positioning decide who
+wins, and a keeper coming for it has an edge. The winner clears it in his own
+third, attacks the goal in the final third, and brings it down or nods it on
+everywhere else. Crossing decides whether a wide player puts one in at all and
+how far the delivery scatters.
+
+### The playbook: a pool of recorded moves
+
+A utility scorer picks a good option every 125 ms. That makes football happen;
+it does not make it look like football, because real attacks are *rehearsed
+shapes* — the overlap, the cutback, the third-man run, the switch. So the
+engine carries a pool of them (`core/playbook.ts`), and a side that finds
+itself in a matching position runs one: every player with a part in it follows
+the script until the ball is lost or a step times out, and the utility brain
+has it back.
+
+Two sources fill the pool, in one format:
+
+- `data/playbook.json` — the patterns every side has.
+- `data/playbook.recorded.json` — **moves mined from simulated matches**.
+  `npm run record` runs matches, watches the event stream for possessions that
+  produced a real chance, and writes each one out as zones and roles. The
+  engine's own good possessions become a vocabulary it can draw on again.
+
+Recorded moves are validated at load: one that names a role nobody plays, or
+has a player passing to himself, is dropped rather than run.
+
+### Tactics as data, not branches
+
+`core/intent.ts` turns "press higher" from a code change into a number. Every
+choice a player makes is weighted by the product of three things: what his
+**role** is for, what his **side has been told**, and what the **game state**
+demands. At the middle of every slider all three are exactly 1, so a side that
+has chosen nothing plays as the engine's own judgement suggests — a property
+the tests pin, because a refactor that quietly rebalances the match is not a
+refactor.
+
+Roles are a table: Poacher, Pressing Forward, Ball-Playing Defender, Anchor
+Man, Wing-Back, Inverted Full-Back, Trequartista and the rest. Adding one is a
+data edit.
 
 The renderer is matched to Football Manager's 2D view: wide mowing bands on a
 bright surface, thin near-white markings, small kit-coloured dots with the
@@ -182,7 +251,7 @@ stays on the grass while the ball itself lifts and grows.
 npm test
 ```
 
-81 tests. The ones that matter most:
+144 tests. The ones that matter most:
 
 - `determinism.test.ts` — 25 runs of one seed produce one SHA-256 of the event
   log; 60 × 1 s is byte-identical to 1 × 60 s; a restored keyframe resumes the
@@ -195,9 +264,22 @@ npm test
 - `shot.test.ts` — the xG curve hits a real shot map's shape (0.35+ from six
   yards, under 0.05 beyond 18 m, 0.76 for a penalty), conversion tracks the
   model that produced it, and a better keeper saves more.
-- `manager.test.ts` — the bridge: overall stays the anchor, the eight
-  attributes move the individual, every one of the 32 engine attributes is
-  covered, the six Manager formations load under the Manager's own keys.
+- `manager.test.ts` / `teams.test.ts` — the bridge and the team list: overall
+  stays the anchor, the eight attributes move the individual, every one of the
+  32 engine attributes is covered, every squad has a goalkeeper, and two sides
+  never take the field in the same colour.
+- `discipline.test.ts` — fouls, bookings, sendings-off (a sent-off player
+  really does leave the pitch), the advantage rule, and a penalty priced at the
+  historical rate.
+- `aerial.test.ts` — the contest happens, is contested rather than constant,
+  produces headed goals as a minority of goals, and set pieces do not become
+  the main source of them.
+- `intent.test.ts` — every collective weight is exactly 1 at the middle of
+  every slider, and a pressing side really does defend higher up the pitch than
+  a deep one.
+- `playbook.test.ts` — every move in the pool is runnable: its steps name roles
+  it casts, nobody passes to himself, and a match with the pool loaded is still
+  deterministic.
 - `ball.test.ts` / `kick.test.ts` — a 10 m/s roll stops at 10 m under 5 m/s²
   friction, bounces strictly decay, the solver lands within 1 m from 8 m to
   45 m at every loft, and an unreachable target is under-hit at the pace
@@ -233,21 +315,35 @@ currently stands.
 
 ## Known gaps
 
-- **Goals per match runs high.** The last 16-match batch: **6.1 goals/match**
-  against a 2.5–3.0 target, 16.3 shots per team against 9–14, 0.13–0.15 xG per
-  shot against 0.08–0.13, possession 55/45, home/draw/away 63/25/13.
-  The diagnosis is not conversion — goals track xG closely, and the shot model
-  itself is calibrated against a real shot map (`tests/shot.test.ts`) — it is
-  **chance volume**: the sim creates about 2.5 xG per team where a real match
-  creates 1.3. Attacks reach the final third too easily. The next lever is
-  fouls: a real defence stops perhaps twenty attacks a game by committing one,
-  and this engine has no fouls yet, which is also why it has no cards. Until
-  that lands, treat scorelines as high.
-- **Set pieces are restarts, not routines.** Corners are a delivery into the
-  box rather than a scripted contested play; free kicks have no wall.
-- **No substitutions or injuries yet**, so fatigue only ever costs a side
-  speed, never a change of personnel.
-- **Performance**: a full 90 minutes simulates in ~10 s single-threaded. Fine
-  for watching one match; the 1,000-match CI gate in M9 needs roughly another
-  order of magnitude, and the hot paths (steering, the grid) are allocation
-  bound rather than algorithmically wrong.
+Run `npm run batch` for the current numbers; the ones below are from a
+16-match run and are what the engine is calibrated to at the time of writing.
+
+**In range**: goals per match, shots per team, xG per team, xG per shot, fouls,
+penalties, aerial duels, possession.
+
+**Still out**:
+
+- **Shots on target ~43%** against a real 30–38%. The engine's shots are still
+  taken from slightly better positions than a real side manages.
+- **Corners ~9 per team** against a real 4–7. Too many balls end up behind the
+  goal line: keeper parries and blocked shots both go there more often than
+  they should.
+- **Offsides under 1 a match** against a real 3–6. Attackers time their runs
+  too well — the flag only goes up when a passer genuinely fails to see the
+  line, and the brains rarely do.
+- **Home advantage is modelled but weak.** The home/draw/away split still reads
+  closer to even than the real 46/26/28.
+- **Red cards ~0.4 a match** against ~0.15. The engine produces more clear
+  goal-scoring opportunities than a real match, so more of them get stopped
+  illegally.
+- **Substitutions, injuries and weather effects** are not implemented.
+
+- **Performance**: a full ninety minutes simulates in ~11 s single-threaded.
+  Fine for watching one match; the 1,000-match CI gate in M9 needs roughly
+  another order of magnitude, and the remaining cost is allocation-bound rather
+  than algorithmic.
+
+See [docs/AUDIT.md](docs/AUDIT.md) for the full sweep, including the sixteen
+bugs found and fixed on the way to these numbers — among them a stamina drain
+fifty times too strong, a defensive line that stood in front of the ball inside
+its own box, and four squads that shipped without a goalkeeper.

@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "batch": "vitest run --config vitest.batch.config.ts",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "deploy": "npm run build && node tools/deploy.mjs",
+    "record": "vite-node tools/record-moves.ts"
   },
   "dependencies": {
     "pixi.js": "^8.6.6"
