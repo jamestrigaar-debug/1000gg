@@ -1,0 +1,1676 @@
+{
+ "moves": [
+  {
+   "id": "rec-0",
+   "name": "Recorded: 2 passes, 70% chance",
+   "source": "recorded",
+   "producedXG": 0.7,
+   "weight": 2.23,
+   "trigger": {
+    "minProgress": 0.05,
+    "maxProgress": 0.29,
+    "flank": "right",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "wideSameSide"
+    },
+    {
+     "role": "p3",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.47,
+      0.02
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.96,
+      0.46
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p3"
+    }
+   ]
+  },
+  {
+   "id": "rec-1",
+   "name": "Recorded: 2 passes, 50% chance",
+   "source": "recorded",
+   "producedXG": 0.5,
+   "weight": 3.28,
+   "trigger": {
+    "minProgress": 0.1,
+    "maxProgress": 0.34,
+    "flank": "left",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "wideSameSide"
+    },
+    {
+     "role": "p3",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.46,
+      0.95
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      1,
+      0.48
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p3"
+    }
+   ]
+  },
+  {
+   "id": "rec-2",
+   "name": "Recorded: 2 passes, 47% chance",
+   "source": "recorded",
+   "producedXG": 0.47,
+   "weight": 1.53,
+   "trigger": {
+    "minProgress": 0.59,
+    "maxProgress": 0.83,
+    "flank": "central",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "carry",
+     "actor": "carrier",
+     "zone": [
+      0.63,
+      0.5
+     ],
+     "seconds": 2.5
+    },
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.98,
+      0.5
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p2"
+    }
+   ]
+  },
+  {
+   "id": "rec-3",
+   "name": "Recorded: 3 passes, 46% chance",
+   "source": "recorded",
+   "producedXG": 0.46,
+   "weight": 1.52,
+   "trigger": {
+    "minProgress": 0.44,
+    "maxProgress": 0.68,
+    "flank": "central",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.69,
+      0.5
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "carrier",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "carrier",
+     "zone": [
+      0.54,
+      0.54
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.97,
+      0.49
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p2"
+    }
+   ]
+  },
+  {
+   "id": "rec-4",
+   "name": "Recorded: 2 passes, 44% chance",
+   "source": "recorded",
+   "producedXG": 0.44,
+   "weight": 7.65,
+   "trigger": {
+    "minProgress": 0,
+    "maxProgress": 0.17,
+    "flank": "central",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "nearestAhead"
+    },
+    {
+     "role": "p3",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.28,
+      0.46
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.97,
+      0.52
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p3"
+    }
+   ]
+  },
+  {
+   "id": "rec-5",
+   "name": "Recorded: 3 passes, 43% chance",
+   "source": "recorded",
+   "producedXG": 0.43,
+   "weight": 1.46,
+   "trigger": {
+    "minProgress": 0.19,
+    "maxProgress": 0.43,
+    "flank": "central",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "nearestAhead"
+    },
+    {
+     "role": "p3",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.79,
+      0.64
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.67,
+      0.48
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p3",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.97,
+      0.51
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p2"
+    }
+   ]
+  },
+  {
+   "id": "rec-6",
+   "name": "Recorded: 4 passes, 43% chance",
+   "source": "recorded",
+   "producedXG": 0.43,
+   "weight": 1.46,
+   "trigger": {
+    "minProgress": 0.39,
+    "maxProgress": 0.63,
+    "flank": "central",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "supportBehind"
+    },
+    {
+     "role": "p3",
+     "from": "wideFarSide"
+    },
+    {
+     "role": "p4",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "carry",
+     "actor": "carrier",
+     "zone": [
+      0.43,
+      0.62
+     ],
+     "seconds": 2.5
+    },
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.41,
+      0.68
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.56,
+      0.94
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p3",
+     "to": "p4",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p4",
+     "zone": [
+      0.97,
+      0.49
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p4"
+    }
+   ]
+  },
+  {
+   "id": "rec-7",
+   "name": "Recorded: 2 passes, 39% chance",
+   "source": "recorded",
+   "producedXG": 0.39,
+   "weight": 1.69,
+   "trigger": {
+    "minProgress": 0.32,
+    "maxProgress": 0.56,
+    "flank": "central",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "supportBehind"
+    },
+    {
+     "role": "p3",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.45,
+      0.63
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.98,
+      0.46
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p3"
+    }
+   ]
+  },
+  {
+   "id": "rec-8",
+   "name": "Recorded: 2 passes, 35% chance",
+   "source": "recorded",
+   "producedXG": 0.35,
+   "weight": 3.68,
+   "trigger": {
+    "minProgress": 0.28,
+    "maxProgress": 0.52,
+    "flank": "central",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "nearestAhead"
+    },
+    {
+     "role": "p3",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.57,
+      0.57
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.96,
+      0.54
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p3"
+    }
+   ]
+  },
+  {
+   "id": "rec-9",
+   "name": "Recorded: 2 passes, 26% chance",
+   "source": "recorded",
+   "producedXG": 0.26,
+   "weight": 2.29,
+   "trigger": {
+    "minProgress": 0,
+    "maxProgress": 0.24,
+    "flank": "left",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "wideSameSide"
+    },
+    {
+     "role": "p3",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.51,
+      0.95
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.96,
+      0.47
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p3"
+    }
+   ]
+  },
+  {
+   "id": "rec-10",
+   "name": "Recorded: 3 passes, 21% chance",
+   "source": "recorded",
+   "producedXG": 0.21,
+   "weight": 1.5,
+   "trigger": {
+    "minProgress": 0.03,
+    "maxProgress": 0.27,
+    "flank": "right",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "wideSameSide"
+    },
+    {
+     "role": "p3",
+     "from": "wideSameSide"
+    },
+    {
+     "role": "p4",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.25,
+      0.05
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.56,
+      0.08
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p3",
+     "to": "p4",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p4",
+     "zone": [
+      0.98,
+      0.55
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p4"
+    }
+   ]
+  },
+  {
+   "id": "rec-11",
+   "name": "Recorded: 5 passes, 20% chance",
+   "source": "recorded",
+   "producedXG": 0.2,
+   "weight": 0.99,
+   "trigger": {
+    "minProgress": 0.56,
+    "maxProgress": 0.8,
+    "flank": "central",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "nearestAhead"
+    },
+    {
+     "role": "p3",
+     "from": "wideFarSide"
+    },
+    {
+     "role": "p4",
+     "from": "wideFarSide"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.78,
+      0.52
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "carry",
+     "actor": "p2",
+     "zone": [
+      0.66,
+      0.48
+     ],
+     "seconds": 2.5
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.26,
+      0.13
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p3",
+     "to": "p4",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p4",
+     "zone": [
+      0.52,
+      0.04
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p4",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.99,
+      0.46
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p2"
+    }
+   ]
+  },
+  {
+   "id": "rec-12",
+   "name": "Recorded: 3 passes, 19% chance",
+   "source": "recorded",
+   "producedXG": 0.19,
+   "weight": 1.42,
+   "trigger": {
+    "minProgress": 0,
+    "maxProgress": 0.18,
+    "flank": "left",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "wideSameSide"
+    },
+    {
+     "role": "p3",
+     "from": "wideSameSide"
+    },
+    {
+     "role": "p4",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.23,
+      0.97
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.55,
+      0.95
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p3",
+     "to": "p4",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p4",
+     "zone": [
+      0.99,
+      0.54
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p4"
+    }
+   ]
+  },
+  {
+   "id": "rec-13",
+   "name": "Recorded: 3 passes, 19% chance",
+   "source": "recorded",
+   "producedXG": 0.19,
+   "weight": 0.98,
+   "trigger": {
+    "minProgress": 0.05,
+    "maxProgress": 0.29,
+    "flank": "right",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "wideSameSide"
+    },
+    {
+     "role": "p3",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.53,
+      0.09
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "carry",
+     "actor": "p2",
+     "zone": [
+      0.89,
+      0.14
+     ],
+     "seconds": 2.5
+    },
+    {
+     "kind": "cross",
+     "actor": "p2",
+     "to": "p3",
+     "target": "far"
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.96,
+      0.46
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p3"
+    }
+   ]
+  },
+  {
+   "id": "rec-14",
+   "name": "Recorded: 2 passes, 18% chance",
+   "source": "recorded",
+   "producedXG": 0.18,
+   "weight": 0.96,
+   "trigger": {
+    "minProgress": 0.65,
+    "maxProgress": 0.89,
+    "flank": "right",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "carry",
+     "actor": "carrier",
+     "zone": [
+      0.71,
+      0.49
+     ],
+     "seconds": 2.5
+    },
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.94,
+      0.5
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p2"
+    }
+   ]
+  },
+  {
+   "id": "rec-15",
+   "name": "Recorded: 3 passes, 13% chance",
+   "source": "recorded",
+   "producedXG": 0.13,
+   "weight": 0.86,
+   "trigger": {
+    "minProgress": 0.56,
+    "maxProgress": 0.8,
+    "flank": "central",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "supportBehind"
+    },
+    {
+     "role": "p3",
+     "from": "supportBehind"
+    },
+    {
+     "role": "p4",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.53,
+      0.56
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.6,
+      0.72
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p3",
+     "to": "p4",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p4",
+     "zone": [
+      0.97,
+      0.57
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p4"
+    }
+   ]
+  },
+  {
+   "id": "rec-16",
+   "name": "Recorded: 4 passes, 12% chance",
+   "source": "recorded",
+   "producedXG": 0.12,
+   "weight": 0.85,
+   "trigger": {
+    "minProgress": 0,
+    "maxProgress": 0.17,
+    "flank": "left",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "wideSameSide"
+    },
+    {
+     "role": "p3",
+     "from": "wideSameSide"
+    },
+    {
+     "role": "p4",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "carry",
+     "actor": "carrier",
+     "zone": [
+      0.24,
+      0.98
+     ],
+     "seconds": 2.5
+    },
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.27,
+      0.99
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.44,
+      0.98
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p3",
+     "to": "p4",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p4",
+     "zone": [
+      0.98,
+      0.57
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p4"
+    }
+   ]
+  },
+  {
+   "id": "rec-17",
+   "name": "Recorded: 3 passes, 12% chance",
+   "source": "recorded",
+   "producedXG": 0.12,
+   "weight": 0.83,
+   "trigger": {
+    "minProgress": 0.29,
+    "maxProgress": 0.53,
+    "flank": "right",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "nearestAhead"
+    },
+    {
+     "role": "p3",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.5,
+      0.42
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "carry",
+     "actor": "p2",
+     "zone": [
+      0.57,
+      0.44
+     ],
+     "seconds": 2.5
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.92,
+      0.56
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p3"
+    }
+   ]
+  },
+  {
+   "id": "rec-18",
+   "name": "Recorded: 2 passes, 12% chance",
+   "source": "recorded",
+   "producedXG": 0.12,
+   "weight": 0.84,
+   "trigger": {
+    "minProgress": 0.25,
+    "maxProgress": 0.49,
+    "flank": "right",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "wideSameSide"
+    },
+    {
+     "role": "p3",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.58,
+      0.01
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.99,
+      0.57
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p3"
+    }
+   ]
+  },
+  {
+   "id": "rec-19",
+   "name": "Recorded: 2 passes, 10% chance",
+   "source": "recorded",
+   "producedXG": 0.1,
+   "weight": 0.81,
+   "trigger": {
+    "minProgress": 0.5,
+    "maxProgress": 0.74,
+    "flank": "central",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "nearestAhead"
+    },
+    {
+     "role": "p3",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.67,
+      0.29
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.93,
+      0.57
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p3"
+    }
+   ]
+  },
+  {
+   "id": "rec-20",
+   "name": "Recorded: 2 passes, 10% chance",
+   "source": "recorded",
+   "producedXG": 0.1,
+   "weight": 0.81,
+   "trigger": {
+    "minProgress": 0,
+    "maxProgress": 0.19,
+    "flank": "right",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "carry",
+     "actor": "carrier",
+     "zone": [
+      0.23,
+      0.04
+     ],
+     "seconds": 2.5
+    },
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.9,
+      0.45
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p2"
+    }
+   ]
+  },
+  {
+   "id": "rec-21",
+   "name": "Recorded: 4 passes, 9% chance",
+   "source": "recorded",
+   "producedXG": 0.09,
+   "weight": 0.78,
+   "trigger": {
+    "minProgress": 0,
+    "maxProgress": 0.15,
+    "flank": "left",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "wideSameSide"
+    },
+    {
+     "role": "p3",
+     "from": "wideSameSide"
+    },
+    {
+     "role": "p4",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.17,
+      0.95
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.28,
+      0.93
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p3",
+     "to": "carrier",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "carrier",
+     "zone": [
+      0.2,
+      0.45
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p4",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p4",
+     "zone": [
+      0.91,
+      0.51
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p4"
+    }
+   ]
+  },
+  {
+   "id": "rec-22",
+   "name": "Recorded: 3 passes, 9% chance",
+   "source": "recorded",
+   "producedXG": 0.09,
+   "weight": 0.78,
+   "trigger": {
+    "minProgress": 0,
+    "maxProgress": 0.13,
+    "flank": "central",
+    "maxPressure": 0.6
+   },
+   "cast": [
+    {
+     "role": "carrier",
+     "from": "carrier"
+    },
+    {
+     "role": "p2",
+     "from": "wideFarSide"
+    },
+    {
+     "role": "p3",
+     "from": "nearestAhead"
+    },
+    {
+     "role": "p4",
+     "from": "nearestAhead"
+    }
+   ],
+   "steps": [
+    {
+     "kind": "pass",
+     "actor": "carrier",
+     "to": "p2",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p2",
+     "zone": [
+      0.12,
+      0.78
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p2",
+     "to": "p3",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p3",
+     "zone": [
+      0.79,
+      0.62
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "pass",
+     "actor": "p3",
+     "to": "p4",
+     "loft": 0
+    },
+    {
+     "kind": "run",
+     "actor": "p4",
+     "zone": [
+      0.88,
+      0.52
+     ],
+     "seconds": 3
+    },
+    {
+     "kind": "shoot",
+     "actor": "p4"
+    }
+   ]
+  }
+ ]
+}

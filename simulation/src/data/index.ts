@@ -16,6 +16,7 @@
 
 import { clamp } from "../core/math";
 import { Rng } from "../core/rng";
+import type { Playbook, PlaybookMove } from "../core/playbook";
 import type {
   Attributes,
   Formation,
@@ -28,6 +29,8 @@ import type {
   TeamInstructions,
 } from "../core/types";
 import formationsJson from "./formations.json";
+import playbookJson from "./playbook.json";
+import recordedJson from "./playbook.recorded.json";
 import squadsJson from "./squads.json";
 
 const PHASES: Phase[] = [
@@ -252,6 +255,37 @@ export function loadTeams(seed = "squads-v1"): TeamDef[] {
       players,
     };
   });
+}
+
+/**
+ * The move pool: the authored patterns plus whatever the recorder has mined
+ * from real simulated matches (tools/record-moves.mjs). One pool, one format —
+ * a recorded move is run exactly like an authored one.
+ */
+export function loadPlaybook(): Playbook {
+  const authored = (playbookJson as Playbook).moves as PlaybookMove[];
+  const recorded = (recordedJson as Playbook).moves as PlaybookMove[];
+  return { moves: [...authored, ...recorded].filter(isRunnable) };
+}
+
+/**
+ * A move that does not make sense is dropped rather than run. The recorder
+ * writes this file automatically from simulated matches, so a bad recording is
+ * a data problem that must never become a match problem: a step naming a role
+ * nobody plays, or a player passing to himself, would either crash the
+ * executor or produce nonsense on the pitch.
+ */
+export function isRunnable(move: PlaybookMove): boolean {
+  const roles = new Set(move.cast.map((c) => c.role));
+  if (roles.size !== move.cast.length) return false;
+  if (move.steps.length < 2) return false;
+  for (const step of move.steps) {
+    if (!roles.has(step.actor)) return false;
+    if ((step.kind === "pass" || step.kind === "cross") && (!roles.has(step.to) || step.to === step.actor)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export const DEFAULT_INSTRUCTIONS: TeamInstructions = {

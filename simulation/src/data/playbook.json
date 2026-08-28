@@ -1,0 +1,158 @@
+{
+  "moves": [
+    {
+      "id": "overlap-cross",
+      "name": "Winger holds, full-back overlaps, cross to the far post",
+      "source": "authored",
+      "weight": 1.2,
+      "trigger": { "minProgress": 0.5, "maxProgress": 0.82, "flank": "left", "maxPressure": 0.55 },
+      "cast": [
+        { "role": "winger", "from": "carrier" },
+        { "role": "fullback", "from": "supportBehind" },
+        { "role": "striker", "from": "centreForward" },
+        { "role": "farSide", "from": "wideFarSide" }
+      ],
+      "steps": [
+        { "kind": "run", "actor": "fullback", "zone": [0.82, 0.9], "seconds": 3.5 },
+        { "kind": "carry", "actor": "winger", "zone": [0.72, 0.86], "seconds": 2.5 },
+        { "kind": "run", "actor": "striker", "zone": [0.93, 0.45], "seconds": 3 },
+        { "kind": "run", "actor": "farSide", "zone": [0.9, 0.2], "seconds": 3 },
+        { "kind": "pass", "actor": "winger", "to": "fullback", "loft": 0 },
+        { "kind": "cross", "actor": "fullback", "to": "striker", "target": "far" }
+      ]
+    },
+    {
+      "id": "overlap-cross-right",
+      "name": "Overlap and cross, right side",
+      "source": "authored",
+      "weight": 1.2,
+      "trigger": { "minProgress": 0.5, "maxProgress": 0.82, "flank": "right", "maxPressure": 0.55 },
+      "cast": [
+        { "role": "winger", "from": "carrier" },
+        { "role": "fullback", "from": "supportBehind" },
+        { "role": "striker", "from": "centreForward" },
+        { "role": "farSide", "from": "wideFarSide" }
+      ],
+      "steps": [
+        { "kind": "run", "actor": "fullback", "zone": [0.82, 0.1], "seconds": 3.5 },
+        { "kind": "carry", "actor": "winger", "zone": [0.72, 0.14], "seconds": 2.5 },
+        { "kind": "run", "actor": "striker", "zone": [0.93, 0.55], "seconds": 3 },
+        { "kind": "run", "actor": "farSide", "zone": [0.9, 0.8], "seconds": 3 },
+        { "kind": "pass", "actor": "winger", "to": "fullback", "loft": 0 },
+        { "kind": "cross", "actor": "fullback", "to": "striker", "target": "far" }
+      ]
+    },
+    {
+      "id": "cutback",
+      "name": "To the byline and cut it back",
+      "source": "authored",
+      "weight": 1,
+      "trigger": { "minProgress": 0.72, "maxProgress": 0.95, "flank": "any", "maxPressure": 0.5 },
+      "cast": [
+        { "role": "wide", "from": "carrier" },
+        { "role": "arriving", "from": "nearestAhead" },
+        { "role": "striker", "from": "centreForward" }
+      ],
+      "steps": [
+        { "kind": "run", "actor": "arriving", "zone": [0.83, 0.5], "seconds": 3 },
+        { "kind": "run", "actor": "striker", "zone": [0.91, 0.42], "seconds": 3 },
+        { "kind": "carry", "actor": "wide", "zone": [0.94, 0.88], "seconds": 2.5 },
+        { "kind": "cross", "actor": "wide", "to": "arriving", "target": "cutback" },
+        { "kind": "shoot", "actor": "arriving" }
+      ]
+    },
+    {
+      "id": "third-man",
+      "name": "Into the striker, laid off, third man runs through",
+      "source": "authored",
+      "weight": 1.1,
+      "trigger": { "minProgress": 0.4, "maxProgress": 0.7, "flank": "central", "maxPressure": 0.6 },
+      "cast": [
+        { "role": "deep", "from": "carrier" },
+        { "role": "target", "from": "centreForward" },
+        { "role": "runner", "from": "nearestAhead" }
+      ],
+      "steps": [
+        { "kind": "run", "actor": "runner", "zone": [0.78, 0.55], "seconds": 3 },
+        { "kind": "pass", "actor": "deep", "to": "target", "loft": 0 },
+        { "kind": "pass", "actor": "target", "to": "runner", "loft": 0 },
+        { "kind": "carry", "actor": "runner", "zone": [0.88, 0.5], "seconds": 2 },
+        { "kind": "shoot", "actor": "runner" }
+      ]
+    },
+    {
+      "id": "switch-play",
+      "name": "Switch it to the free man on the far side",
+      "source": "authored",
+      "weight": 0.9,
+      "trigger": { "minProgress": 0.35, "maxProgress": 0.7, "flank": "any", "maxPressure": 0.7 },
+      "cast": [
+        { "role": "onBall", "from": "carrier" },
+        { "role": "farSide", "from": "wideFarSide" },
+        { "role": "striker", "from": "centreForward" }
+      ],
+      "steps": [
+        { "kind": "run", "actor": "farSide", "zone": [0.7, 0.12], "seconds": 3 },
+        { "kind": "pass", "actor": "onBall", "to": "farSide", "loft": 0.35 },
+        { "kind": "run", "actor": "striker", "zone": [0.88, 0.5], "seconds": 3 },
+        { "kind": "carry", "actor": "farSide", "zone": [0.8, 0.14], "seconds": 2.5 },
+        { "kind": "cross", "actor": "farSide", "to": "striker", "target": "near" }
+      ]
+    },
+    {
+      "id": "ball-over-the-top",
+      "name": "Ball over the top for the striker to run onto",
+      "source": "authored",
+      "weight": 1,
+      "trigger": { "minProgress": 0.25, "maxProgress": 0.55, "flank": "any", "maxPressure": 0.45 },
+      "cast": [
+        { "role": "passer", "from": "carrier" },
+        { "role": "striker", "from": "centreForward" }
+      ],
+      "steps": [
+        { "kind": "run", "actor": "striker", "zone": [0.8, 0.5], "seconds": 2.5 },
+        { "kind": "pass", "actor": "passer", "to": "striker", "loft": 0.45 },
+        { "kind": "carry", "actor": "striker", "zone": [0.9, 0.5], "seconds": 2.5 },
+        { "kind": "shoot", "actor": "striker" }
+      ]
+    },
+    {
+      "id": "counter-break",
+      "name": "Win it and go: straight up the pitch",
+      "source": "authored",
+      "weight": 1.4,
+      "trigger": { "minProgress": 0.15, "maxProgress": 0.45, "flank": "any", "maxPressure": 0.5 },
+      "cast": [
+        { "role": "winner", "from": "carrier" },
+        { "role": "outlet", "from": "nearestAhead" },
+        { "role": "striker", "from": "centreForward" },
+        { "role": "wide", "from": "wideFarSide" }
+      ],
+      "steps": [
+        { "kind": "run", "actor": "striker", "zone": [0.75, 0.5], "seconds": 3 },
+        { "kind": "run", "actor": "wide", "zone": [0.72, 0.15], "seconds": 3 },
+        { "kind": "carry", "actor": "winner", "zone": [0.45, 0.5], "seconds": 2 },
+        { "kind": "pass", "actor": "winner", "to": "striker", "loft": 0 },
+        { "kind": "carry", "actor": "striker", "zone": [0.86, 0.5], "seconds": 2.5 },
+        { "kind": "shoot", "actor": "striker" }
+      ]
+    },
+    {
+      "id": "one-two-edge",
+      "name": "One-two on the edge of the area",
+      "source": "authored",
+      "weight": 1,
+      "trigger": { "minProgress": 0.62, "maxProgress": 0.82, "flank": "central", "maxPressure": 0.6 },
+      "cast": [
+        { "role": "shooter", "from": "carrier" },
+        { "role": "wall", "from": "nearestAhead" }
+      ],
+      "steps": [
+        { "kind": "pass", "actor": "shooter", "to": "wall", "loft": 0 },
+        { "kind": "run", "actor": "shooter", "zone": [0.85, 0.5], "seconds": 2 },
+        { "kind": "pass", "actor": "wall", "to": "shooter", "loft": 0 },
+        { "kind": "shoot", "actor": "shooter" }
+      ]
+    }
+  ]
+}
