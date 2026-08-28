@@ -36,6 +36,48 @@ const parseColour = (value: string | undefined, fallback: number): number => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+/* --- kit clash ----------------------------------------------------------- */
+
+const rgb = (c: number): [number, number, number] => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
+
+/** Perceptual-ish distance between two kit colours, 0 = identical. Green is
+ *  weighted highest because that is what the eye reads first, and because the
+ *  pitch is green. */
+export function colourDistance(a: number, b: number): number {
+  const [r1, g1, b1] = rgb(a);
+  const [r2, g2, b2] = rgb(b);
+  return Math.sqrt(2 * (r1 - r2) ** 2 + 4 * (g1 - g2) ** 2 + 3 * (b1 - b2) ** 2);
+}
+
+/** Change strips, in the order a kit man would reach for them. */
+const CHANGE_KITS: number[] = [0xffffff, 0x101418, 0xf5f200, 0x00a3e0, 0xff7a00];
+
+/**
+ * Two sides in red is unwatchable in a 2D view where a team IS its colour, and
+ * it happens constantly with real squads — Arsenal against Manchester United
+ * put twenty-two near-identical dots on the pitch. So the away side changes,
+ * exactly as it would in the real fixture: its own second colour first, then a
+ * change strip, picking whatever is furthest from the home kit and from the
+ * grass.
+ */
+export function resolveKitClash(home: TeamDef["kit"], away: TeamDef["kit"]): TeamDef["kit"] {
+  const GRASS = 0x5da046;
+  const tooClose = (c: number): boolean =>
+    colourDistance(c, home.primary) < 170 || colourDistance(c, GRASS) < 150;
+  if (!tooClose(away.primary)) return away;
+
+  const options = [away.secondary, ...CHANGE_KITS].filter((c) => !tooClose(c));
+  const chosen = options[0] ?? 0xffffff;
+  // Keep the rim readable against the new shirt.
+  const secondary = colourDistance(chosen, 0x101418) > 120 ? 0x101418 : 0xffffff;
+  return {
+    ...away,
+    primary: chosen,
+    secondary,
+    number: colourDistance(chosen, 0xffffff) > 200 ? 0xffffff : 0x101418,
+  };
+}
+
 /** Which flank a formation slot is on, so a Manager "FB" becomes a DL or DR. */
 export function slotSide(formation: Formation, index: number): "L" | "R" | "C" {
   const slot = formation.slots[index];
@@ -108,10 +150,13 @@ export function toTactics(club: ManagerClub, formations: Record<string, Formatio
  */
 export function buildMatchSetup(fixture: ManagerFixture): MatchSetup {
   const formations = loadFormations();
+  const home = toTeamDef(fixture.home, 0, formations, 1000);
+  const away = toTeamDef(fixture.away, 1, formations, 2000);
+  away.kit = resolveKitClash(home.kit, away.kit);
   return {
     seed: fixture.seed,
-    home: toTeamDef(fixture.home, 0, formations, 1000),
-    away: toTeamDef(fixture.away, 1, formations, 2000),
+    home,
+    away,
     homeTactics: toTactics(fixture.home, formations),
     awayTactics: toTactics(fixture.away, formations),
     weather: {
@@ -120,6 +165,7 @@ export function buildMatchSetup(fixture: ManagerFixture): MatchSetup {
       windX: 0,
       windY: 0,
     },
+    homeAdvantage: fixture.neutralVenue ? 0 : (fixture.home.homeAdvantage ?? 5),
   };
 }
 
