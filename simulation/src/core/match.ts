@@ -50,6 +50,9 @@ import {
   KICK_MAX_PACE,
   KICK_SELF_LOCK,
   KNOCK_AHEAD_SECONDS,
+  LANE_ADJUST,
+  OVERLAP_AHEAD,
+  OVERLAP_CHANCE,
   PHYSICS_HZ,
   PITCH_LENGTH,
   PITCH_WIDTH,
@@ -58,6 +61,8 @@ import {
   OWN_GOAL_SAVE_BONUS,
   POST_TANGENT_JITTER,
   RESTART_DISTANCE,
+  WIDE_ROLE_OFFSET,
+  WIDTH_HOLD,
   RED_DOGSO,
   RED_VIOLENT,
   STOPPAGE_PER_CARD,
@@ -241,12 +246,28 @@ export class MatchSim {
     this.rng = new Rng(setup.seed);
     this.friction = frictionFor(setup.weather.pitchCondition);
     this.homeAdvantage = clamp(setup.homeAdvantage ?? 0, 0, 10);
-    this.keyframes = new KeyframeRing(options.keyframeCapacity ?? 200);
+    /* One keyframe every KEYFRAME_INTERVAL_SECONDS, and the ring has to span
+     * the longest match the engine can produce or seeking loses the start of
+     * it. Two 45s plus the six-minute stoppage ceiling each is 102 minutes,
+     * and runToEnd's own guard allows 130; 280 frames covers 140 minutes with
+     * room to spare, at a few hundred KB. The old 200 covered 100 minutes,
+     * which any match that ran to full stoppage quietly overran. */
+    this.keyframes = new KeyframeRing(options.keyframeCapacity ?? 280);
     this.ball = createBall({ x: CENTRE.x, y: CENTRE.y, z: 0 });
 
     this.spawnTeam(0);
     this.spawnTeam(1);
     this.setupKickOff(0);
+
+    /* A keyframe for the kick-off itself.
+     *
+     * maybeKeyframe() runs at the END of step(), after the tick counter has
+     * already moved, so the first frame it ever writes is at tick 3600 — half
+     * a minute in. Nothing covered the thirty seconds before it, seeking into
+     * them found no frame at or before the target, and the highlight ended the
+     * moment it was clicked. That is one dead passage in every single match:
+     * the kick-off is always the reel's first line. */
+    this.keyframes.push(this.fullSnapshot());
   }
 
   /* --- clock ------------------------------------------------------------ */
@@ -641,16 +662,130 @@ export class MatchSim {
       return;
     }
 
-    // In possession without the ball: hold shape, shifted to the ball's side,
-    // pushed on, and never beyond the last defender.
-    const lateral = clamp((this.ball.pos.y - PITCH_WIDTH / 2) * 0.3, -8, 8);
+    this.supportBrain(p, dir, anchor, carrier);
+  }
+
+  /**
+   * IN POSSESSION, OFF THE BALL.
+   *
+   * This used to be one line: shift everyone towards the ball and a bit
+   * further up the pitch. It is the single biggest reason the match looked
+   * unintelligent, and for a specific reason — shifting EVERYONE towards the
+   * ball narrows the side that has it. A team in possession does the
+   * opposite: it makes the pitch as big as it can, because space is the thing
+   * it is trying to create. The old rule had all eleven converging on the ball
+   * like a school playground, which is why every attack came through the
+   * middle and why the wings were empty all match.
+   *
+   * So the shape now does four things, in this order:
+   *
+   *   WIDTH      wide roles hold their touchline instead of drifting inside.
+   *              Whether a role is wide is read off its own formation anchor,
+   *              so it needs no per-slot flag and it follows the shape the
+   *              user picked.
+   *   DEPTH      everyone pushes up with the ball, as before.
+   *   OVERLAP    a full-back whose flank the ball is on, in the opposition
+   *              half, runs BEYOND it down the line. This is the run that
+   *              makes a back four look like a modern one.
+   *   THE ANGLE  if an opponent is standing in the line between the ball and
+   *              where he means to stand, he steps off it. Offering a passing
+   *              option is what a supporting player is FOR, and standing in a
+   *              covered lane is the same as not being there.
+   */
+  private supportBrain(p: Player, dir: Direction, anchor: Vec2, carrier: Player | null): void {
+    const centre = PITCH_WIDTH / 2;
     const eagerness = this.intentWeight(p, "Support");
+
+    /* DEPTH. Push on with the ball, as before. */
     const support = clamp((this.ball.pos.x - anchor.x) * 0.22 * eagerness, -10, 10);
+    let wantX = anchor.x + support;
+
+    /* WIDTH. A wide role is one whose own anchor sits away from the middle. */
+    const fromCentre = anchor.y - centre;
+    const wide = Math.abs(fromCentre) > WIDE_ROLE_OFFSET;
+    let wantY: number;
+    if (wide) {
+      /* Hold the touchline. The far-side wide man tucks in a little to attack
+       * the back post, but never all the way across — somebody has to be
+       * there when the ball is switched. */
+      const ballSide = Math.sign(this.ball.pos.y - centre) === Math.sign(fromCentre);
+      const stretch = ballSide ? WIDTH_HOLD : WIDTH_HOLD * 0.45;
+      wantY = anchor.y + Math.sign(fromCentre) * stretch;
+    } else {
+      // Central players shift towards the ball to give a short option.
+      wantY = anchor.y + clamp((this.ball.pos.y - centre) * 0.3, -8, 8);
+    }
+
+    /* OVERLAP. A full-back on the ball's flank, in the opposition half, goes
+     * beyond it. Gated on the chance, his engine and his legs, so it is a run
+     * he chooses to make rather than one he makes every time. */
+    const fullBack = p.def.position === "DL" || p.def.position === "DR";
+    if (
+      fullBack &&
+      carrier !== null &&
+      carrier.side === p.side &&
+      (this.ball.pos.x - PITCH_LENGTH / 2) * dir > -8 &&
+      Math.sign(this.ball.pos.y - centre) === Math.sign(fromCentre) &&
+      Math.abs(this.ball.pos.y - p.pos.y) < 22 &&
+      p.stamina > 0.35 &&
+      this.rng.chance(
+        OVERLAP_CHANCE * (0.5 + attr01(p.def.attributes.workRate) * 0.5) * eagerness,
+      )
+    ) {
+      wantX = this.ball.pos.x + dir * OVERLAP_AHEAD;
+      wantY = anchor.y + Math.sign(fromCentre) * WIDTH_HOLD;
+    }
+
+    let spot: Vec2 = {
+      x: clamp(wantX, 1, PITCH_LENGTH - 1),
+      y: clamp(wantY, 1, PITCH_WIDTH - 1),
+    };
+
+    /* THE ANGLE. Standing in a lane an opponent is covering is the same as
+     * not offering the pass at all: step off it. */
+    if (carrier !== null && carrier.side === p.side && this.laneBlocked(carrier.pos, spot)) {
+      spot = this.openLane(carrier.pos, spot);
+    }
+
     p.state = "Support";
-    p.target = this.keepOnside(p, {
-      x: clamp(anchor.x + support, 1, PITCH_LENGTH - 1),
-      y: clamp(anchor.y + lateral, 1, PITCH_WIDTH - 1),
-    });
+    p.target = this.keepOnside(p, spot);
+  }
+
+  /** Is an opponent of `from`'s side standing in the line between two points? */
+  private laneBlocked(from: Vec2, to: Vec2): boolean {
+    const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+    const radius = Math.max(dist(from, to) / 2, 1) + 2;
+    for (const q of this.grid.query(mid, radius, this.optionBuf)) {
+      if (!q.onPitch || q.isKeeper) continue;
+      if (distToSegment(q.pos, from, to) < 1.8) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Step sideways off a covered lane, picking whichever side is clearer.
+   * Both candidates are tried and the first clear one wins; if neither is
+   * clear the wider of the two is taken, because moving is still better than
+   * standing behind a defender.
+   */
+  private openLane(from: Vec2, spot: Vec2): Vec2 {
+    const dx = spot.x - from.x;
+    const dy = spot.y - from.y;
+    const len = Math.hypot(dx, dy) || 1;
+    // Unit normal to the passing line.
+    const nx = -dy / len;
+    const ny = dx / len;
+    for (const sign of [1, -1]) {
+      const candidate = {
+        x: clamp(spot.x + nx * LANE_ADJUST * sign, 1, PITCH_LENGTH - 1),
+        y: clamp(spot.y + ny * LANE_ADJUST * sign, 1, PITCH_WIDTH - 1),
+      };
+      if (!this.laneBlocked(from, candidate)) return candidate;
+    }
+    return {
+      x: clamp(spot.x + nx * LANE_ADJUST, 1, PITCH_LENGTH - 1),
+      y: clamp(spot.y + ny * LANE_ADJUST, 1, PITCH_WIDTH - 1),
+    };
   }
 
   /**
@@ -3083,6 +3218,12 @@ export class MatchSim {
       },
       pendingShot: this.pendingShot ? structuredCloneish(this.pendingShot) : null,
       pendingRestart: this.pending ? structuredCloneish(this.pending) : null,
+      aerialLockTick: this.aerialLockTick,
+      resolvedShotUntil: this.resolvedShotUntil,
+      lastRestartTick: this.lastRestartTick,
+      advantage: this.advantage
+        ? { side: this.advantage.side, at: { ...this.advantage.at }, until: this.advantage.until }
+        : null,
       activeMoves: [serialiseMove(this.activeMove[0]), serialiseMove(this.activeMove[1])],
       ball: {
         pos: { ...this.ball.pos },
@@ -3139,6 +3280,24 @@ export class MatchSim {
     this.wonBallDeep[1] = frame.possession.wonBallDeep[1];
     this.pendingShot = (frame.pendingShot ?? null) as typeof this.pendingShot;
     this.pending = (frame.pendingRestart ?? null) as typeof this.pending;
+    this.aerialLockTick = frame.aerialLockTick;
+    this.resolvedShotUntil = frame.resolvedShotUntil;
+    this.lastRestartTick = frame.lastRestartTick;
+    this.advantage = frame.advantage
+      ? { side: frame.advantage.side, at: { ...frame.advantage.at }, until: frame.advantage.until }
+      : null;
+    /* Rewind the event stream to where it stood at this tick. Replaying the
+     * passage re-emits exactly these events again, so without the rewind the
+     * log grows a second copy of every passage that has been watched — and
+     * commentary, stats and the reel are all derived from that log. */
+    this.log.truncate(frame.eventCount);
+    /* The delta feed the renderer reads is "events since the last snapshot",
+     * so after a rewind it has to start from where the log actually is — not
+     * from where the keyframe thinks it is. Seeking BACKWARDS (watch minute
+     * 40, then minute 12) leaves the log shorter than the keyframe's count,
+     * and pointing the cursor past the end of it silently swallowed the first
+     * events of the passage being played. */
+    this.lastEventIndex = this.log.length;
     this.activeMove[0] = deserialiseMove(frame.activeMoves[0]);
     this.activeMove[1] = deserialiseMove(frame.activeMoves[1]);
     // The offside line is cached per tick; a restored tick must not read a

@@ -116,9 +116,38 @@ export const SPEED_PER_PACE = 0.18;
 /** aMax = base + perAttr * acceleration(1..20) -> 3.15 .. 6.0 m/s^2. */
 export const ACCEL_BASE = 3;
 export const ACCEL_PER_ACCELERATION = 0.15;
-/** Turn rate ceiling, rad/s = base + perAttr * agility. */
+/** Turn rate ceiling, rad/s = base + perAttr * agility. This limits how fast
+ *  the DIRECTION OF TRAVEL may change, not how fast a player may be pointed:
+ *  a body carries its momentum through a turn. */
 export const TURN_BASE = 3.0;
 export const TURN_PER_AGILITY = 0.35;
+
+/** How much more freely a player may turn when he is barely moving. Standing
+ *  still you can pivot on the spot; at a sprint you have to arc. Before this
+ *  existed the engine simply SNAPPED a player's heading to his desired
+ *  direction whenever he dropped below 0.3 m/s, which is most of the pitch
+ *  most of the time — and a dot easing onto its position, dipping under the
+ *  threshold and instantly facing somewhere else is the twitch that made
+ *  twenty-two of them look like insects rather than footballers. */
+export const TURN_EASE_AT_REST = 2.6;
+/** The speed below which the turn limit starts to relax, reaching "free" at a
+ *  standstill: setting off from standing in any direction costs nothing, as
+ *  it does in life. The relaxation is a RAMP, not a threshold — see
+ *  turnStep() in player.ts for why that distinction is the whole fix. */
+export const TURN_FREE_BELOW = 0.6;
+/** Below this speed a player's facing is left alone rather than being taken
+ *  from a velocity too small to have a meaningful direction. */
+export const HEADING_HOLD_SPEED = 0.15;
+
+/** Slowing down is harder than speeding up in the legs, but not by much; a
+ *  footballer stopping is doing work, not coasting. Multiplies aMax when the
+ *  desired velocity is slower than the current one. */
+export const BRAKE_FACTOR = 1.8;
+
+/** Inside this distance a player is "there" and stops asking to move. Wide
+ *  enough that he settles rather than hunting across his anchor by
+ *  millimetres for the rest of the match. */
+export const ARRIVE_STOP_RADIUS = 0.35;
 /** Fraction of top speed retained while carrying the ball, at dribbling 1
  *  and at dribbling 20. Interpolated linearly. */
 export const CARRY_SPEED_MIN = 0.74;
@@ -137,6 +166,27 @@ export const FATIGUE_SPEED_LOSS_MAX = 0.03;
  *  made the stamina attribute do nothing at all and applied the full late-game
  *  speed penalty to all twenty-two from the half-hour mark. */
 export const STAMINA_DRAIN_PER_SECOND = 0.000055;
+
+/* --- Off-ball shape ------------------------------------------------------ */
+
+/** How far a wide player pushes towards his own touchline when his side has
+ *  the ball. A possession side STRETCHES the pitch; before this the whole
+ *  team shifted towards the ball together, which narrowed the side in
+ *  possession — the exact opposite of what it should do, and the reason the
+ *  engine's attacks all funnelled through the middle. */
+export const WIDTH_HOLD = 7.5;
+/** An anchor further than this from the centre line, in metres, belongs to a
+ *  wide role. Derived from the formation, so it needs no per-slot flag. */
+export const WIDE_ROLE_OFFSET = 12;
+
+/** A full-back overlaps when his side has the ball ahead of him on his flank.
+ *  How far beyond the ball he will run, and how often he decides to. */
+export const OVERLAP_AHEAD = 9;
+export const OVERLAP_CHANCE = 0.30;
+
+/** How far a supporting player will step off his anchor to open a passing
+ *  lane that an opponent is standing in. */
+export const LANE_ADJUST = 4.5;
 
 /** Personal space radius used by the separation steering term. */
 export const SEPARATION_RADIUS = 1.6;

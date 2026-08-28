@@ -94,6 +94,20 @@ export class EventLog {
     return this.events.slice(from);
   }
 
+  /**
+   * Drop everything after the first `count` events.
+   *
+   * This exists for one reason: seeking. Restoring a keyframe rewinds the
+   * whole simulation to an earlier tick, and replaying from there re-emits
+   * every event of that passage. Without this the log ended up holding the
+   * original match AND a second copy of every passage that had been watched
+   * back — so re-cutting the reel at a different mode derived the commentary
+   * from a match that never happened.
+   */
+  truncate(count: number): void {
+    if (count < this.events.length) this.events.length = Math.max(0, count);
+  }
+
   get length(): number {
     return this.events.length;
   }
