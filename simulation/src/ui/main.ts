@@ -19,20 +19,13 @@
 
 import { MatchView } from "../render/match-view";
 import { buildMatchSetup } from "../manager/bridge";
-import { demoFixture } from "../data/demo-fixture";
+import { fixtureFrom, teamList } from "../data/teams";
+import { loadFormations } from "../data";
+import { STYLE_NAMES } from "../manager/styles";
 import type { HighlightMode } from "../core/highlights";
 import type { PreMatch, TeamPreview } from "../core/prematch";
+import type { MatchSetup } from "../core/types";
 import type { FromWorker, MatchReport, ToWorker } from "../worker/protocol";
-
-const params = new URLSearchParams(location.search);
-const fixture = demoFixture({
-  seed: params.get("seed") ?? "demo-match-1",
-  homeFormation: params.get("home") ?? undefined,
-  awayFormation: params.get("away") ?? undefined,
-  homeStyle: params.get("homeStyle") ?? undefined,
-  awayStyle: params.get("awayStyle") ?? undefined,
-});
-const setup = buildMatchSetup(fixture);
 
 const el = (id: string): HTMLElement => {
   const node = document.getElementById(id);
@@ -40,11 +33,48 @@ const el = (id: string): HTMLElement => {
   return node;
 };
 
+const params = new URLSearchParams(location.search);
+const formations = loadFormations();
+const teams = teamList();
+
+/** The fixture the screen is currently set to. Changing any picker rebuilds
+ *  it and restarts the worker, because a match is its inputs. */
+const choice = {
+  homeId: params.get("homeTeam") ?? (teams[1]?.id ?? ""),
+  awayId: params.get("awayTeam") ?? (teams[0]?.id ?? ""),
+  homeFormation: params.get("home") ?? "4-2-3-1",
+  awayFormation: params.get("away") ?? "4-4-2",
+  homeStyle: params.get("homeStyle") ?? "",
+  awayStyle: params.get("awayStyle") ?? "",
+  seed: params.get("seed") ?? "match-1",
+};
+
+let setup: MatchSetup = buildSetup();
 const names = new Map<number, string>();
-for (const team of [setup.home, setup.away]) for (const p of team.players) names.set(p.id, p.name);
+
+function buildSetup(): MatchSetup {
+  const fixture = fixtureFrom({
+    homeId: choice.homeId,
+    awayId: choice.awayId,
+    homeFormation: formations[choice.homeFormation] ?? (formations["4-4-2"] as never),
+    awayFormation: formations[choice.awayFormation] ?? (formations["4-4-2"] as never),
+    ...(choice.homeStyle ? { homeStyle: choice.homeStyle } : {}),
+    ...(choice.awayStyle ? { awayStyle: choice.awayStyle } : {}),
+    seed: choice.seed,
+  });
+  return buildMatchSetup(fixture);
+}
+
+function refreshNames(): void {
+  names.clear();
+  for (const team of [setup.home, setup.away]) {
+    for (const p of team.players) names.set(p.id, p.name);
+  }
+}
+refreshNames();
 
 const view = new MatchView();
-const worker = new Worker(new URL("../worker/sim.worker.ts", import.meta.url), { type: "module" });
+let worker = new Worker(new URL("../worker/sim.worker.ts", import.meta.url), { type: "module" });
 const send = (msg: ToWorker): void => worker.postMessage(msg);
 
 let report: MatchReport | null = null;
@@ -52,7 +82,11 @@ let mode: HighlightMode = "extended";
 let watching: number | null = null;
 let viewReady = false;
 
-worker.onmessage = (ev: MessageEvent<FromWorker>): void => {
+function attach(): void {
+  worker.onmessage = onMessage;
+}
+
+const onMessage = (ev: MessageEvent<FromWorker>): void => {
   const msg = ev.data;
   switch (msg.type) {
     case "ready":
@@ -78,7 +112,105 @@ worker.onmessage = (ev: MessageEvent<FromWorker>): void => {
   }
 };
 
+attach();
 send({ type: "init", setup });
+
+/* --- the fixture picker -------------------------------------------------- */
+
+function buildPickers(): void {
+  const teamOptions = (selected: string): string =>
+    teams
+      .map(
+        (t) =>
+          `<option value="${t.id}"${t.id === selected ? " selected" : ""}>` +
+          `${esc(t.club)} ${t.season}${t.note ? ` \u2014 ${esc(t.note)}` : ""} (${t.rating})</option>`,
+      )
+      .join("");
+  const formationOptions = (selected: string): string =>
+    Object.values(formations)
+      .map((f) => `<option value="${f.id}"${f.id === selected ? " selected" : ""}>${f.name}</option>`)
+      .join("");
+  const styleOptions = (selected: string): string =>
+    ['<option value="">Club default</option>']
+      .concat(
+        STYLE_NAMES.map(
+          (s) => `<option value="${s}"${s === selected ? " selected" : ""}>${s}</option>`,
+        ),
+      )
+      .join("");
+
+  (el("home-team") as HTMLSelectElement).innerHTML = teamOptions(choice.homeId);
+  (el("away-team") as HTMLSelectElement).innerHTML = teamOptions(choice.awayId);
+  (el("home-formation") as HTMLSelectElement).innerHTML = formationOptions(choice.homeFormation);
+  (el("away-formation") as HTMLSelectElement).innerHTML = formationOptions(choice.awayFormation);
+  (el("home-style") as HTMLSelectElement).innerHTML = styleOptions(choice.homeStyle);
+  (el("away-style") as HTMLSelectElement).innerHTML = styleOptions(choice.awayStyle);
+  (el("seed") as HTMLInputElement).value = choice.seed;
+}
+
+buildPickers();
+
+for (const [id, key] of [
+  ["home-team", "homeId"],
+  ["away-team", "awayId"],
+  ["home-formation", "homeFormation"],
+  ["away-formation", "awayFormation"],
+  ["home-style", "homeStyle"],
+  ["away-style", "awayStyle"],
+] as const) {
+  el(id).addEventListener("change", (ev) => {
+    (choice as unknown as Record<string, string>)[key] = (ev.target as HTMLSelectElement).value;
+    resetFixture();
+  });
+}
+el("seed").addEventListener("change", (ev) => {
+  choice.seed = (ev.target as HTMLInputElement).value || "match-1";
+  resetFixture();
+});
+el("shuffle").addEventListener("click", () => {
+  choice.seed = `match-${Date.now().toString(36).slice(-5)}`;
+  (el("seed") as HTMLInputElement).value = choice.seed;
+  resetFixture();
+});
+
+/** A new fixture is a new match: the old worker is discarded rather than
+ *  reconfigured, so nothing from the previous match can leak into it. */
+function resetFixture(): void {
+  worker.terminate();
+  worker = new Worker(new URL("../worker/sim.worker.ts", import.meta.url), { type: "module" });
+  attach();
+  setup = buildSetup();
+  refreshNames();
+  report = null;
+  watching = null;
+  viewReady = false;
+  view.reset();
+  el("stage-wrap").classList.add("hidden");
+  el("prematch").classList.remove("collapsed");
+  el("feed").innerHTML = "";
+  el("stats").innerHTML = "";
+  el("score").textContent = "v";
+  el("reel-summary").textContent = "Simulate the match to see the highlights.";
+  el("kickoff").removeAttribute("disabled");
+  el("status").textContent = "";
+
+  const url = new URL(location.href);
+  for (const [key, value] of Object.entries({
+    homeTeam: choice.homeId,
+    awayTeam: choice.awayId,
+    home: choice.homeFormation,
+    away: choice.awayFormation,
+    homeStyle: choice.homeStyle,
+    awayStyle: choice.awayStyle,
+    seed: choice.seed,
+  })) {
+    if (value) url.searchParams.set(key, value);
+    else url.searchParams.delete(key);
+  }
+  history.replaceState(null, "", url);
+
+  send({ type: "init", setup });
+}
 
 /* --- pre-match ----------------------------------------------------------- */
 
