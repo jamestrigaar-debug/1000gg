@@ -1,17 +1,26 @@
 /* ============================================================================
- * MATCH DAY — pre-match, the text match, and watching it back.
+ * MATCH DAY — pre-match, the match, and the result.
  *
- * The flow is the one the Manager asked for, and the order matters:
+ * The flow, and the order matters:
  *
  *   1. PRE-MATCH   the two team sheets read against each other: formations,
  *                  playstyles, unit ratings, key men, the talking points.
  *                  Everything on this screen comes from the same objects the
  *                  simulation is about to be handed.
- *   2. THE TEXT    the match is simulated headlessly, start to finish, and
- *                  comes back as a list of highlights — the text version.
- *   3. THE PITCH   click any line and that passage is played in 2D. Same seed,
- *                  same events, same match: the text is not a summary of a
- *                  different simulation, it is an index into this one.
+ *   2. THE MATCH   press Kick off and it PLAYS. The match is simulated
+ *                  headlessly first — it has to be, the reel is cut from the
+ *                  finished event stream — but nothing about it is shown. The
+ *                  reel then plays passage after passage on the pitch, the
+ *                  clock runs, and each line of commentary appears at the
+ *                  moment the match reaches it. Skip cuts to the next passage;
+ *                  Skip to result abandons the reel.
+ *   3. THE RESULT  the score, the stats and the ratings arrive at full time,
+ *                  not before. From then on any line can be clicked to watch
+ *                  that passage again.
+ *
+ * The result is deliberately withheld until the reel has been through it. A
+ * scoreline in the corner while you watch the build-up is not a match, it is
+ * a summary with pictures.
  *
  * Everything here reads the event stream (via the worker's report) and never
  * the renderer.
@@ -22,7 +31,7 @@ import { buildMatchSetup } from "../manager/bridge";
 import { fixtureFrom, teamList } from "../data/teams";
 import { loadFormations } from "../data";
 import { STYLE_NAMES } from "../manager/styles";
-import type { HighlightMode } from "../core/highlights";
+import type { Highlight, HighlightMode } from "../core/highlights";
 import type { PreMatch, TeamPreview } from "../core/prematch";
 import type { MatchSetup } from "../core/types";
 import type { FromWorker, MatchReport, ToWorker } from "../worker/protocol";
@@ -36,6 +45,7 @@ const el = (id: string): HTMLElement => {
 const params = new URLSearchParams(location.search);
 const formations = loadFormations();
 const teams = teamList();
+const MODES: HighlightMode[] = ["key", "extended", "comprehensive", "full"];
 
 /** The fixture the screen is currently set to. Changing any picker rebuilds
  *  it and restarts the worker, because a match is its inputs. */
@@ -79,8 +89,21 @@ const send = (msg: ToWorker): void => worker.postMessage(msg);
 
 let report: MatchReport | null = null;
 let mode: HighlightMode = "extended";
-let watching: number | null = null;
 let viewReady = false;
+
+/* --- what the screen is doing right now ---------------------------------- */
+
+type Phase = "prematch" | "simulating" | "watching" | "result";
+let phase: Phase = "prematch";
+/** Passage currently on the pitch. */
+let current: number | null = null;
+/** Passages whose commentary line has already been revealed. */
+const revealed = new Set<number>();
+/** True once the reel has run: lines become clickable, the result is shown. */
+let resultOut = false;
+let paused = false;
+/** Speed the user last chose; kept across passages. */
+let speed = 1;
 
 function attach(): void {
   worker.onmessage = onMessage;
@@ -97,14 +120,20 @@ const onMessage = (ev: MessageEvent<FromWorker>): void => {
       break;
     case "report":
       report = msg.report;
-      renderReport(msg.report);
+      onReport(msg.report);
       break;
     case "snapshot":
-      if (viewReady) view.push(msg.snapshot);
-      el("watch-clock").textContent = formatClock(msg.snapshot.matchSecond);
+      if (viewReady) view.push(msg.snapshot, msg.cut, msg.timeScale);
+      onFrame(msg.snapshot.matchSecond, msg.snapshot.score);
+      break;
+    case "reelEnter":
+      onReelEnter(msg.index);
       break;
     case "highlightEnded":
-      onHighlightEnded(msg.index);
+      revealLine(msg.index);
+      break;
+    case "reelEnded":
+      onReelEnded();
       break;
     case "error":
       el("status").textContent = `Simulation error: ${msg.message}`;
@@ -123,7 +152,7 @@ function buildPickers(): void {
       .map(
         (t) =>
           `<option value="${t.id}"${t.id === selected ? " selected" : ""}>` +
-          `${esc(t.club)} ${t.season}${t.note ? ` \u2014 ${esc(t.note)}` : ""} (${t.rating})</option>`,
+          `${esc(t.club)} ${t.season}${t.note ? ` — ${esc(t.note)}` : ""} (${t.rating})</option>`,
       )
       .join("");
   const formationOptions = (selected: string): string =>
@@ -182,16 +211,24 @@ function resetFixture(): void {
   setup = buildSetup();
   refreshNames();
   report = null;
-  watching = null;
+  phase = "prematch";
+  current = null;
+  revealed.clear();
+  resultOut = false;
+  paused = false;
   viewReady = false;
   view.reset();
   el("stage-wrap").classList.add("hidden");
   el("prematch").classList.remove("collapsed");
   el("feed").innerHTML = "";
   el("stats").innerHTML = "";
-  el("score").textContent = "v";
-  el("reel-summary").textContent = "Simulate the match to see the highlights.";
+  el("stats").classList.add("hidden");
+  el("watch-again").classList.add("hidden");
+  concealScore();
+  el("clock").textContent = "";
+  el("reel-summary").textContent = "Kick off to watch the match.";
   el("kickoff").removeAttribute("disabled");
+  el("kickoff").textContent = "Kick off";
   el("status").textContent = "";
 
   const url = new URL(location.href);
@@ -268,50 +305,262 @@ function bar(label: string, home: number, away: number): string {
     </div>`;
 }
 
-/* --- the text match ------------------------------------------------------ */
+/* --- kick off ------------------------------------------------------------ */
 
 el("kickoff").addEventListener("click", () => {
+  if (phase === "result" || resultOut) {
+    // Already watched. The button becomes "watch it again".
+    startReel(0);
+    return;
+  }
+  phase = "simulating";
   el("kickoff").setAttribute("disabled", "true");
-  el("status").textContent = "Simulating…";
+  el("status").textContent = "Building the match…";
   el("sim-bar").classList.remove("hidden");
   send({ type: "simulate", mode });
 });
 
-for (const option of ["key", "extended", "comprehensive", "full"] as HighlightMode[]) {
+for (const option of MODES) {
   el(`mode-${option}`).addEventListener("click", () => {
+    if (mode === option) return;
     mode = option;
-    for (const other of ["key", "extended", "comprehensive", "full"]) {
-      el(`mode-${other}`).classList.toggle("on", other === option);
-    }
-    if (report) send({ type: "recut", mode });
+    for (const other of MODES) el(`mode-${other}`).classList.toggle("on", other === option);
+    if (!report) return;
+
+    /* Re-cutting mid-match is allowed, because picking the level of detail is
+     * the whole point of the four modes. The reel is rebuilt and playback
+     * resumes at the first passage that has not already gone by, so changing
+     * your mind at half time does not send you back to the kick-off. */
+    resumeAfterRecut = phase === "watching" ? currentMatchSecond : null;
+    send({ type: "recut", mode });
   });
 }
 
-function renderReport(r: MatchReport): void {
+/** Where to pick the reel back up after a mid-match re-cut. */
+let resumeAfterRecut: number | null = null;
+let currentMatchSecond = 0;
+
+function onReport(r: MatchReport): void {
   el("sim-bar").classList.add("hidden");
   el("prematch").classList.add("collapsed");
-  el("score").textContent = `${r.score[0]} - ${r.score[1]}`;
   el("status").textContent = "";
-  const totalWatch = r.highlights.reduce((t, h) => t + (h.to - h.from), 0);
-  el("reel-summary").textContent =
-    `${r.highlights.length} highlights · ${Math.round(totalWatch)}s of football`;
+  el("reel-summary").textContent = summaryLine(r.highlights);
 
+  if (resumeAfterRecut !== null) {
+    const at = resumeAfterRecut;
+    resumeAfterRecut = null;
+    rebuildFeed(r, true);
+    const next = r.highlights.findIndex((h) => h.to > at);
+    if (next >= 0) startReel(next);
+    else finishReel();
+    return;
+  }
+
+  if (resultOut) {
+    // Re-cut after full time: just redraw the list, all of it visible.
+    rebuildFeed(r, false);
+    revealResult(r);
+    return;
+  }
+
+  rebuildFeed(r, true);
+  startReel(0);
+}
+
+function summaryLine(highlights: readonly Highlight[]): string {
+  const watch = Math.round(highlights.reduce((t, h) => t + (h.to - h.from), 0));
+  const mm = Math.floor(watch / 60);
+  const ss = watch % 60;
+  const length = mm > 0 ? `${mm}m ${ss}s` : `${ss}s`;
+  return `${highlights.length} highlights · ${length} of football`;
+}
+
+/* --- watching the match -------------------------------------------------- */
+
+async function startReel(from: number): Promise<void> {
+  if (!report) return;
+  phase = "watching";
+  paused = false;
+  current = null;
+
+  el("stage-wrap").classList.remove("hidden");
+  if (!viewReady) {
+    await view.init(el("stage"), [setup.home.kit, setup.away.kit], names);
+    viewReady = true;
+  }
+  el("kickoff").setAttribute("disabled", "true");
+  el("watch-again").classList.add("hidden");
+  el("pause").textContent = "Pause";
+  el("pause").classList.add("primary");
+  setReelControls(true);
+  send({ type: "speed", scale: speed });
+  send({ type: "playReel", from });
+}
+
+function onReelEnter(index: number): void {
+  current = index;
+  const highlight = report?.highlights[index];
+  if (!highlight) return;
+  // The line itself is NOT shown yet: it is revealed when the match reaches
+  // the moment it describes, so the reel does not spoil its own goals.
+  el("watch-caption").textContent = resultOut ? highlight.text : "";
+  el("reel-pos").textContent = `${index + 1} / ${report?.highlights.length ?? 0}`;
+  markPlaying(index);
+  if (resultOut) revealLine(index);
+}
+
+/** A frame arrived: keep the clock, the score and the commentary honest. */
+function onFrame(matchSecond: number, score: [number, number]): void {
+  currentMatchSecond = matchSecond;
+  el("watch-clock").textContent = formatClock(matchSecond);
+  // Once full time has been shown, the header clock stays at FT even while a
+  // passage is being watched back: it belongs to the match, not the replay.
+  if (!resultOut) el("clock").textContent = `${Math.floor(matchSecond / 60)}'`;
+  // The score comes off the snapshot, so it changes the instant the ball
+  // crosses the line rather than when the passage ends.
+  if (phase === "watching") el("score").textContent = `${score[0]} - ${score[1]}`;
+  el("score").classList.remove("concealed");
+
+  if (current === null || revealed.has(current)) return;
+  const highlight = report?.highlights[current];
+  if (highlight && matchSecond >= highlight.at) revealLine(current);
+}
+
+/** Show a passage's commentary line, once the match has reached it. */
+function revealLine(index: number): void {
+  if (revealed.has(index)) return;
+  const highlight = report?.highlights[index];
+  if (!highlight) return;
+  revealed.add(index);
+  const node = el("feed").querySelector<HTMLElement>(`[data-index="${index}"]`);
+  if (!node) return;
+  node.classList.remove("hidden");
+  node.classList.add("fresh");
+  el("watch-caption").textContent = `${highlight.minute}' ${highlight.text}`;
+  node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function markPlaying(index: number | null): void {
+  for (const node of Array.from(el("feed").querySelectorAll(".hl"))) {
+    node.classList.toggle("playing", node.getAttribute("data-index") === String(index));
+  }
+}
+
+function onReelEnded(): void {
+  finishReel();
+}
+
+function finishReel(): void {
+  phase = "result";
+  resultOut = true;
+  current = null;
+  markPlaying(null);
+  setReelControls(false);
+  el("watch-caption").textContent = "Full time.";
+  el("reel-pos").textContent = "";
+  /* The reel can be skipped from anywhere, so the clock is showing whatever
+   * minute it was abandoned at. Leaving "44'" beside a full-time score reads
+   * as a match that stopped early. */
+  el("clock").textContent = "FT";
+  el("kickoff").removeAttribute("disabled");
+  el("kickoff").textContent = "Kick off";
+  el("watch-again").classList.remove("hidden");
+  if (report) {
+    // Everything the reel had not reached yet appears now, and the whole list
+    // becomes clickable.
+    rebuildFeed(report, false);
+    revealResult(report);
+  }
+}
+
+function revealResult(r: MatchReport): void {
+  el("score").textContent = `${r.score[0]} - ${r.score[1]}`;
+  el("score").classList.remove("concealed");
+  el("reel-summary").textContent = summaryLine(r.highlights);
+  el("stats").innerHTML = statsTable(r);
+  el("stats").classList.remove("hidden");
+}
+
+function concealScore(): void {
+  el("score").textContent = "v";
+  el("score").classList.add("concealed");
+}
+concealScore();
+
+/** Draw the reel list. While the match is being watched the lines start
+ *  hidden and appear as it reaches them; afterwards they are all there and
+ *  every one of them can be clicked to watch that passage again. */
+function rebuildFeed(r: MatchReport, progressive: boolean): void {
+  if (progressive) revealed.clear();
   el("feed").innerHTML = r.highlights
-    .map(
-      (h, i) =>
-        `<button class="hl ${h.importance >= 3 ? "big" : h.importance >= 2 ? "mid" : ""}" data-index="${i}">
+    .map((h, i) => {
+      const weight = h.importance >= 3 ? "big" : h.importance >= 2 ? "mid" : "";
+      const hide = progressive && !revealed.has(i) ? " hidden" : "";
+      const lock = progressive ? " disabled" : "";
+      return `<button class="hl ${weight}${hide}" data-index="${i}"${lock}>
            <span class="hl-min">${h.minute}'</span>
            <span class="hl-text">${esc(h.text)}</span>
            <span class="hl-score">${h.score[0]}-${h.score[1]}</span>
-         </button>`,
-    )
+         </button>`;
+    })
     .join("");
+  if (progressive) return;
   for (const node of Array.from(el("feed").querySelectorAll<HTMLButtonElement>("button.hl"))) {
-    node.addEventListener("click", () => watchHighlight(Number(node.dataset.index)));
+    node.addEventListener("click", () => watchOne(Number(node.dataset.index)));
   }
-
-  el("stats").innerHTML = statsTable(r);
 }
+
+/** Click a line after full time: play that passage on its own. */
+async function watchOne(index: number): Promise<void> {
+  if (!report?.highlights[index]) return;
+  el("stage-wrap").classList.remove("hidden");
+  if (!viewReady) {
+    await view.init(el("stage"), [setup.home.kit, setup.away.kit], names);
+    viewReady = true;
+  }
+  paused = false;
+  current = index;
+  el("pause").textContent = "Pause";
+  el("pause").classList.add("primary");
+  setReelControls(true, true);
+  markPlaying(index);
+  el("watch-caption").textContent =
+    `${report.highlights[index]!.minute}' ${report.highlights[index]!.text}`;
+  send({ type: "speed", scale: speed });
+  send({ type: "watch", index });
+}
+
+/** Show or hide the controls that only make sense while something is playing. */
+function setReelControls(playing: boolean, single = false): void {
+  el("pause").classList.toggle("hidden", !playing);
+  el("skip").classList.toggle("hidden", !playing || single);
+  el("skip-all").classList.toggle("hidden", !playing || single);
+}
+setReelControls(false);
+
+el("pause").addEventListener("click", () => {
+  paused = !paused;
+  el("pause").textContent = paused ? "Play" : "Pause";
+  el("pause").classList.toggle("primary", !paused);
+  send({ type: paused ? "pause" : "resume" });
+});
+
+el("skip").addEventListener("click", () => {
+  if (paused) {
+    paused = false;
+    el("pause").textContent = "Pause";
+    el("pause").classList.add("primary");
+  }
+  send({ type: "skip" });
+});
+
+el("skip-all").addEventListener("click", () => {
+  send({ type: "skipAll" });
+});
+
+el("watch-again").addEventListener("click", () => startReel(0));
+
+/* --- the result panel ---------------------------------------------------- */
 
 function statsTable(r: MatchReport): string {
   const rows: [string, string, string][] = [
@@ -343,38 +592,7 @@ function statsTable(r: MatchReport): string {
     <ol class="ratings">${best}</ol>`;
 }
 
-/* --- watching a highlight ------------------------------------------------ */
-
-async function watchHighlight(index: number): Promise<void> {
-  if (!report) return;
-  const highlight = report.highlights[index];
-  if (!highlight) return;
-  watching = index;
-
-  // Unhide before initialising: PixiJS sizes itself to the element, and an
-  // element that is still display:none measures zero.
-  el("stage-wrap").classList.remove("hidden");
-  if (!viewReady) {
-    await view.init(el("stage"), [setup.home.kit, setup.away.kit], names);
-    viewReady = true;
-  }
-  el("watch-caption").textContent = `${highlight.minute}' ${highlight.text}`;
-  for (const node of Array.from(el("feed").querySelectorAll(".hl"))) {
-    node.classList.toggle("playing", node.getAttribute("data-index") === String(index));
-  }
-  send({ type: "watch", index });
-}
-
-function onHighlightEnded(index: number): void {
-  if (watching !== index) return;
-  const next = index + 1;
-  el("watch-caption").textContent = report && report.highlights[next]
-    ? "End of passage — click the next line to keep watching."
-    : "That's the lot.";
-  for (const node of Array.from(el("feed").querySelectorAll(".hl"))) {
-    node.classList.remove("playing");
-  }
-}
+/* --- view controls ------------------------------------------------------- */
 
 el("camera").addEventListener("click", () => {
   const follow = el("camera").dataset.mode !== "follow";
@@ -397,7 +615,11 @@ el("flip").addEventListener("click", () => {
 });
 
 for (const scale of [1, 2, 4] as const) {
-  el(`speed-${scale}`).addEventListener("click", () => send({ type: "speed", scale }));
+  el(`speed-${scale}`).addEventListener("click", () => {
+    speed = scale;
+    for (const other of [1, 2, 4]) el(`speed-${other}`).classList.toggle("on", other === scale);
+    send({ type: "speed", scale });
+  });
 }
 
 /* --- helpers ------------------------------------------------------------- */
