@@ -32,6 +32,20 @@ import {
   HALVES,
   STOPPAGE_MAX_SECONDS,
   KEYFRAME_INTERVAL_SECONDS,
+  ADVANTAGE_SECONDS,
+  AERIAL_BAND_HIGH,
+  AERIAL_BAND_LOW,
+  AERIAL_LOCK_TICKS,
+  AERIAL_RANGE,
+  AERIAL_REACH_BASE,
+  AERIAL_REACH_JUMP,
+  BOOKED_CAUTION,
+  CROSS_LOFT,
+  CROSS_TARGET_SPREAD,
+  FOUL_BASE,
+  HOME_EDGE_FOUL,
+  HOME_EDGE_PASS,
+  HOME_EDGE_SHOT,
   KICK_CONTROL_LOCK,
   KICK_MAX_PACE,
   KICK_SELF_LOCK,
@@ -41,10 +55,18 @@ import {
   PITCH_WIDTH,
   POST_RADIUS,
   POST_RESTITUTION,
+  OWN_GOAL_SAVE_BONUS,
   POST_TANGENT_JITTER,
+  RESTART_DISTANCE,
+  RED_DOGSO,
+  RED_VIOLENT,
+  STOPPAGE_PER_CARD,
+  TACKLE_ENGAGE_BASE,
   TICKS_PER_BRAIN_BEAT,
   TICKS_PER_STEER,
   TOUCH_DISTANCE_MAX,
+  YELLOW_BASE,
+  YELLOW_PROMISING_ATTACK,
   TOUCH_DISTANCE_MIN,
 } from "./constants";
 import { createBall, frictionFor, integrateBall, isDead, type BallState } from "./ball";
@@ -62,6 +84,12 @@ import {
 import {
   CENTRE,
   crossedLine,
+  SIM_MAX_X,
+  SIM_MAX_Y,
+  SIM_MIN_X,
+  SIM_MIN_Y,
+  distanceToGoal,
+  penaltySpot,
   inBox,
   penaltyArea,
   sixYardBox,
@@ -80,6 +108,25 @@ import {
   type ShotOutcome,
 } from "./shot";
 import { BASE_THREAT, zoneThreat } from "./threat";
+import {
+  collectiveWeight,
+  defaultRole,
+  gameStateWeight,
+  roleWeight,
+  type Intent,
+} from "./intent";
+import {
+  candidates,
+  MOVE_MAX_SECONDS,
+  pitchToZone,
+  roleOf,
+  stepsFor,
+  zoneToPitch,
+  type ActiveMove,
+  type MoveStep,
+  type Playbook,
+  type PlaybookMove,
+} from "./playbook";
 import { Rng } from "./rng";
 import {
   KeyframeRing,
@@ -93,12 +140,16 @@ import type { Formation, MatchSetup, Phase, TeamSide, UserCommand } from "./type
 
 export interface MatchOptions {
   formations: Record<string, Formation>;
+  /** The pool of recorded moves this match may run. Optional: without it the
+   *  utility brain plays every ball itself, which is what the tests that
+   *  isolate the decision layer want. */
+  playbook?: Playbook;
   /** Keyframes kept for seeking; 200 covers a full match at 30 s spacing. */
   keyframeCapacity?: number;
 }
 
 interface PendingRestart {
-  kind: "kickOff" | "throw" | "corner" | "goalKick" | "freeKick";
+  kind: "kickOff" | "throw" | "corner" | "goalKick" | "freeKick" | "penalty";
   side: TeamSide;
   at: Vec2;
   /** Tick at which the restart is actually taken (a beat of dead time). */
@@ -121,9 +172,14 @@ export class MatchSim {
   readonly ball: BallState;
 
   private readonly formations: Record<string, Formation>;
+  private readonly playbook: Playbook | null;
+  /** The move each side is running, if any. */
+  private readonly activeMove: [ActiveMove | null, ActiveMove | null] = [null, null];
   private readonly grid = new SpatialGrid<Player>();
   private readonly keyframes: KeyframeRing;
   private readonly friction: number;
+  /** 0 at a neutral venue; the home club's rating otherwise. */
+  private readonly homeAdvantage: number;
   private readonly neighbourBuf: Player[] = [];
   /** Rebuilt in place each tick: allocating a fresh array 120 times a second
    *  for 90 minutes is the difference between a batch of 1,000 matches taking
@@ -134,6 +190,13 @@ export class MatchSim {
   private readonly pressureBuf: Player[] = [];
   private readonly mateBuf: Player[] = [];
   private readonly optionBuf: Player[] = [];
+  /** Ticks during which the ball in the air may not be contested again. */
+  private aerialLockTick = 0;
+  private readonly aerialBuf: Player[] = [];
+  /** Tick of the last restart, so a shot can say whether it came from one. */
+  private lastRestartTick = -9999;
+  /** A foul the referee is holding the whistle on. */
+  private advantage: { side: TeamSide; at: Vec2; until: number } | null = null;
   private readonly offsideLineTick: [number, number] = [-1, -1];
   private readonly offsideLineCache: [number, number] = [0, 0];
 
@@ -174,8 +237,10 @@ export class MatchSim {
   constructor(setup: MatchSetup, options: MatchOptions) {
     this.setup = setup;
     this.formations = options.formations;
+    this.playbook = options.playbook ?? null;
     this.rng = new Rng(setup.seed);
     this.friction = frictionFor(setup.weather.pitchCondition);
+    this.homeAdvantage = clamp(setup.homeAdvantage ?? 0, 0, 10);
     this.keyframes = new KeyframeRing(options.keyframeCapacity ?? 200);
     this.ball = createBall({ x: CENTRE.x, y: CENTRE.y, z: 0 });
 
@@ -302,8 +367,11 @@ export class MatchSim {
       integratePlayer(p, maxSpeed, DT);
     }
 
+    this.updateMoves();
+    this.updateAdvantage();
     if (steerBeat) this.contestCarrier();
     this.stepBall();
+    this.resolveAerial();
     this.faceStrayBall();
     this.resolvePendingShot();
     this.resolveRestart();
@@ -330,8 +398,23 @@ export class MatchSim {
     while (!this.finished && guard++ < maxTicks) this.step();
   }
 
+  /**
+   * How fast a player is actually trying to move, which is not the same as how
+   * fast he can. Nobody sprints for ninety minutes: a defender holding a line
+   * jogs, a striker pressing a centre-half does not. Before this existed every
+   * player ran flat out at every moment and finished every match on zero
+   * stamina, which made the stamina attribute meaningless.
+   */
   private maxSpeedFor(p: Player): number {
-    return this.ball.owner === p.def.id ? p.vMax * p.carryFactor : p.vMax;
+    if (this.ball.owner === p.def.id) return p.vMax * p.carryFactor;
+    const urgency =
+      p.state === "ChaseBall" || p.state === "Press" || p.state === "Contest" || p.state === "RunBehind"
+        ? 1
+        : p.state === "TrackRunner"
+          ? 0.9
+          : // Holding a shape: jog, and only stretch when badly out of position.
+            clamp(0.5 + dist(p.pos, p.target) / 14, 0.5, 1);
+    return p.vMax * urgency;
   }
 
   /* --- ball ------------------------------------------------------------- */
@@ -462,6 +545,7 @@ export class MatchSim {
       this.recordTurnover(best);
     }
     this.ball.owner = best.def.id;
+    this.ball.lofted = false;
     this.ownedSinceTick = this.tick;
     this.ball.lastTouch = best.def.id;
     this.ball.lastTouchTeam = best.side;
@@ -476,10 +560,25 @@ export class MatchSim {
     const carrier = this.ball.owner === null ? null : this.playerById(this.ball.owner);
 
     if (carrier === p) {
-      if (p.isKeeper) this.keeperDistribution(p, dir);
-      else this.carrierBrain(p, dir);
+      if (p.isKeeper) {
+        // A keeper collecting the ball ends whatever his side was running.
+        this.abortMove(p.side);
+        this.keeperDistribution(p, dir);
+      } else if (!this.runMove(p, dir)) {
+        // The man on the ball is not doing his part of the move — because it
+        // has run out of steps, or because his role belongs to someone else.
+        // Rather than leave a half-run move governing everyone else's runs,
+        // it is abandoned and the whole side plays off the brain again.
+        if (this.activeMove[p.side] && !roleOf(this.activeMove[p.side], p.def.id)) {
+          this.abortMove(p.side);
+        }
+        this.carrierBrain(p, dir);
+      }
       return;
     }
+
+    // Off the ball, a player with a part in the move plays it.
+    if (this.runMove(p, dir)) return;
 
     if (p.isKeeper) {
       this.keeperBrain(p, dir, carrier);
@@ -502,9 +601,18 @@ export class MatchSim {
       this.tacticsFor(p.side).instructions,
     );
 
-    // Whoever is closest to the ball goes and contests it, on either side.
-    const chaser = this.closestTo(this.ball.pos);
-    if (chaser === p && (this.ball.owner === null || owning !== p.side)) {
+    /* Both sides go for a loose ball, not just whichever team happens to be
+     * nearest: the closest man on EACH side goes to where the ball is going to
+     * be. That is what produces a contest — two players arriving at the same
+     * dropping ball — and without it the engine had six contested aerial
+     * duels in a match against a real forty. */
+    if (this.ball.owner === null && this.nearestOfSideToBall(p.side) === p) {
+      p.state = "ChaseBall";
+      p.target = this.ballInterceptPoint(p);
+      return;
+    }
+    if (this.ball.owner !== null && owning !== p.side && this.nearestOfSideToBall(p.side) === p) {
+      // Their ball, but he is the closest: go and press it.
       p.state = "ChaseBall";
       p.target = this.ballInterceptPoint(p);
       return;
@@ -515,14 +623,33 @@ export class MatchSim {
       return;
     }
 
+    /* A forward with the ball in front of him gambles on a run in behind.
+     * These are the runs that get caught offside — and the reason a real match
+     * has four or five of them and this engine had one. */
+    const gambler =
+      (p.def.position === "ST" || p.def.position === "AM") &&
+      carrier !== null &&
+      carrier.side === p.side &&
+      (carrier.pos.x - p.pos.x) * dir < 0;
+    if (gambler && this.rng.chance(0.12 + attr01(p.def.attributes.offTheBall) * 0.12)) {
+      p.state = "RunBehind";
+      const goal = goalCentre(dir);
+      p.target = {
+        x: clamp(this.offsideLineX(p.side) + dir * this.rng.range(0, 4), 2, PITCH_LENGTH - 2),
+        y: clamp(p.pos.y + (goal.y - p.pos.y) * 0.3, 3, PITCH_WIDTH - 3),
+      };
+      return;
+    }
+
     // In possession without the ball: hold shape, shifted to the ball's side,
     // pushed on, and never beyond the last defender.
-    const shift = clamp((this.ball.pos.y - PITCH_WIDTH / 2) * 0.3, -8, 8);
-    const support = clamp((this.ball.pos.x - anchor.x) * 0.22, -8, 8);
+    const lateral = clamp((this.ball.pos.y - PITCH_WIDTH / 2) * 0.3, -8, 8);
+    const eagerness = this.intentWeight(p, "Support");
+    const support = clamp((this.ball.pos.x - anchor.x) * 0.22 * eagerness, -10, 10);
     p.state = "Support";
     p.target = this.keepOnside(p, {
       x: clamp(anchor.x + support, 1, PITCH_LENGTH - 1),
-      y: clamp(anchor.y + shift, 1, PITCH_WIDTH - 1),
+      y: clamp(anchor.y + lateral, 1, PITCH_WIDTH - 1),
     });
   }
 
@@ -543,12 +670,23 @@ export class MatchSim {
     // Nobody else leaves the block — a defence that collapses onto the ball
     // is a defence with nothing between the ball and the goal, which is how
     // this engine used to concede sixteen goals a match.
+    /* The nearest man presses — unless his side is set up not to, in which
+     * case he shows the carrier inside and holds the line instead. That choice
+     * is the pressing instruction and the role, nothing else. */
     if (rank === 0) {
-      p.state = "Press";
-      const gx = own.x - focus.x;
-      const gy = own.y - focus.y;
-      const gl = Math.hypot(gx, gy) || 1;
-      p.target = { x: focus.x + (gx / gl) * 0.7, y: focus.y + (gy / gl) * 0.7 };
+      const press = this.intentWeight(p, "Press");
+      const hold = this.intentWeight(p, "HoldShape");
+      if (press >= hold * 0.8 || dist(focus, own) < 28) {
+        p.state = "Press";
+        const gx = own.x - focus.x;
+        const gy = own.y - focus.y;
+        const gl = Math.hypot(gx, gy) || 1;
+        p.target = { x: focus.x + (gx / gl) * 0.7, y: focus.y + (gy / gl) * 0.7 };
+        return;
+      }
+      // Jockey: stay between him and goal, a couple of yards off.
+      p.state = "TrackRunner";
+      p.target = { x: lerp(focus.x, own.x, 0.12), y: lerp(focus.y, own.y, 0.12) };
       return;
     }
     if (rank === 1) {
@@ -568,16 +706,29 @@ export class MatchSim {
     // direction this side attacks, so the same arithmetic works at both ends.
     const ballProgress = (focus.x - own.x) * dir;
     const engage = 12 + ins.lineOfEngagement * 16;
-    // The back line sits a set distance goal-side of the ball, floored so it
-    // never drops into the six-yard box and capped so it never overruns the
-    // halfway line by more than a sensible high line would.
-    const lineX = own.x + dir * clamp(ballProgress - engage, 8, PITCH_LENGTH * 0.62);
+    /* The back line sits goal-side of the ball. Both terms matter: a set
+     * distance behind it when the ball is upfield, and — this is the one the
+     * engine was missing — never in FRONT of it when the ball is close. With
+     * only the first term, a ball five metres from goal put the whole defence
+     * eight metres further out than the ball, so nobody at all was in the
+     * six-yard box and every chance was a tap-in. */
+    const lineX =
+      own.x +
+      dir * clamp(Math.min(ballProgress - engage, ballProgress * 0.6), 5.5, PITCH_LENGTH * 0.62);
     const depth = 34 - ins.pressing * 8;
 
     // Where this slot sits within the band, front to back, from its own
     // anchor: the block keeps the team's shape, it does not flatten it.
     const slotDepth = clamp((anchor.x - own.x) * dir, 0, PITCH_LENGTH);
     const bandPos = clamp(slotDepth / (PITCH_LENGTH * 0.7), 0, 1);
+    /* The line sits deeper or higher according to what the side has been told
+     * and what the scoreboard says: a team protecting a lead in the last ten
+     * minutes drops, a team chasing one steps up. */
+    const lineShift = clamp(
+      (this.intentWeight(p, "StepUp") - this.intentWeight(p, "DropDeep")) * 6,
+      -8,
+      8,
+    );
     const wantX = lineX + dir * bandPos * depth;
 
     // Narrow towards the ball's side without abandoning the far post.
@@ -605,13 +756,27 @@ export class MatchSim {
 
     p.state = "HoldShape";
     p.target = {
-      x: clamp(wantX, 1, PITCH_LENGTH - 1),
+      x: clamp(wantX + dir * lineShift, 1, PITCH_LENGTH - 1),
       y: clamp(wantY, 1, PITCH_WIDTH - 1),
     };
   }
 
   private keeperBrain(p: Player, dir: Direction, carrier: Player | null): void {
     const ownGoalDir = dir === 1 ? (-1 as Direction) : (1 as Direction);
+
+    /* First job: if anything is heading for his goal, get across to it. This
+     * covers shots, deflections and — the one the engine kept conceding — a
+     * team-mate's backpass rolling towards an empty net. */
+    const line = this.ballCrossingPoint(ownGoalDir);
+    if (line !== null && this.ball.owner === null) {
+      p.state = "Contest";
+      const { near, far } = goalPostY();
+      p.target = {
+        x: goalCentre(ownGoalDir).x - ownGoalDir * 0.4,
+        y: clamp(line, near - 0.5, far + 0.5),
+      };
+      return;
+    }
     // Rush out: an opponent carrying the ball into the area is the keeper's
     // problem, not the defence's.
     if (
@@ -641,13 +806,66 @@ export class MatchSim {
     return nearest ? nearest.side : null;
   }
 
-  /** Where to run to meet a loose ball, rather than where it is now. */
+  /**
+   * Where to run to meet the ball, rather than where it is now.
+   *
+   * For a ball in the air that means the landing point: a defender under a
+   * cross runs to where it is coming down, not to the shadow beneath it. The
+   * projection ignores drag, which over the second or two a ball hangs is
+   * worth a few tens of centimetres.
+   */
   private ballInterceptPoint(p: Player): Vec2 {
-    const lead = clamp(dist(p.pos, this.ball.pos) / Math.max(p.vMax, 1), 0, 1.2);
-    return {
-      x: this.ball.pos.x + this.ball.vel.x * lead * 0.6,
-      y: this.ball.pos.y + this.ball.vel.y * lead * 0.6,
-    };
+    const b = this.ball;
+    if (b.pos.z > 0.5 || b.vel.z > 1) {
+      // t for the ball to fall back to heading height.
+      const target = Math.min(b.pos.z, 1.8);
+      const disc = b.vel.z * b.vel.z + 2 * GRAVITY * (b.pos.z - target);
+      const t = disc > 0 ? (b.vel.z + Math.sqrt(disc)) / GRAVITY : 0;
+      const flight = clamp(t, 0, 3);
+      return {
+        x: clamp(b.pos.x + b.vel.x * flight, SIM_MIN_X, SIM_MAX_X),
+        y: clamp(b.pos.y + b.vel.y * flight, SIM_MIN_Y, SIM_MAX_Y),
+      };
+    }
+    const lead = clamp(dist(p.pos, b.pos) / Math.max(p.vMax, 1), 0, 1.2);
+    return { x: b.pos.x + b.vel.x * lead * 0.6, y: b.pos.y + b.vel.y * lead * 0.6 };
+  }
+
+  /**
+   * Where the ball will cross the goal line at `dir`'s end, or null if it is
+   * not going to. Used by the keeper to get across, and deliberately generous
+   * about the posts: a keeper covers a ball a yard wide of his post too.
+   */
+  private ballCrossingPoint(dir: Direction): number | null {
+    const b = this.ball;
+    const goalX = goalCentre(dir).x;
+    const toGoal = (goalX - b.pos.x) * dir;
+    if (toGoal <= 0 || toGoal > 40) return null;
+    const closing = b.vel.x * dir;
+    if (closing <= 0.3) return null;
+    const t = toGoal / closing;
+    if (t > 4) return null;
+    const y = b.pos.y + b.vel.y * t;
+    const z = b.pos.z + b.vel.z * t - 0.5 * GRAVITY * t * t;
+    if (z > GOAL_HEIGHT + 1) return null;
+    const { near, far } = goalPostY();
+    if (y < near - 3 || y > far + 3) return null;
+    return y;
+  }
+
+  /** The closest man of one side to the ball; ties break on id. */
+  private nearestOfSideToBall(side: TeamSide): Player | null {
+    let best: Player | null = null;
+    let bestD = Infinity;
+    for (const q of this.players) {
+      if (q.side !== side || !q.onPitch || q.sentOff || q.isKeeper) continue;
+      const d = dist(q.pos, this.ball.pos);
+      if (d < bestD || (d === bestD && best && q.def.id < best.def.id)) {
+        best = q;
+        bestD = d;
+      }
+    }
+    return best;
   }
 
   /** 0 = closest of his side to the ball, 1 = second, -1 = further back. */
@@ -701,6 +919,245 @@ export class MatchSim {
     this.strike(gk, target, 0.9, 0.55, "clear", { targetId: null, completed: false });
   }
 
+  /* --- the playbook ----------------------------------------------------- */
+
+  /**
+   * Start a move if one fits and none is running. Called when a side settles
+   * on the ball: a move is a thing you begin from a settled possession, not
+   * something you start halfway through a tackle.
+   */
+  private maybeStartMove(carrier: Player, pressure: number): void {
+    if (!this.playbook) return;
+    const side = carrier.side;
+    if (this.activeMove[side]) return;
+    if (this.tick - this.ownedSinceTick < TICKS_PER_BRAIN_BEAT) return;
+
+    const dir = this.dirFor(side);
+    const zone = pitchToZone(carrier.pos, dir);
+    const options = candidates(this.playbook, { zone, pressure });
+    if (options.length === 0) return;
+
+    // Weighted pick from the seeded stream, so the same match runs the same
+    // moves every time it is replayed.
+    let total = 0;
+    for (const move of options) total += move.weight;
+    let roll = this.rng.next() * total;
+    let chosen: PlaybookMove | null = null;
+    for (const move of options) {
+      roll -= move.weight;
+      if (roll <= 0) {
+        chosen = move;
+        break;
+      }
+    }
+    if (!chosen) chosen = options[options.length - 1] as PlaybookMove;
+
+    const cast = this.castMove(chosen, carrier);
+    if (!cast) return; // nobody to play the parts
+    this.activeMove[side] = {
+      move: chosen,
+      cast,
+      step: 0,
+      stepStartTick: this.tick,
+      startTick: this.tick,
+    };
+  }
+
+  /** Fill a move's roles from the players actually on the pitch. */
+  private castMove(move: PlaybookMove, carrier: Player): Map<string, number> | null {
+    const dir = this.dirFor(carrier.side);
+    const cast = new Map<string, number>();
+    const used = new Set<number>();
+    const mates = this.players.filter(
+      (p) => p.side === carrier.side && p.onPitch && !p.isKeeper && p !== carrier,
+    );
+
+    for (const { role, from } of move.cast) {
+      let pick: Player | null = null;
+      switch (from) {
+        case "carrier":
+          pick = carrier;
+          break;
+        case "nearestAhead":
+          pick = this.bestBy(mates, used, (p) =>
+            (p.pos.x - carrier.pos.x) * dir > 2 ? -dist(p.pos, carrier.pos) : -Infinity,
+          );
+          break;
+        case "wideSameSide":
+          pick = this.bestBy(mates, used, (p) =>
+            Math.sign(p.pos.y - PITCH_WIDTH / 2) === Math.sign(carrier.pos.y - PITCH_WIDTH / 2)
+              ? Math.abs(p.pos.y - PITCH_WIDTH / 2)
+              : -Infinity,
+          );
+          break;
+        case "wideFarSide":
+          pick = this.bestBy(mates, used, (p) =>
+            Math.sign(p.pos.y - PITCH_WIDTH / 2) !== Math.sign(carrier.pos.y - PITCH_WIDTH / 2)
+              ? Math.abs(p.pos.y - PITCH_WIDTH / 2)
+              : -Infinity,
+          );
+          break;
+        case "supportBehind":
+          pick = this.bestBy(mates, used, (p) =>
+            (p.pos.x - carrier.pos.x) * dir < 1 ? -dist(p.pos, carrier.pos) : -Infinity,
+          );
+          break;
+        case "centreForward":
+          pick = this.bestBy(mates, used, (p) => (p.pos.x - carrier.pos.x) * dir);
+          break;
+      }
+      if (!pick) return null;
+      used.add(pick.def.id);
+      cast.set(role, pick.def.id);
+    }
+    return cast;
+  }
+
+  private bestBy(
+    players: readonly Player[],
+    used: ReadonlySet<number>,
+    score: (p: Player) => number,
+  ): Player | null {
+    let best: Player | null = null;
+    let bestScore = -Infinity;
+    for (const p of players) {
+      if (used.has(p.def.id)) continue;
+      const value = score(p);
+      // Ties break on id so casting never depends on array order.
+      if (value > bestScore || (value === bestScore && best && p.def.id < best.def.id)) {
+        best = p;
+        bestScore = value;
+      }
+    }
+    return bestScore === -Infinity ? null : best;
+  }
+
+  /** Abandon a move that is no longer on. */
+  private abortMove(side: TeamSide): void {
+    this.activeMove[side] = null;
+  }
+
+  /** Housekeeping: drop moves that have run their course or lost the ball. */
+  private updateMoves(): void {
+    for (const side of [0, 1] as TeamSide[]) {
+      const active = this.activeMove[side];
+      if (!active) continue;
+      const owner = this.ball.owner === null ? null : this.playerById(this.ball.owner);
+      if (!owner || owner.side !== side) {
+        this.abortMove(side);
+        continue;
+      }
+      if ((this.tick - active.startTick) / PHYSICS_HZ > MOVE_MAX_SECONDS) this.abortMove(side);
+      if (active.step >= active.move.steps.length) this.abortMove(side);
+    }
+  }
+
+  /**
+   * Run one player's part of the active move. Returns true if the move handled
+   * him, false to fall through to the ordinary brain — which is what happens
+   * to everyone without a role in it, and to everyone once it breaks down.
+   */
+  private runMove(p: Player, dir: Direction): boolean {
+    const active = this.activeMove[p.side];
+    if (!active) return false;
+    const role = roleOf(active, p.def.id);
+    if (!role) return false;
+
+    const steps = stepsFor(active, role);
+    if (steps.length === 0) return false;
+
+    const carrying = this.ball.owner === p.def.id;
+    for (const step of steps) {
+      // A player can only do a ball step if he actually has the ball.
+      const needsBall = step.kind !== "run";
+      if (needsBall && !carrying) continue;
+      if (this.executeStep(p, dir, active, step)) return true;
+    }
+    return false;
+  }
+
+  private executeStep(
+    p: Player,
+    dir: Direction,
+    active: ActiveMove,
+    step: MoveStep,
+  ): boolean {
+    const advance = (): void => {
+      active.step++;
+      active.stepStartTick = this.tick;
+    };
+    const timedOut = (seconds: number): boolean =>
+      (this.tick - active.stepStartTick) / PHYSICS_HZ > seconds;
+
+    switch (step.kind) {
+      case "run": {
+        /* A rehearsed run is TIMED, and a timed run goes beyond the last
+         * defender — that is the whole point of it, and it is where offsides
+         * come from. Holding these runs onside gave the engine less than one
+         * offside a match against a real four. */
+        const to = zoneToPitch(step.zone, dir);
+        p.state = "RunBehind";
+        p.target = to;
+        return true;
+      }
+      case "carry": {
+        const to = zoneToPitch(step.zone, dir);
+        if (dist(p.pos, to) < 3 || timedOut(step.seconds)) {
+          advance();
+          return false;
+        }
+        p.state = "Dribble";
+        p.target = to;
+        return true;
+      }
+      case "pass": {
+        const mate = this.castPlayer(active, step.to);
+        if (!mate) {
+          this.abortMove(p.side);
+          return false;
+        }
+        advance();
+        this.playPass(p, mate);
+        return true;
+      }
+      case "cross": {
+        const mate = this.castPlayer(active, step.to);
+        // A cross is a pass, and the flag goes up for one exactly the same.
+        if (mate && this.wouldPlayOffside(p, mate)) {
+          advance();
+          this.flagOffside(p, mate);
+          return true;
+        }
+        const goal = goalCentre(dir);
+        const aimY =
+          step.target === "near"
+            ? goal.y - dir * 4
+            : step.target === "far"
+              ? goal.y + dir * 5
+              : goal.y;
+        const target: Vec3 = mate
+          ? { x: mate.pos.x, y: mate.pos.y, z: step.target === "cutback" ? 0 : 2.1 }
+          : { x: goal.x - dir * 8, y: aimY, z: 2.1 };
+        advance();
+        this.strike(p, target, 0.75, step.target === "cutback" ? 0 : 0.4, "pass", {
+          targetId: mate ? mate.def.id : null,
+          completed: mate ? this.rng.chance(this.passCompletion(p, mate)) : false,
+        });
+        return true;
+      }
+      case "shoot": {
+        advance();
+        this.takeShot(p, dir, this.pressureOn(p));
+        return true;
+      }
+    }
+  }
+
+  private castPlayer(active: ActiveMove, role: string): Player | null {
+    const id = active.cast.get(role);
+    return id === undefined ? null : this.playerById(id);
+  }
+
   /**
    * On-ball decision. Every option is scored in the same currency — the
    * probability this possession ends in a goal — so they can be compared at
@@ -709,6 +1166,9 @@ export class MatchSim {
    */
   private carrierBrain(p: Player, dir: Direction): void {
     const pressure = this.pressureOn(p);
+    // A settled carrier may start a rehearsed move; if one starts, it takes
+    // over from the next beat.
+    this.maybeStartMove(p, pressure);
     const held = (this.tick - this.ownedSinceTick) / PHYSICS_HZ;
     const counter = this.isCounter(p.side);
 
@@ -770,12 +1230,41 @@ export class MatchSim {
     // second-best option, which is what makes bad teams look bad.
     const noise = (1 - attr01(p.def.attributes.decisions)) * 0.35;
     const jitter = (): number => 1 + this.rng.range(-noise, noise);
-    const shootScore = shootValue * jitter();
-    const passScore = bestPass * jitter();
-    const carryScore = carryValue * jitter();
+    /* The scores stay in their own currency — the probability this possession
+     * ends in a goal — and the intent layer MODULATES them. A poacher's shot
+     * is worth more to him than the same shot is to an anchor man; a side told
+     * to play direct values the pass forward more than the carry. */
+    const shootScore = shootValue * jitter() * this.intentWeight(p, "Shoot");
+    const passScore = bestPass * jitter() * this.intentWeight(p, "Pass");
+    const carryScore = carryValue * jitter() * this.intentWeight(p, "Dribble");
 
     if (shootScore >= passScore && shootScore >= carryScore && shotXG > MIN_SHOT_XG) {
       this.takeShot(p, dir, pressure);
+      return;
+    }
+
+    /* A ball into the box from wide is not the same option as a pass, and it
+     * cannot be scored like one: its value is the chance that SOMEBODY gets on
+     * the end of it, which is an aerial contest, not a completion. So it is
+     * chosen positionally — from the flank, in the final third — and its
+     * quality comes from the crossing attribute. */
+    const cross = this.crossTarget(p, dir);
+    if (cross) {
+      const a = p.def.attributes;
+      const quality = attr01(a.crossing) * 0.7 + attr01(a.technique) * 0.3;
+      const scatter = CROSS_TARGET_SPREAD * (1 - quality);
+      this.strike(
+        p,
+        {
+          x: clamp(cross.x + this.rng.range(-scatter, scatter), 2, PITCH_LENGTH - 2),
+          y: clamp(cross.y + this.rng.range(-scatter, scatter), 2, PITCH_WIDTH - 2),
+          z: 1.6 + this.rng.range(0, 0.8),
+        },
+        0.65,
+        CROSS_LOFT,
+        "pass",
+        { targetId: null, completed: false },
+      );
       return;
     }
 
@@ -787,7 +1276,8 @@ export class MatchSim {
     const inOwnThird = dist(p.pos, own) < PITCH_LENGTH / 3;
     const bestOption = Math.max(shootScore, passScore, carryScore);
     const panic = inBox(p.pos, penaltyArea(ownDir)) && pressure > 0.3;
-    if (panic || (inOwnThird && pressure > 0.55 && bestOption < BASE_THREAT * 2.5)) {
+    const clearBias = this.intentWeight(p, "Clear");
+    if (panic || (inOwnThird && pressure > 0.55 && bestOption < BASE_THREAT * 2.5 * clearBias)) {
       this.strike(
         p,
         {
@@ -819,23 +1309,7 @@ export class MatchSim {
    */
   private playPass(from: Player, to: Player): void {
     if (this.wouldPlayOffside(from, to)) {
-      this.strike(from, { x: to.pos.x, y: to.pos.y, z: 0 }, 0.45, 0, "pass", {
-        targetId: to.def.id,
-        completed: false,
-      });
-      this.emit({
-        type: "Offside",
-        actorId: to.def.id,
-        team: to.side,
-        from: { x: to.pos.x, y: to.pos.y, z: 0 },
-        to: null,
-        passerId: from.def.id,
-      });
-      this.emit({ type: "Whistle", kind: "offside", actorId: null, team: null, from: null, to: null });
-      this.deadBall("freeKick", (1 - from.side) as TeamSide, {
-        x: clamp(to.pos.x, 2, PITCH_LENGTH - 2),
-        y: clamp(to.pos.y, 2, PITCH_WIDTH - 2),
-      });
+      this.flagOffside(from, to);
       return;
     }
 
@@ -862,6 +1336,28 @@ export class MatchSim {
         to: null,
       });
     }
+  }
+
+  /** Play the ball to a man in an offside position, and pay for it. */
+  private flagOffside(from: Player, to: Player): void {
+    this.strike(from, { x: to.pos.x, y: to.pos.y, z: 0 }, 0.45, 0, "pass", {
+      targetId: to.def.id,
+      completed: false,
+    });
+    this.emit({
+      type: "Offside",
+      actorId: to.def.id,
+      team: to.side,
+      from: { x: to.pos.x, y: to.pos.y, z: 0 },
+      to: null,
+      passerId: from.def.id,
+    });
+    this.emit({ type: "Whistle", kind: "offside", actorId: null, team: null, from: null, to: null });
+    this.abortMove(from.side);
+    this.deadBall("freeKick", (1 - from.side) as TeamSide, {
+      x: clamp(to.pos.x, 2, PITCH_LENGTH - 2),
+      y: clamp(to.pos.y, 2, PITCH_WIDTH - 2),
+    });
   }
 
   /** The opponent best placed to cut a pass out — nearest to the lane. */
@@ -898,7 +1394,7 @@ export class MatchSim {
     const awareness =
       attr01(passer.def.attributes.decisions) * 0.5 +
       attr01(receiver.def.attributes.offTheBall) * 0.5;
-    return !this.rng.chance(0.08 + (1 - awareness) * 0.22);
+    return !this.rng.chance(0.16 + (1 - awareness) * 0.3);
   }
 
   /**
@@ -940,6 +1436,39 @@ export class MatchSim {
   }
 
   /**
+   * Where a cross should go, or null if this is not a crossing position.
+   *
+   * Wide and in the final third is the trigger. The delivery goes near post,
+   * far post or cut back, weighted by where the ball is: from the byline you
+   * pull it back, from deeper you hang it up.
+   */
+  private crossTarget(p: Player, dir: Direction): Vec2 | null {
+    const goal = goalCentre(dir);
+    const wide = Math.abs(p.pos.y - PITCH_WIDTH / 2) > 17;
+    const progress = (p.pos.x - PITCH_LENGTH / 2) * dir;
+    if (!wide || progress < 14) return null;
+    // Somebody has to be in there to attack it.
+    let arriving = 0;
+    for (const m of this.players) {
+      if (m.side !== p.side || m === p || !m.onPitch) continue;
+      if (dist(m.pos, goal) < 18) arriving++;
+    }
+    if (arriving === 0) return null;
+    if (!this.rng.chance(0.55 + attr01(p.def.attributes.crossing) * 0.25)) return null;
+
+    const byline = progress > 34;
+    const { near, far } = goalPostY();
+    const nearSide = Math.abs(p.pos.y - near) < Math.abs(p.pos.y - far) ? near : far;
+    if (byline && this.rng.chance(0.45)) {
+      // Cut back to the edge of the six-yard box.
+      return { x: goal.x - dir * 11, y: goal.y + (p.pos.y > goal.y ? -3 : 3) };
+    }
+    return this.rng.chance(0.5)
+      ? { x: goal.x - dir * 6, y: nearSide }
+      : { x: goal.x - dir * 8, y: goal.y + (goal.y - nearSide) * 0.8 };
+  }
+
+  /**
    * What the ball is worth at a position: the zone's own value (xT) plus the
    * chance a shot from there goes in. Both are in the same currency — the
    * probability this possession ends in a goal — which is what lets a pass,
@@ -965,10 +1494,21 @@ export class MatchSim {
     for (const o of this.grid.query(to.pos, 4, this.queryBuf)) {
       if (o.side !== from.side && o.onPitch && !o.isKeeper) markers++;
     }
+    /* A ball INTO the penalty area is the hardest pass in football: it is the
+     * one every defender is watching, and the one they are all goal-side of.
+     * Without charging for it the engine walked the ball into the six-yard box
+     * and took its shots from ten metres, against a real average of
+     * seventeen. */
+    const receiverDir = this.dirFor(from.side);
+    const intoBox = inBox(to.pos, penaltyArea(receiverDir)) ? 0.06 : 0;
     const skill = attr01(from.def.attributes.passing) * 0.7 + attr01(from.def.attributes.vision) * 0.3;
     const control = attr01(to.def.attributes.firstTouch) * 0.1;
-    const base = 0.93 - d * 0.014 - blockers * 0.22 - markers * 0.16;
-    return clamp(base + skill * 0.16 + control - this.pressureOn(from) * 0.14, 0.04, 0.97);
+    const base = 0.93 - d * 0.014 - blockers * 0.22 - markers * 0.16 - intoBox;
+    return clamp(
+      base + skill * 0.16 + control - this.pressureOn(from) * 0.14 + this.homeEdge(from.side, HOME_EDGE_PASS),
+      0.04,
+      0.97,
+    );
   }
 
   /** Chip it when there is a body in the way, drill it when there is not. */
@@ -1071,15 +1611,17 @@ export class MatchSim {
     target: Vec3,
     pace: number,
     loft: number,
-    kind: "pass" | "shot" | "clear",
+    kind: "pass" | "clear",
     pass?: { targetId: number | null; completed: boolean },
   ): void {
     const a = p.def.attributes;
-    const attribute = kind === "shot" ? a.finishing : a.passing;
+    // Everything struck through here is a delivery, not a shot: shots have
+    // their own path through takeShot, where the model decides the outcome.
+    const attribute = kind === "clear" ? a.kicking || a.passing : a.passing;
     const from: Vec3 = { x: this.ball.pos.x, y: this.ball.pos.y, z: BALL_RADIUS };
     const range = Math.hypot(target.x - from.x, target.y - from.y);
     const pressure = this.pressureOn(p);
-    const difficulty = clamp(range / 45 + (kind === "shot" ? 0.25 : 0), 0, 1);
+    const difficulty = clamp(range / 45, 0, 1);
 
     const result = solveKick(
       from,
@@ -1095,6 +1637,9 @@ export class MatchSim {
     this.ball.owner = null;
     this.ball.vel = result.vel;
     this.ball.spin = result.spin;
+    // Anything struck with real height on it is a ball to be attacked in the
+    // air; a chip over a defender's foot is not.
+    this.ball.lofted = loft >= 0.4;
     this.ball.lastTouch = p.def.id;
     this.ball.lastTouchTeam = p.side;
     this.lastKickerId = p.def.id;
@@ -1102,31 +1647,16 @@ export class MatchSim {
     this.selfLockTick = this.tick + Math.round(KICK_SELF_LOCK * PHYSICS_HZ);
     p.state = "Support";
 
-    if (kind === "shot") {
-      this.emit({
-        type: "Shot",
-        actorId: p.def.id,
-        team: p.side,
-        from,
-        to: target,
-        xg: 0,
-        psxg: 0,
-        onTarget: false,
-        header: false,
-        result: "off",
-      });
-    } else {
-      this.emit({
-        type: "Pass",
-        actorId: p.def.id,
-        team: p.side,
-        from,
-        to: target,
-        targetId: pass?.targetId ?? null,
-        completed: pass?.completed ?? true,
-        length: range,
-      });
-    }
+    this.emit({
+      type: "Pass",
+      actorId: p.def.id,
+      team: p.side,
+      from,
+      to: target,
+      targetId: pass?.targetId ?? null,
+      completed: pass?.completed ?? true,
+      length: range,
+    });
   }
 
   /**
@@ -1134,19 +1664,26 @@ export class MatchSim {
    * to wherever that outcome says it went, so what the viewer sees and what
    * the stats record are the same event and cannot drift apart.
    */
-  private takeShot(p: Player, dir: Direction, pressure: number): void {
-    const a = p.def.attributes;
+  private takeShot(
+    p: Player,
+    dir: Direction,
+    pressure: number,
+    opts: { header?: boolean; penalty?: boolean } = {},
+  ): void {
+    const header = opts.header === true;
+    const penalty = opts.penalty === true;
     const keeper = this.keeperOf((1 - p.side) as TeamSide);
     const outcome = resolveShot(
       {
         from: p.pos,
         dir,
-        header: false,
-        pressure,
+        header,
+        // Nobody is closing down a penalty taker.
+        pressure: penalty ? 0 : pressure,
         counter: this.isCounter(p.side),
-        penalty: false,
+        penalty,
       },
-      { finishing: a.finishing, technique: a.technique, composure: a.composure, longShots: a.longShots },
+      this.strikeSkill(p, header),
       keeper
         ? {
             reflexes: keeper.def.attributes.reflexes,
@@ -1171,6 +1708,7 @@ export class MatchSim {
     this.ball.owner = null;
     this.ball.vel = velocity;
     this.ball.spin = 0;
+    this.ball.lofted = false;
     this.ball.lastTouch = p.def.id;
     this.ball.lastTouchTeam = p.side;
     this.lastKickerId = p.def.id;
@@ -1188,7 +1726,10 @@ export class MatchSim {
       xg: outcome.xg,
       psxg: outcome.psxg,
       onTarget,
-      header: false,
+      header,
+      penalty,
+      // A shot within a few seconds of a restart came from that restart.
+      setPiece: this.tick - this.lastRestartTick < PHYSICS_HZ * 6,
       result:
         outcome.kind === "goal"
           ? "goal"
@@ -1224,6 +1765,36 @@ export class MatchSim {
     }
   }
 
+  /**
+   * What the shooter brings to the strike. A header is struck with the head,
+   * so the attribute that decides a shot with the feet has nothing to do with
+   * it; and a player shooting at home does so a fraction better, which is one
+   * of the three places home advantage lives.
+   */
+  private strikeSkill(p: Player, header: boolean): {
+    finishing: number;
+    technique: number;
+    composure: number;
+    longShots: number;
+  } {
+    const a = p.def.attributes;
+    const edge = this.homeEdge(p.side, HOME_EDGE_SHOT) * 20; // in attribute points
+    const lift = (value: number): number => clamp(value + edge, 1, 20);
+    return header
+      ? {
+          finishing: lift(a.heading),
+          technique: lift(a.heading),
+          composure: lift(a.composure),
+          longShots: lift(a.heading),
+        }
+      : {
+          finishing: lift(a.finishing),
+          technique: lift(a.technique),
+          composure: lift(a.composure),
+          longShots: lift(a.longShots),
+        };
+  }
+
   /** Defenders in the shooting lane. Each body is worth a chunk of block. */
   private blockChance(p: Player, dir: Direction): number {
     const goal = goalCentre(dir);
@@ -1234,7 +1805,7 @@ export class MatchSim {
       if ((o.pos.x - p.pos.x) * dir <= 0) continue;
       blockers++;
     }
-    return clamp(blockers * 0.11, 0, 0.45);
+    return clamp(blockers * 0.15, 0, 0.55);
   }
 
   /**
@@ -1253,7 +1824,10 @@ export class MatchSim {
       const toGoal = (goalX - this.ball.pos.x) * dir;
       if (toGoal <= 0 || toGoal > 30) continue; // wrong way, or too far out
       const closing = this.ball.vel.x * dir;
-      if (closing <= 2) continue; // not actually going anywhere near it
+      // Even a ball trickling towards the goal has to be dealt with: the
+      // engine's own goals were all slow ones rolling in past a keeper who was
+      // not looking at them.
+      if (closing <= 0.5) continue;
 
       const t = toGoal / closing;
       const y = this.ball.pos.y + this.ball.vel.y * t;
@@ -1269,15 +1843,22 @@ export class MatchSim {
       const keeper = this.keeperOf(defending);
       if (!keeper) return;
       const pace = Math.hypot(this.ball.vel.x, this.ball.vel.y, this.ball.vel.z);
-      // A ball nobody meant to put on target is one the keeper has seen all
-      // the way: he is beaten by it far less often than by a struck shot.
+      /* A ball nobody meant to put on target is one the keeper has seen all
+       * the way: he is beaten by it far less often than by a struck shot. And
+       * a ball played by his OWN side — a backpass, a sliced clearance — he is
+       * set and waiting for, which is why own goals are freak events rather
+       * than a weekly occurrence. The engine was producing more than one a
+       * match before this. */
+      const friendly = this.ball.lastTouchTeam === defending;
       const psxg = postShotXG(y, z, pace, toGoal, false);
       const beaten = this.rng.chance(
         saveFailChance(psxg, {
           reflexes: keeper.def.attributes.reflexes,
           handling: keeper.def.attributes.handling,
           positioning: keeper.def.attributes.positioning,
-        }) * STRAY_BALL_SAVE_BONUS,
+        }) *
+          STRAY_BALL_SAVE_BONUS *
+          (friendly ? OWN_GOAL_SAVE_BONUS : 1),
       );
       if (beaten) return; // it is going in, and the laws will award it
 
@@ -1352,10 +1933,19 @@ export class MatchSim {
 
     const keeper = this.keeperOf((1 - pending.side) as TeamSide);
     if (!keeper) return;
-    // Gathered a clear stride off his line, never on it: a keeper holding the
-    // ball level with the goal line is one turn away from carrying it in.
-    const contact: Vec2 = { x: goalX - pending.dir * 1.6, y: this.ball.pos.y };
-    keeper.pos = { x: contact.x, y: clamp(contact.y, PITCH_WIDTH / 2 - 4, PITCH_WIDTH / 2 + 4) };
+    /* Gathered a clear stride off his line, never on it: a keeper holding the
+     * ball level with the goal line is one turn away from carrying it in.
+     *
+     * He also DIVES to it rather than appearing at it — capped at what a
+     * keeper can actually cover in the moment, so the save is a movement the
+     * viewer can follow instead of a body blinking sideways. The ball is then
+     * placed at his hands, not the other way round. */
+    const contactX = goalX - pending.dir * 1.6;
+    const wantY = clamp(this.ball.pos.y, PITCH_WIDTH / 2 - 4, PITCH_WIDTH / 2 + 4);
+    const dy = clamp(wantY - keeper.pos.y, -2.2, 2.2);
+    keeper.pos = { x: contactX, y: keeper.pos.y + dy };
+    keeper.vel = { x: 0, y: 0 };
+    const contact: Vec2 = { x: contactX, y: keeper.pos.y };
     this.ball.pos = { x: contact.x, y: contact.y, z: Math.max(this.ball.pos.z, 0) };
 
     this.emit({
@@ -1377,8 +1967,10 @@ export class MatchSim {
     } else {
       // A parry is the most dangerous ball in football: it goes out into the
       // area at an angle, live, with everyone reacting to it.
-      const angle = this.rng.range(-1.1, 1.1);
-      const speed = this.rng.range(10, 17);
+      // Parried away from the goal rather than straight behind it: a keeper
+      // pushing every save over his own bar gave twenty corners a match.
+      const angle = this.rng.range(-0.75, 0.75);
+      const speed = this.rng.range(9, 15);
       this.ball.vel = {
         x: -pending.dir * Math.cos(angle) * speed,
         y: Math.sin(angle) * speed,
@@ -1412,6 +2004,37 @@ export class MatchSim {
       this.wonBallDeep[side] === true &&
       this.tick - (this.wonBallTick[side] ?? 0) < PHYSICS_HZ * 8
     );
+  }
+
+  /* --- intents ------------------------------------------------------------ */
+
+  /** The role this player has been given, or the default for his position. */
+  private roleOf(p: Player): string {
+    const named = this.tacticsFor(p.side).roles[p.slot];
+    if (named && named !== "default") return named;
+    return defaultRole(p.def.position);
+  }
+
+  /**
+   * How much this player wants to do this, before the situation is considered:
+   * his role, his side's instructions, and the state of the game multiplied
+   * together. This is the layer that makes a tactical slider or a role change
+   * mean something without a new branch anywhere.
+   */
+  private intentWeight(p: Player, intent: Intent): number {
+    const ins = this.tacticsFor(p.side).instructions;
+    const goalDifference = this.score[p.side] - this.score[p.side === 0 ? 1 : 0];
+    const minutesLeft = Math.max(0, (HALVES * HALF_LENGTH_SECONDS - this.matchSecond) / 60);
+    return (
+      roleWeight(this.roleOf(p), intent) *
+      collectiveWeight(ins, intent) *
+      gameStateWeight(intent, goalDifference, minutesLeft)
+    );
+  }
+
+  /** The home side's edge for this player, in the units each caller wants. */
+  private homeEdge(side: TeamSide, perPoint: number): number {
+    return side === 0 ? this.homeAdvantage * perPoint : 0;
   }
 
   /** 0..1 how closed down a player is: the input to composure everywhere. */
@@ -1472,29 +2095,439 @@ export class MatchSim {
         attr01(carrier.def.attributes.balance) * 0.15;
       const defend =
         attr01(o.def.attributes.tackling) * 0.65 + attr01(o.def.attributes.strength) * 0.35;
-      // Rolled on the steering beat rather than every tick, so the per-roll
-      // chance is three times the per-tick one: ~1.5 s in contact is a coin
-      // flip at parity.
-      const p = clamp((0.006 * TICKS_PER_STEER * (0.6 + defend)) / (0.6 + attack), 0, 0.14);
-      if (!this.rng.chance(p)) continue;
-      this.ball.owner = o.def.id;
-      this.ownedSinceTick = this.tick;
-      this.ball.lastTouch = o.def.id;
-      this.ball.lastTouchTeam = o.side;
-      o.state = "Dribble";
-      carrier.state = "Recover";
+
+      /* A challenge is three questions, not one: does he go in, does he win
+       * it, and if he does not, was it a foul. Rolled on the steering beat
+       * rather than every tick, so the per-roll chance is three times the
+       * per-tick one. A booked man goes in less often, which is the whole
+       * point of a booking. */
+      const caution = o.yellowCards > 0 ? BOOKED_CAUTION : 1;
+      const engage = clamp(
+        (TACKLE_ENGAGE_BASE * TICKS_PER_STEER * (0.6 + defend) * caution) / (0.6 + attack),
+        0,
+        0.3,
+      );
+      if (!this.rng.chance(engage)) continue;
+
+      const winProb = clamp(0.34 + (defend - attack) * 0.65, 0.08, 0.86);
+      if (this.rng.chance(winProb)) {
+        this.winTackle(o, carrier);
+        return;
+      }
+
+      // He went in and missed. Whether that is a foul is about how cleanly he
+      // tackles and how recklessly he plays, not about luck alone.
+      const cleanliness =
+        attr01(o.def.attributes.tackling) * 0.7 +
+        attr01(o.def.attributes.composure) * 0.15 +
+        attr01(o.def.attributes.anticipation) * 0.15;
+      /* A defender in his own box does not throw himself at people: he
+       * shepherds, jockeys and waits, because the cost of getting it wrong is
+       * a penalty. Without this the engine gave away nearly two spot kicks a
+       * match against a real-world one every four. */
+      const ownDir = this.dirFor(o.side) === 1 ? (-1 as Direction) : (1 as Direction);
+      const careful = inBox(o.pos, penaltyArea(ownDir)) ? 0.2 : 1;
+      // The marginal decision goes to the home side.
+      const refereeEdge = 1 - this.homeEdge((1 - o.side) as TeamSide, HOME_EDGE_FOUL);
+      const foulChance = clamp(
+        refereeEdge *
+        FOUL_BASE *
+          (1.15 - cleanliness) *
+          (0.7 + attr01(o.def.attributes.aggression) * 0.6) *
+          careful,
+        0.02,
+        0.8,
+      );
+      if (this.rng.chance(foulChance)) {
+        this.commitFoul(o, carrier);
+        return;
+      }
+      // Beaten: the carrier goes past him.
+      o.state = "Recover";
+      return;
+    }
+  }
+
+  /** A challenge won cleanly: the ball changes feet. */
+  private winTackle(winner: Player, loser: Player): void {
+    this.ball.owner = winner.def.id;
+    this.ownedSinceTick = this.tick;
+    this.ball.lastTouch = winner.def.id;
+    this.ball.lastTouchTeam = winner.side;
+    winner.state = "Dribble";
+    loser.state = "Recover";
+    this.recordTurnover(winner);
+    this.abortMove(loser.side);
+    this.emit({
+      type: "Duel",
+      actorId: winner.def.id,
+      team: winner.side,
+      from: { ...this.ball.pos },
+      to: null,
+      opponentId: loser.def.id,
+      won: true,
+      aerial: false,
+    });
+  }
+
+  /* --- balls in the air --------------------------------------------------- */
+
+  /** How high this player can get his head, in metres. */
+  private aerialReach(p: Player): number {
+    return AERIAL_REACH_BASE + attr01(p.def.attributes.jumpReach) * AERIAL_REACH_JUMP;
+  }
+
+  /**
+   * A ball in the air is contested, not waited for.
+   *
+   * The contest happens on the way DOWN, once, inside the band where a header
+   * is possible at all. Whoever wins it heads it: a defender clears his lines,
+   * an attacker either has a go at goal or glances it on. This is where
+   * heading, jumpReach and bravery earn their place in the attribute list, and
+   * it is what turns a cross or a corner from a hopeful arc into a chance.
+   */
+  private resolveAerial(): void {
+    const b = this.ball;
+    if (b.owner !== null || this.play !== "live") return;
+    if (b.pos.z <= AERIAL_BAND_LOW || b.pos.z > AERIAL_BAND_HIGH) return;
+    if (!b.lofted) return;
+    if (this.tick < this.aerialLockTick || this.tick < this.resolvedShotUntil) return;
+    if (b.vel.z > 0.5) return; // still climbing: nobody is heading this yet
+    // A ball drifting down through head height at walking pace is a ball to
+    // control, not to contest.
+    if (Math.hypot(b.vel.x, b.vel.y, b.vel.z) < 3) return;
+
+    const near = this.grid.query({ x: b.pos.x, y: b.pos.y }, AERIAL_RANGE, this.queryBuf);
+    this.aerialBuf.length = 0;
+    for (const p of near) {
+      if (!p.onPitch || p.sentOff) continue;
+      if (this.aerialReach(p) < b.pos.z) continue;
+      this.aerialBuf.push(p);
+    }
+    if (this.aerialBuf.length === 0) return;
+
+    const strengthOf = (p: Player): number => {
+      const a = p.def.attributes;
+      return (
+        attr01(a.heading) * 0.34 +
+        attr01(a.jumpReach) * 0.26 +
+        attr01(a.strength) * 0.16 +
+        attr01(a.bravery) * 0.12 +
+        attr01(a.positioning) * 0.12 +
+        // A keeper coming for a cross claims a lot of them, but not so many
+        // that a corner is a formality: at 0.35 he ate the entire set-piece
+        // threat of both sides.
+        (p.isKeeper ? 0.2 : 0)
+      );
+    };
+
+    let best: Player | null = null;
+    let bestScore = -Infinity;
+    let bestClean = 0;
+    for (const p of this.aerialBuf) {
+      const clean = strengthOf(p);
+      const rolled = clean + this.rng.range(-0.08, 0.08);
+      if (rolled > bestScore || (rolled === bestScore && best && p.def.id < best.def.id)) {
+        best = p;
+        bestScore = rolled;
+        bestClean = clean;
+      }
+    }
+    if (!best) return;
+
+    let opponent: Player | null = null;
+    let opponentClean = 0;
+    for (const p of this.aerialBuf) {
+      if (p === best || p.side === best.side) continue;
+      const clean = strengthOf(p);
+      if (clean > opponentClean) {
+        opponent = p;
+        opponentClean = clean;
+      }
+    }
+
+    this.aerialLockTick = this.tick + AERIAL_LOCK_TICKS;
+
+    /* Even the better header of a ball only wins a share of them, and a
+     * contested ball is often won by neither: it flicks off a shoulder and
+     * runs. That is what the win check is for. */
+    const winProb = opponent
+      ? clamp((bestClean / (bestClean + opponentClean + 1e-6)) * 0.85 + 0.1, 0.1, 0.95)
+      : 0.92;
+    if (!this.rng.chance(winProb)) return;
+
+    /* Only a CONTESTED header is a duel. A defender heading a long ball clear
+     * with nobody near him is not winning anything, and counting it produced
+     * hundreds of "aerial duels" a match against a real forty to sixty. */
+    if (opponent) {
       this.emit({
         type: "Duel",
-        actorId: o.def.id,
-        team: o.side,
-        from: { ...this.ball.pos },
+        actorId: best.def.id,
+        team: best.side,
+        from: { ...b.pos },
         to: null,
-        opponentId: carrier.def.id,
+        opponentId: opponent.def.id,
         won: true,
-        aerial: false,
+        aerial: true,
+      });
+    }
+
+    b.lastTouch = best.def.id;
+    b.lastTouchTeam = best.side;
+    this.lastKickerId = best.def.id;
+    this.controlLockTick = this.tick + Math.round(KICK_CONTROL_LOCK * PHYSICS_HZ);
+    this.selfLockTick = this.tick + Math.round(KICK_SELF_LOCK * PHYSICS_HZ);
+
+    const dir = this.dirFor(best.side);
+    if (best.isKeeper) {
+      // He claims it.
+      b.owner = best.def.id;
+      b.lofted = false;
+      this.ownedSinceTick = this.tick;
+      b.vel = { x: 0, y: 0, z: 0 };
+      best.state = "Distribute";
+      return;
+    }
+
+    /* What he does with it depends on where he is. In his own third he clears
+     * it; in the attacking third he attacks the goal; everywhere else — which
+     * is most of the pitch — he brings it down or nods it to a team-mate.
+     * Heading every ball forty yards downfield is how the engine ended up with
+     * three hundred aerial duels in a match: two sides heading the same ball
+     * back and forth for ninety minutes. */
+    const ownDir = dir === 1 ? (-1 as Direction) : (1 as Direction);
+    if (distanceToGoal(best.pos, ownDir) < PITCH_LENGTH / 3) {
+      this.headClear(best, dir);
+      return;
+    }
+    if (distanceToGoal(best.pos, dir) < PITCH_LENGTH / 3) {
+      this.headTarget(best, dir);
+      return;
+    }
+    const a = best.def.attributes;
+    const cushion = clamp(0.35 + attr01(a.firstTouch) * 0.35 + attr01(a.technique) * 0.15, 0, 0.9);
+    if (this.rng.chance(cushion)) {
+      b.owner = best.def.id;
+      b.lofted = false;
+      this.ownedSinceTick = this.tick;
+      b.vel = { x: 0, y: 0, z: 0 };
+      b.pos.z = 0;
+      best.state = "Dribble";
+      return;
+    }
+    this.headTarget(best, dir);
+  }
+
+  /** A defensive header: distance and width, away from the danger. Flat
+   *  enough to come down and be played, rather than hanging in the air to be
+   *  headed again by the next man. */
+  private headClear(p: Player, dir: Direction): void {
+    this.strike(
+      p,
+      {
+        x: clamp(p.pos.x + dir * this.rng.range(18, 34), 2, PITCH_LENGTH - 2),
+        y: clamp(p.pos.y + this.rng.range(-16, 16), 2, PITCH_WIDTH - 2),
+        z: 0,
+      },
+      0.7,
+      0.5,
+      "clear",
+      { targetId: null, completed: false },
+    );
+  }
+
+  /** An attacking header: a go at goal if he is close enough, or a nod on. */
+  private headTarget(p: Player, dir: Direction): void {
+    const range = distanceToGoal(p.pos, dir);
+    const pressure = this.pressureOn(p);
+    if (range < 16 && pressure < 0.75) {
+      this.takeShot(p, dir, pressure, { header: true });
+      return;
+    }
+    const mate = this.passOptions(p, 3).find((m) => m !== p && !this.offsidePosition(m, p.side));
+    if (mate) {
+      this.strike(p, { x: mate.pos.x, y: mate.pos.y, z: 0.4 }, 0.5, 0.5, "pass", {
+        targetId: mate.def.id,
+        completed: this.rng.chance(this.passCompletion(p, mate) * 0.8),
       });
       return;
     }
+    this.headClear(p, dir);
+  }
+
+  /* --- fouls, cards and the advantage ------------------------------------ */
+
+  /**
+   * A foul. Three things follow from it, in this order:
+   *
+   *  1. Is it a penalty? A foul inside the defending side's own area is, and
+   *     that is the only way this engine produces one.
+   *  2. What does the referee do with the card? A booking is not a dice roll
+   *     off every foul — it is for cynical challenges, and for the ones that
+   *     stopped a side that was going somewhere.
+   *  3. Does play stop at all? If the fouled side still has the ball and is
+   *     facing forward, the referee plays advantage for five seconds and only
+   *     pulls it back if nothing comes of it.
+   */
+  private commitFoul(offender: Player, victim: Player): void {
+    const at: Vec2 = { x: victim.pos.x, y: victim.pos.y };
+    const ownDir = this.dirFor(offender.side) === 1 ? (-1 as Direction) : (1 as Direction);
+    const inPenaltyArea = inBox(at, penaltyArea(ownDir));
+
+    // Was the victim going somewhere? A foul on a man running into space is a
+    // different offence from one in the middle of a crowded midfield.
+    const promising =
+      Math.hypot(victim.vel.x, victim.vel.y) > victim.vMax * 0.7 &&
+      (victim.pos.x - PITCH_LENGTH / 2) * this.dirFor(victim.side) > 0;
+    /* Denying a goal-scoring opportunity is a specific thing, not "a foul near
+     * the goal": the man fouled has to have the ball, be running at goal, and
+     * have nobody but the keeper left to beat. Without all three the engine
+     * sent someone off twice a match. */
+    const clearChance =
+      this.ball.owner === victim.def.id &&
+      !offender.isKeeper &&
+      promising &&
+      this.defendersGoalSide(victim) <= 1 &&
+      // ...and the chance he was denied has to have been a real one. Distance
+      // alone is not enough: a man clear on the touchline forty yards out is
+      // not a goal-scoring opportunity, and the engine was sending people off
+      // for stopping him.
+      expectedGoals({
+        from: victim.pos,
+        dir: this.dirFor(victim.side),
+        header: false,
+        pressure: 0.2,
+        counter: true,
+        penalty: false,
+      }) > 0.07;
+
+    const card = this.judgeCard(offender, promising, clearChance);
+    if (card !== "none") this.addStoppage(STOPPAGE_PER_CARD);
+
+    if (inPenaltyArea) {
+      this.emit({
+        type: "Foul",
+        actorId: offender.def.id,
+        team: offender.side,
+        from: { x: at.x, y: at.y, z: 0 },
+        to: null,
+        victimId: victim.def.id,
+        card,
+        advantage: false,
+      });
+      this.awardPenalty(victim.side, ownDir);
+      return;
+    }
+
+    /* Advantage. The ball is at the victim's feet and he is still going: the
+     * referee holds the whistle. If the move breaks down inside the window the
+     * free kick is pulled back to here, which is what the pending record is
+     * for. */
+    const playOn = promising && this.ball.owner === victim.def.id;
+    this.emit({
+      type: "Foul",
+      actorId: offender.def.id,
+      team: offender.side,
+      from: { x: at.x, y: at.y, z: 0 },
+      to: null,
+      victimId: victim.def.id,
+      card,
+      advantage: playOn,
+    });
+
+    if (playOn) {
+      this.advantage = {
+        side: victim.side,
+        at,
+        until: this.tick + ADVANTAGE_SECONDS * PHYSICS_HZ,
+      };
+      return;
+    }
+    this.stopForFreeKick(victim.side, at);
+  }
+
+  /** Blow up and give the free kick. */
+  private stopForFreeKick(side: TeamSide, at: Vec2): void {
+    this.advantage = null;
+    this.emit({ type: "Whistle", kind: "foul", actorId: null, team: null, from: null, to: null });
+    this.deadBall("freeKick", side, {
+      x: clamp(at.x, 1, PITCH_LENGTH - 1),
+      y: clamp(at.y, 1, PITCH_WIDTH - 1),
+    });
+  }
+
+  /**
+   * The advantage clock. It ends one of three ways: the side keeps the ball
+   * for the full five seconds and play simply goes on, they score (same
+   * thing), or they lose it — and then the referee brings it back.
+   */
+  private updateAdvantage(): void {
+    const advantage = this.advantage;
+    if (!advantage) return;
+    if (this.play !== "live") {
+      this.advantage = null;
+      return;
+    }
+    const owner = this.ball.owner === null ? null : this.playerById(this.ball.owner);
+    if (this.tick >= advantage.until) {
+      this.advantage = null; // it came to something, or near enough
+      return;
+    }
+    if (owner && owner.side !== advantage.side) {
+      // Lost it: pull it back.
+      this.stopForFreeKick(advantage.side, advantage.at);
+    }
+  }
+
+  /** How many defenders are between this player and the goal he attacks. */
+  private defendersGoalSide(p: Player): number {
+    const dir = this.dirFor(p.side);
+    let count = 0;
+    for (const o of this.players) {
+      if (o.side === p.side || !o.onPitch) continue;
+      if ((o.pos.x - p.pos.x) * dir > 0) count++;
+    }
+    return count;
+  }
+
+  /** What the referee reaches for. */
+  private judgeCard(
+    offender: Player,
+    promising: boolean,
+    clearChance: boolean,
+  ): "none" | "yellow" | "red" {
+    // Denying an obvious goal-scoring opportunity is the one automatic red.
+    if (clearChance && this.rng.chance(RED_DOGSO)) return this.sendOff(offender);
+    if (this.rng.chance(RED_VIOLENT)) return this.sendOff(offender);
+
+    const chance = clamp(
+      YELLOW_BASE +
+        (promising ? YELLOW_PROMISING_ATTACK : 0) +
+        attr01(offender.def.attributes.aggression) * 0.12 -
+        attr01(offender.def.attributes.tackling) * 0.06,
+      0.02,
+      0.75,
+    );
+    if (!this.rng.chance(chance)) return "none";
+
+    offender.yellowCards++;
+    if (offender.yellowCards >= 2) return this.sendOff(offender);
+    return "yellow";
+  }
+
+  private sendOff(offender: Player): "red" {
+    offender.sentOff = true;
+    offender.onPitch = false;
+    this.abortMove(offender.side);
+    return "red";
+  }
+
+  /** A foul in the box. */
+  private awardPenalty(side: TeamSide, defendingDir: Direction): void {
+    const spot = penaltySpot(defendingDir);
+    this.emit({ type: "Whistle", kind: "foul", actorId: null, team: null, from: null, to: null });
+    this.addStoppage(20);
+    this.deadBall("penalty", side, { x: spot.x, y: spot.y });
   }
 
   /**
@@ -1617,7 +2650,7 @@ export class MatchSim {
   }
 
   private deadBall(
-    kind: "throw" | "corner" | "goalKick" | "freeKick",
+    kind: "throw" | "corner" | "goalKick" | "freeKick" | "penalty",
     side: TeamSide,
     at: Vec2,
   ): void {
@@ -1638,6 +2671,7 @@ export class MatchSim {
       to: null,
     });
     this.pending = { kind, side, at, takeAt: this.tick + Math.round(PHYSICS_HZ * 1.5) };
+    this.lastRestartTick = this.tick;
   }
 
   /** A pending restart is taken by the nearest eligible player of the side. */
@@ -1645,12 +2679,11 @@ export class MatchSim {
     const pending = this.pending;
     if (!pending || this.tick < pending.takeAt) return;
 
-    const taker = this.closestTo({ x: pending.at.x, y: pending.at.y, z: 0 }, pending.side);
-    this.pending = null;
-    this.play = "live";
-    this.prevBallPos = { ...this.ball.pos };
-
     if (pending.kind === "kickOff") {
+      const taker = this.closestTo({ x: pending.at.x, y: pending.at.y, z: 0 }, pending.side);
+      this.pending = null;
+      this.play = "live";
+      this.prevBallPos = { ...this.ball.pos };
       this.emit({
         type: "KickOff",
         actorId: taker?.def.id ?? null,
@@ -1668,25 +2701,251 @@ export class MatchSim {
       return;
     }
 
-    if (!taker) return;
-    taker.pos = { x: pending.at.x, y: pending.at.y };
+    if (pending.kind === "penalty") {
+      this.takePenalty(pending.side, pending.at);
+      return;
+    }
+
+    const taker = this.closestTo({ x: pending.at.x, y: pending.at.y, z: 0 }, pending.side);
+    if (!taker) {
+      this.pending = null;
+      this.play = "live";
+      return;
+    }
+
+    /* The taker WALKS to the ball. Teleporting him onto it moved a player up
+     * to fifty metres in a single tick, which the renderer faithfully drew as
+     * a body vanishing and reappearing somewhere else. Waiting for him is also
+     * what a throw-in actually looks like. */
+    const arrived = dist(taker.pos, pending.at) <= 1.2;
+    const waited = this.tick - pending.takeAt > PHYSICS_HZ * 8;
+    if (!arrived && !waited) {
+      taker.state = "ChaseBall";
+      taker.target = { x: pending.at.x, y: pending.at.y };
+      taker.nextBrainTick = this.tick + TICKS_PER_BRAIN_BEAT;
+      return;
+    }
+    if (!arrived) taker.pos = { x: pending.at.x, y: pending.at.y };
+
+    this.pending = null;
+    this.play = "live";
     this.ball.pos = { x: pending.at.x, y: pending.at.y, z: 0 };
+    this.prevBallPos = { ...this.ball.pos };
+
     const dir = this.dirFor(pending.side);
-    const target: Vec3 =
-      pending.kind === "corner"
-        ? { ...goalCentre(dir), z: 2.2 }
-        : {
-            x: pending.at.x + dir * this.rng.range(14, 30),
-            y: clamp(pending.at.y + this.rng.range(-14, 14), 2, PITCH_WIDTH - 2),
-            z: 0,
-          };
+    if (pending.kind === "corner") {
+      this.takeCorner(taker, dir);
+      return;
+    }
+    if (pending.kind === "freeKick") {
+      this.takeFreeKick(taker, dir, pending.at);
+      return;
+    }
+    const target: Vec3 = {
+      x: pending.at.x + dir * this.rng.range(14, 30),
+      y: clamp(pending.at.y + this.rng.range(-14, 14), 2, PITCH_WIDTH - 2),
+      z: 0,
+    };
+    this.strike(taker, target, pending.kind === "goalKick" ? 0.8 : 0.6, pending.kind === "throw" ? 0.25 : 0.55, "pass");
+  }
+
+  /**
+   * A corner is a routine, not a hoof. The taker picks a delivery — near post,
+   * far post, the edge, or short — and the side sends bodies to meet it. The
+   * ball itself is then an ordinary flighted ball, which means the aerial
+   * contest decides what happens to it, exactly as it does from open play.
+   */
+  private takeCorner(taker: Player, dir: Direction): void {
+    const goal = goalCentre(dir);
+    const { near, far } = goalPostY();
+    const nearPost = Math.abs(taker.pos.y - near) < Math.abs(taker.pos.y - far) ? near : far;
+    const quality = attr01(taker.def.attributes.crossing);
+
+    // Send the big men in, and leave one out for the second ball.
+    const attackers = this.players
+      .filter((p) => p.side === taker.side && p.onPitch && p !== taker && !p.isKeeper)
+      .sort((a, b) => b.def.attributes.jumpReach - a.def.attributes.jumpReach);
+    const spots: Vec2[] = [
+      { x: goal.x - dir * 5.5, y: nearPost },
+      { x: goal.x - dir * 8, y: goal.y },
+      { x: goal.x - dir * 6.5, y: goal.y + (goal.y - nearPost) * 0.9 },
+      { x: goal.x - dir * 11, y: goal.y + (goal.y - nearPost) * 0.4 },
+      { x: goal.x - dir * 18, y: goal.y },
+    ];
+    for (const [i, p] of attackers.entries()) {
+      const spot = spots[i];
+      if (!spot) break;
+      p.state = "RunBehind";
+      p.target = { ...spot };
+      p.nextBrainTick = this.tick + TICKS_PER_BRAIN_BEAT * 3;
+    }
+
+    const roll = this.rng.next();
+    let target: Vec3;
+    let loft = 0.65;
+    if (roll < 0.12) {
+      // Short: to a team-mate near the flag, and play restarts from there.
+      const short = attackers[attackers.length - 1];
+      target = short
+        ? { x: short.pos.x, y: short.pos.y, z: 0 }
+        : { x: taker.pos.x + dir * 6, y: taker.pos.y, z: 0 };
+      loft = 0;
+    } else if (roll < 0.45) {
+      target = { x: goal.x - dir * 5.5, y: nearPost, z: 2.2 };
+    } else if (roll < 0.8) {
+      target = { x: goal.x - dir * 7, y: goal.y + (goal.y - nearPost) * 0.9, z: 2.3 };
+    } else {
+      target = { x: goal.x - dir * 16, y: goal.y, z: 1.6 };
+    }
+    // A poor crosser hangs it up where the keeper can claim it.
+    const scatter = CROSS_TARGET_SPREAD * (1 - quality) * 0.6;
     this.strike(
       taker,
-      target,
-      pending.kind === "goalKick" ? 0.8 : 0.6,
-      pending.kind === "throw" ? 0.25 : 0.55,
+      {
+        x: clamp(target.x + this.rng.range(-scatter, scatter), 1, PITCH_LENGTH - 1),
+        y: clamp(target.y + this.rng.range(-scatter, scatter), 1, PITCH_WIDTH - 1),
+        z: target.z,
+      },
+      0.6,
+      loft,
       "pass",
+      { targetId: null, completed: false },
     );
+  }
+
+  /**
+   * A free kick. In range of goal it is a shot at goal over a wall; further
+   * out it is a delivery into the box. The wall is real: defenders stand at
+   * the mandated distance in the line of the shot, and the ball can hit them.
+   */
+  private takeFreeKick(taker: Player, dir: Direction, at: Vec2): void {
+    const range = distanceToGoal(at, dir);
+    const a = taker.def.attributes;
+    const shootable = range < 30 && range > 6 && this.rng.chance(0.35 + attr01(a.technique) * 0.4);
+
+    if (!shootable) {
+      if (range < 45) {
+        // Into the mixer.
+        const goal = goalCentre(dir);
+        this.markBoxRunners(taker.side, dir);
+        this.strike(
+          taker,
+          { x: goal.x - dir * 8, y: goal.y + this.rng.range(-8, 8), z: 2.2 },
+          0.6,
+          0.6,
+          "pass",
+          { targetId: null, completed: false },
+        );
+        return;
+      }
+      const mate = this.passOptions(taker, 4).find((m) => !this.offsidePosition(m, taker.side));
+      if (mate) this.playPass(taker, mate);
+      else this.strike(taker, { x: at.x + dir * 25, y: at.y, z: 0 }, 0.7, 0.4, "clear");
+      return;
+    }
+
+    const wall = this.formWall(at, range, (1 - taker.side) as TeamSide, dir);
+    // Over the wall, or round it: a technical taker bends it, a powerful one
+    // hits through the gap. Either way the wall gets a chance to block it.
+    this.takeShot(taker, dir, 0, {});
+    if (wall.length > 0 && this.pendingShot) {
+      const jumper = wall[0] as Player;
+      const block = clamp(0.18 + attr01(jumper.def.attributes.jumpReach) * 0.22, 0, 0.45);
+      if (this.rng.chance(block)) {
+        this.pendingShot = null;
+        this.resolvedShotUntil = 0;
+        const angle = this.rng.range(0, Math.PI * 2);
+        this.ball.pos = { x: jumper.pos.x, y: jumper.pos.y, z: 1.2 };
+        this.ball.vel = { x: Math.cos(angle) * 6, y: Math.sin(angle) * 6, z: 2 };
+        this.ball.lofted = false;
+      }
+    }
+  }
+
+  /** Send the tall men into the box for a delivery. */
+  private markBoxRunners(side: TeamSide, dir: Direction): void {
+    const goal = goalCentre(dir);
+    const runners = this.players
+      .filter((p) => p.side === side && p.onPitch && !p.isKeeper)
+      .sort((a, b) => b.def.attributes.jumpReach - a.def.attributes.jumpReach)
+      .slice(0, 4);
+    for (const [i, p] of runners.entries()) {
+      p.state = "RunBehind";
+      p.target = { x: goal.x - dir * (6 + i * 2), y: goal.y + (i % 2 === 0 ? -4 : 4) };
+      p.nextBrainTick = this.tick + TICKS_PER_BRAIN_BEAT * 3;
+    }
+  }
+
+  /**
+   * Build a wall: the closer the free kick, the more bodies in it. They stand
+   * the mandated 9.15 m from the ball, on the line between it and the near
+   * post, which is what actually makes a taker have to go over or around.
+   */
+  private formWall(at: Vec2, range: number, side: TeamSide, attackDir: Direction): Player[] {
+    const count = clamp(Math.round((30 - range) / 7) + 1, 1, 4);
+    const goal = goalCentre(attackDir);
+    const toGoal = { x: goal.x - at.x, y: goal.y - at.y };
+    const length = Math.hypot(toGoal.x, toGoal.y) || 1;
+    const ux = toGoal.x / length;
+    const uy = toGoal.y / length;
+    const anchor = { x: at.x + ux * RESTART_DISTANCE, y: at.y + uy * RESTART_DISTANCE };
+
+    const defenders = this.players
+      .filter((p) => p.side === side && p.onPitch && !p.isKeeper)
+      .sort(
+        (a, b) => dist(a.pos, anchor) - dist(b.pos, anchor) || a.def.id - b.def.id,
+      )
+      .slice(0, count);
+    for (const [i, p] of defenders.entries()) {
+      const offset = (i - (defenders.length - 1) / 2) * 0.9;
+      p.state = "HoldShape";
+      p.pos = { x: anchor.x - uy * offset, y: anchor.y + ux * offset };
+      p.vel = { x: 0, y: 0 };
+      p.target = { ...p.pos };
+      p.nextBrainTick = this.tick + TICKS_PER_BRAIN_BEAT * 3;
+    }
+    return defenders;
+  }
+
+  /**
+   * A penalty. The best striker of a ball takes it, everyone else is cleared
+   * out of the area, and the kick itself goes through the same shot model as
+   * everything else — which already prices a spot kick at the historical 0.76
+   * and hands it to the save model to be kept out.
+   */
+  private takePenalty(side: TeamSide, spot: Vec2): void {
+    const dir = this.dirFor(side);
+    let taker: Player | null = null;
+    let best = -Infinity;
+    for (const p of this.players) {
+      if (p.side !== side || !p.onPitch || p.isKeeper) continue;
+      const a = p.def.attributes;
+      const score = attr01(a.composure) * 0.5 + attr01(a.finishing) * 0.4 + attr01(a.technique) * 0.1;
+      if (score > best || (score === best && taker && p.def.id < taker.def.id)) {
+        best = score;
+        taker = p;
+      }
+    }
+    this.pending = null;
+    this.play = "live";
+    if (!taker) return;
+
+    // Clear the area: everyone but the taker and the keeper stands outside it,
+    // which is a dead-ball reposition, not a run.
+    const area = penaltyArea(dir);
+    for (const p of this.players) {
+      if (!p.onPitch || p === taker || p.isKeeper) continue;
+      if (!inBox(p.pos, area)) continue;
+      p.pos = { x: spot.x - dir * this.rng.range(4, 8), y: clamp(p.pos.y, 6, PITCH_WIDTH - 6) };
+      p.vel = { x: 0, y: 0 };
+    }
+
+    taker.pos = { x: spot.x - dir * 1, y: spot.y };
+    this.ball.pos = { x: spot.x, y: spot.y, z: 0 };
+    this.ball.owner = null;
+    this.ball.vel = { x: 0, y: 0, z: 0 };
+    this.prevBallPos = { ...this.ball.pos };
+    this.takeShot(taker, dir, 0, { penalty: true });
   }
 
   /** Ball dead and nobody near it for too long: force someone to go and get
@@ -1824,6 +3083,7 @@ export class MatchSim {
       },
       pendingShot: this.pendingShot ? structuredCloneish(this.pendingShot) : null,
       pendingRestart: this.pending ? structuredCloneish(this.pending) : null,
+      activeMoves: [serialiseMove(this.activeMove[0]), serialiseMove(this.activeMove[1])],
       ball: {
         pos: { ...this.ball.pos },
         vel: { ...this.ball.vel },
@@ -1831,6 +3091,7 @@ export class MatchSim {
         owner: this.ball.owner,
         lastTouch: this.ball.lastTouch,
         lastTouchTeam: this.ball.lastTouchTeam,
+        lofted: this.ball.lofted,
       },
       players: this.players.map((p) => ({
         id: p.def.id,
@@ -1847,6 +3108,9 @@ export class MatchSim {
         target: { ...p.target },
         steerX: p.steerX,
         steerY: p.steerY,
+        vMax: p.vMax,
+        aMax: p.aMax,
+        turnRate: p.turnRate,
       })),
     };
   }
@@ -1875,6 +3139,8 @@ export class MatchSim {
     this.wonBallDeep[1] = frame.possession.wonBallDeep[1];
     this.pendingShot = (frame.pendingShot ?? null) as typeof this.pendingShot;
     this.pending = (frame.pendingRestart ?? null) as typeof this.pending;
+    this.activeMove[0] = deserialiseMove(frame.activeMoves[0]);
+    this.activeMove[1] = deserialiseMove(frame.activeMoves[1]);
     // The offside line is cached per tick; a restored tick must not read a
     // cache computed for a different one.
     this.offsideLineTick[0] = -1;
@@ -1885,6 +3151,7 @@ export class MatchSim {
     this.ball.owner = frame.ball.owner;
     this.ball.lastTouch = frame.ball.lastTouch;
     this.ball.lastTouchTeam = frame.ball.lastTouchTeam;
+    this.ball.lofted = frame.ball.lofted;
     for (const ps of frame.players) {
       const p = this.playerById(ps.id);
       if (!p) continue;
@@ -1901,7 +3168,9 @@ export class MatchSim {
       p.target = { ...ps.target };
       p.steerX = ps.steerX;
       p.steerY = ps.steerY;
-      refreshCeilings(p);
+      p.vMax = ps.vMax;
+      p.aMax = ps.aMax;
+      p.turnRate = ps.turnRate;
     }
     this.prevBallPos = frame.prevBallPos ? { ...frame.prevBallPos } : null;
   }
@@ -1951,18 +3220,48 @@ export class MatchSim {
  *  a shooting position; he still has to beat his man and finish. Without a
  *  discount the scorer walks the ball to the goal line every time, because the
  *  next position is always worth more than shooting from this one. */
-const CONTINUATION = 0.62;
+const CONTINUATION = 0.74;
 /** How much easier an unintended ball on target is to keep out than a struck
  *  shot: it is slower, it is central, and the keeper has watched it all the
  *  way. Applied to the beat chance, so 0.35 means a third as likely to go in. */
 const STRAY_BALL_SAVE_BONUS = 0.2;
 /** What a shot is worth beyond the goal itself — rebounds, corners, a keeper
  *  forced into a mistake — as a fraction of its own xG. */
-const SHOT_FOLLOW_UP = 0.35;
+const SHOT_FOLLOW_UP = 0.7;
 /** No one shoots at a chance worse than this, however bare the alternatives. */
-const MIN_SHOT_XG = 0.05;
+const MIN_SHOT_XG = 0.03;
 
 /** Goal mouth constants re-exported for the renderer's convenience. */
+/** A Map does not survive JSON, so the cast is stored as pairs. */
+function serialiseMove(active: ActiveMove | null): unknown {
+  if (!active) return null;
+  return {
+    move: active.move,
+    cast: [...active.cast.entries()],
+    step: active.step,
+    stepStartTick: active.stepStartTick,
+    startTick: active.startTick,
+  };
+}
+
+function deserialiseMove(raw: unknown): ActiveMove | null {
+  if (!raw) return null;
+  const data = raw as {
+    move: PlaybookMove;
+    cast: [string, number][];
+    step: number;
+    stepStartTick: number;
+    startTick: number;
+  };
+  return {
+    move: data.move,
+    cast: new Map(data.cast),
+    step: data.step,
+    stepStartTick: data.stepStartTick,
+    startTick: data.startTick,
+  };
+}
+
 /** Deep copy of a plain, JSON-safe object graph. The keyframes have to be
  *  structured-clonable across the worker boundary and serialisable into a
  *  replay, so nothing in them may share a reference with the live sim. */

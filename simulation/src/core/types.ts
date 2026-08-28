@@ -147,6 +147,9 @@ export interface MatchSetup {
   homeTactics: Tactics;
   awayTactics: Tactics;
   weather: Weather;
+  /** The home side's advantage in the Manager's own units (0-10, 5 typical);
+   *  0 at a neutral venue. See HOME_EDGE in constants.ts for what it does. */
+  homeAdvantage?: number;
 }
 
 /** Anything the user did mid-match. Replays are {setup, userCommands}. */

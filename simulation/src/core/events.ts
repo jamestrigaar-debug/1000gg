@@ -46,6 +46,11 @@ export type MatchEvent =
       psxg: number;
       onTarget: boolean;
       header: boolean;
+      /** A spot kick. Carried on the event so the stats and the commentary
+       *  can tell "scored" from "scored from the spot" without inference. */
+      penalty: boolean;
+      /** True when the shot came from a corner, free kick or throw. */
+      setPiece: boolean;
       result: ShotResult;
     })
   | (EventBase & { type: "Save"; shooterId: number; held: boolean; parried: boolean })

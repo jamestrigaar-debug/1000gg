@@ -20,6 +20,17 @@ export interface CommentaryContext {
   /** Short names, for "RIV 2-1 KIN". */
   teamNames: [string, string];
   playerName: (id: number | null) => string;
+  /** Set by the Shot line immediately before a goal, so the goal line can say
+   *  how it was scored. Mutable state, but it is scoped to one pass over one
+   *  event stream and it is what stops "he heads it in" being a guess. */
+  lastGoalWas?: { header: boolean; penalty: boolean };
+}
+
+/** Which set of words fits the goal that just went in. */
+function templatesForGoal(_scorerId: number, ctx: CommentaryContext): string[] {
+  if (ctx.lastGoalWas?.penalty) return PENALTY_TEMPLATES;
+  if (ctx.lastGoalWas?.header) return HEADER_GOAL_TEMPLATES;
+  return GOAL_TEMPLATES;
 }
 
 export interface CommentaryLine {
@@ -31,6 +42,23 @@ export interface CommentaryLine {
   kind: string;
   text: string;
 }
+
+const HEADER_GOAL_TEMPLATES = [
+  "{player} heads it in! {score}.",
+  "A header from {player} — and it's in. {score}.",
+  "{player} rises above everyone and buries the header. {score}.",
+];
+
+const PENALTY_TEMPLATES = [
+  "{player} sends the keeper the wrong way from the spot. {score}.",
+  "{player} makes no mistake from twelve yards. {score}.",
+];
+
+const CARD_TEMPLATES = [
+  "{player} goes into the book.",
+  "That's a booking for {player}.",
+  "The referee has a word, and {player} is cautioned.",
+];
 
 const GOAL_TEMPLATES = [
   "GOAL! {player} finishes it off — {score}.",
@@ -118,10 +146,15 @@ export function lineFor(
         kind: "goal",
         text: event.ownGoal
           ? `Own goal! ${ctx.playerName(event.scorerId)} turns it into his own net. ${scoreLine}`
-          : fill(pick(GOAL_TEMPLATES)),
+          : fill(pick(templatesForGoal(event.scorerId, ctx))),
       };
     case "Shot": {
-      if (event.result === "goal") return null; // the Goal event carries it
+      // The goal itself is carried by the Goal event; what is recorded here is
+      // how it was scored, so the line that follows can say "heads it in".
+      if (event.result === "goal") {
+        ctx.lastGoalWas = { header: event.header, penalty: event.penalty };
+        return null;
+      }
       if (event.result === "post") {
         return {
           matchSecond: event.matchSecond,
@@ -171,6 +204,16 @@ export function lineFor(
         text: fill(pick(OFFSIDE_TEMPLATES)),
       };
     case "Restart":
+      if (event.kind === "penalty") {
+        return {
+          matchSecond: event.matchSecond,
+          minute,
+          importance: 2,
+          team: event.team,
+          kind: "penalty",
+          text: `Penalty to ${event.team === null ? "" : (ctx.teamNames[event.team] ?? "")}!`,
+        };
+      }
       if (event.kind !== "corner") return null;
       return {
         matchSecond: event.matchSecond,
@@ -191,8 +234,10 @@ export function lineFor(
           event.card === "red"
             ? `${ctx.playerName(event.actorId)} is sent off!`
             : event.card === "yellow"
-              ? `${ctx.playerName(event.actorId)} goes into the book.`
-              : `Free kick, ${ctx.playerName(event.victimId)} was fouled.`,
+              ? fill(pick(CARD_TEMPLATES))
+              : event.advantage
+                ? `${ctx.playerName(event.actorId)} catches ${ctx.playerName(event.victimId)}, but the referee waves play on.`
+                : `Free kick, ${ctx.playerName(event.victimId)} was fouled.`,
       };
     case "Whistle":
       if (event.kind === "halfTime") {

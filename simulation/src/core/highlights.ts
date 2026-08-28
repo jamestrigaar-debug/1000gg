@@ -48,6 +48,7 @@ const WINDOW: Record<string, { before: number; after: number }> = {
   bigChance: { before: 10, after: 4 },
   post: { before: 10, after: 4 },
   save: { before: 8, after: 4 },
+  penalty: { before: 4, after: 14 },
   shot: { before: 6, after: 3 },
   foul: { before: 5, after: 4 },
   corner: { before: 4, after: 8 },
@@ -116,6 +117,7 @@ function mergeOverlaps(highlights: Highlight[]): Highlight[] {
   for (let i = 1; i < sorted.length; i++) {
     const next = sorted[i] as Highlight;
     if (next.from <= current.to) {
+      const latestSoFar = current.at;
       current.to = Math.max(current.to, next.to);
       if (next.importance > current.importance) {
         // The bigger moment names the passage; the smaller one becomes the
@@ -125,7 +127,15 @@ function mergeOverlaps(highlights: Highlight[]): Highlight[] {
       } else {
         extras.push(next.text);
       }
-      current.score = next.score;
+      /* The passage shows the score as it stood at its LAST moment, which is
+       * not the same as the last line merged into it: windows are merged in
+       * order of when they START, and a goal's window starts earlier than the
+       * chance a second before it. Taking the later line's score by position
+       * showed a goal in the text with the pre-goal score beside it. */
+      if (next.at >= latestSoFar) {
+        current.score = next.score;
+        current.at = Math.max(current.at, next.at);
+      }
     } else {
       out.push(withLeadIn(current, extras));
       extras.length = 0;

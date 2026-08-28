@@ -108,6 +108,10 @@ export interface FullSnapshot {
    *  waiting to be taken. Both are plain data. */
   pendingShot: unknown;
   pendingRestart: unknown;
+  /** The rehearsed move each side is running, if any. A move changes what
+   *  every player in its cast does, so a keyframe that forgot it would resume
+   *  into a different match. */
+  activeMoves: [unknown, unknown];
   players: {
     id: number;
     slot: number;
@@ -124,6 +128,13 @@ export interface FullSnapshot {
     target: Vec2;
     steerX: number;
     steerY: number;
+    /** The cached physical ceilings. They are derived from stamina, but only
+     *  recomputed on a brain beat, so they are state in their own right:
+     *  recomputing them at restore time instead of carrying them made a
+     *  resumed match drift from the original within a few seconds. */
+    vMax: number;
+    aMax: number;
+    turnRate: number;
   }[];
 }
 

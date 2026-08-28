@@ -27,6 +27,16 @@ export interface TeamStats {
   reds: number;
   saves: number;
   interceptions: number;
+  /** Contested balls in the air won — the aerial game, which is a different
+   *  competition from the one on the floor. */
+  aerialsWon: number;
+  /** Chances that came from a corner, free kick or throw. */
+  setPieceShots: number;
+  setPieceXG: number;
+  penalties: number;
+  penaltiesScored: number;
+  headers: number;
+  headerGoals: number;
 }
 
 export interface PlayerStatLine {
@@ -40,6 +50,7 @@ export interface PlayerStatLine {
   passesCompleted: number;
   interceptions: number;
   duelsWon: number;
+  aerialsWon: number;
   saves: number;
   /** 6.0 - 10.0, the FM-style match rating. */
   rating: number;
@@ -69,6 +80,13 @@ const emptyTeam = (): TeamStats => ({
   reds: 0,
   saves: 0,
   interceptions: 0,
+  aerialsWon: 0,
+  setPieceShots: 0,
+  setPieceXG: 0,
+  penalties: 0,
+  penaltiesScored: 0,
+  headers: 0,
+  headerGoals: 0,
 });
 
 const emptyPlayer = (id: number, team: TeamSide): PlayerStatLine => ({
@@ -82,6 +100,7 @@ const emptyPlayer = (id: number, team: TeamSide): PlayerStatLine => ({
   passesCompleted: 0,
   interceptions: 0,
   duelsWon: 0,
+  aerialsWon: 0,
   saves: 0,
   rating: 6.5,
 });
@@ -114,6 +133,17 @@ export function buildStats(events: readonly MatchEvent[]): MatchStats {
           t.psxg += e.psxg;
           if (e.onTarget) t.onTarget++;
           if (e.result === "blocked") t.blocked++;
+          if (e.header) {
+            t.headers++;
+            if (e.result === "goal") t.headerGoals++;
+          }
+          if (e.penalty) {
+            t.penalties++;
+            if (e.result === "goal") t.penaltiesScored++;
+          } else if (e.setPiece) {
+            t.setPieceShots++;
+            t.setPieceXG += e.xg;
+          }
         }
         if (line) {
           line.shots++;
@@ -151,7 +181,11 @@ export function buildStats(events: readonly MatchEvent[]): MatchStats {
         if (line) line.interceptions++;
         break;
       case "Duel":
-        if (line && e.won) line.duelsWon++;
+        if (line && e.won) {
+          line.duelsWon++;
+          if (e.aerial) line.aerialsWon++;
+        }
+        if (t && e.won && e.aerial) t.aerialsWon++;
         break;
       case "Save":
         if (t) t.saves++;
@@ -193,15 +227,7 @@ export function ratingFor(line: PlayerStatLine): number {
   rating -= clamp((line.passes - line.passesCompleted) / 30, 0, 0.5);
   rating += clamp(line.interceptions * 0.06, 0, 0.5);
   rating += clamp(line.duelsWon * 0.05, 0, 0.4);
+  rating += clamp(line.aerialsWon * 0.04, 0, 0.3);
   rating += clamp(line.saves * 0.12, 0, 1.2);
   return Math.round(clamp(rating, 4, 10) * 10) / 10;
-}
-
-/** Possession cannot be derived from the event stream alone — it is time, not
- *  events — so the simulation supplies it and this is where it is folded in. */
-export function withPossession(
-  stats: MatchStats,
-  possession: [number, number],
-): MatchStats & { possession: [number, number] } {
-  return { ...stats, possession };
 }

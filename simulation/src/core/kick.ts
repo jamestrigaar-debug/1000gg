@@ -21,7 +21,6 @@
  * ========================================================================== */
 
 import {
-  AIR_DRAG_K,
   BALL_RADIUS,
   GRAVITY,
   KICK_MAX_LAUNCH,
@@ -315,15 +314,4 @@ export function minimumSpeedFor(from: Vec3, target: Vec3): number {
   const dx = Math.hypot(target.x - from.x, target.y - from.y);
   const dz = target.z - from.z;
   return Math.sqrt(GRAVITY * (dz + Math.hypot(dx, dz)));
-}
-
-/** Drag-free apex height of a launch — used by the AI to ask "will this pass
- *  clear the defender in the lane?" without simulating it. */
-export const apexHeight = (vz: number): number => (vz * vz) / (2 * GRAVITY);
-
-/** Rough horizontal range with drag, for option scoring where a full solve is
- *  too expensive to run per candidate pass. */
-export function approxRange(speed: number, theta: number): number {
-  const flat = (speed * speed * Math.sin(2 * theta)) / GRAVITY;
-  return flat / (1 + AIR_DRAG_K * speed * 1.6);
 }

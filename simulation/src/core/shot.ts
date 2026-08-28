@@ -130,21 +130,32 @@ export function resolveShot(
   const ambition = clamp(skill * 1.1 - clamp(ctx.pressure, 0, 1) * 0.45 - dist / 60, 0.05, 0.95);
   const side = rng.chance(0.5) ? -1 : 1;
   const aimY = (near + far) / 2 + side * ambition * halfWidth * 0.82;
-  const aimZ = ctx.penalty
-    ? rng.range(0.15, GOAL_HEIGHT * 0.75)
-    : clamp(rng.clampedNormal(GOAL_HEIGHT * 0.35, GOAL_HEIGHT * 0.28), 0.05, GOAL_HEIGHT * 0.95);
+  /* A header is aimed low and across the keeper — you cannot place a header
+   * into the top corner the way you can place a shot — and it scatters more,
+   * because the ball arrives on someone else's terms. */
+  const aimZ = ctx.header
+    ? clamp(rng.clampedNormal(0.8, 0.65), 0.1, GOAL_HEIGHT * 0.72)
+    : ctx.penalty
+      ? rng.range(0.15, GOAL_HEIGHT * 0.75)
+      : clamp(rng.clampedNormal(GOAL_HEIGHT * 0.35, GOAL_HEIGHT * 0.28), 0.05, GOAL_HEIGHT * 0.95);
 
   // Execution error, in metres of miss at the goal line.
-  /* Sprayed wider than instinct suggests. Real shooting accuracy is about
-   * half on target from twelve yards and a quarter from twenty-five; a model
-   * that keeps 80% of shots on target hands the keeper a save every two
-   * minutes and turns the shot map into a shooting gallery. */
-  const spray = (2.1 + dist * 0.26) * (1.35 - skill) * (1 + clamp(ctx.pressure, 0, 1) * 0.6);
+  /* Shooting error is ANGULAR, not a fixed number of metres: a footballer
+   * misses by a few degrees, which is centimetres from six yards and metres
+   * from twenty-five. Written as a constant plus a distance term it made a
+   * tap-in as wild as a thirty-yarder, and close-range conversion fell through
+   * the floor the shot map is pinned to. */
+  const spray = ctx.header
+    ? (0.8 + dist * 0.48) * (1.4 - skill) * (1 + clamp(ctx.pressure, 0, 1) * 0.6)
+    : (0.6 + dist * 0.42) * (1.35 - skill) * (1 + clamp(ctx.pressure, 0, 1) * 0.6);
   const missY = rng.clampedNormal(0, spray);
   /* Vertical error is much smaller than horizontal: a footballer's shots
    * scatter across the goal far more than they scatter up and down it. At the
    * old 0.7 every shot was either along the ground or over the bar. */
-  const missZ = rng.clampedNormal(0, spray * 0.32);
+  /* A header's error is mostly sideways: the technique is to direct it down
+   * across the keeper, and a coached header that misses tends to miss WIDE
+   * rather than sail over. A shot with the feet scatters more evenly. */
+  const missZ = rng.clampedNormal(0, spray * (ctx.header ? 0.2 : 0.32));
   const finalY = aimY + missY;
   /* A shot dragged below the bar's zero is not a miss — it is a low drive
    * along the ground, and along the ground is on target. Treating z <= 0 as
@@ -209,11 +220,23 @@ export function postShotXG(
   // Along the ground and in the top corner are both hard; mid-height is not.
   const heightWork = clamp(Math.abs(z - GOAL_HEIGHT * 0.45) / (GOAL_HEIGHT * 0.55), 0, 1);
   const placement = clamp(cornerY * 0.72 + heightWork * 0.28, 0, 1);
-  /* Distance is the dominant term here too, and it has to be: a keeper saves
-   * the overwhelming majority of on-target shots from twenty-five yards and
-   * only a minority of them from six. Fitted so a central shot on target
-   * converts at about 0.6 from six metres and about 0.16 from twenty-five. */
-  const z0 = -0.75 + 2.8 * placement + (pace - 20) * 0.045 - dist * 0.12 + (header ? -0.2 : 0);
+  /* Distance is the dominant term here too, and it enters as a SQUARE ROOT.
+   *
+   * Linear in distance cannot fit the real curve: the keeper's job gets much
+   * harder very quickly as the shooter closes, then flattens out. Fitted
+   * against the xG model itself — realised conversion has to match the xG that
+   * priced the chance, or the two numbers on the stats panel contradict each
+   * other. Before this the engine converted at 1.4-1.6x its own xG through the
+   * nine-to-twenty-metre band, which is where most shots are taken. */
+  const z0 =
+    0.165 +
+    2.8 * placement +
+    (pace - 20) * 0.045 -
+    0.853 * Math.sqrt(Math.max(dist, 0.5)) +
+    // Point blank: the keeper has no time at all, and the square root alone
+    // does not fall fast enough to say so.
+    1.5 * Math.max(0, 1 - dist / 7) +
+    (header ? -0.2 : 0);
   return clamp(sigmoid(z0), 0.02, 0.97);
 }
 

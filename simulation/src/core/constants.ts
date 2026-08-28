@@ -127,6 +127,17 @@ export const CARRY_SPEED_MAX = 0.94;
 export const FATIGUE_SPEED_LOSS_MIN = 0.01;
 export const FATIGUE_SPEED_LOSS_MAX = 0.03;
 
+/** Stamina cost of one second of football, at the reference workload of an
+ *  ordinary midfielder. Calibrated so a normal shift leaves a player around
+ *  0.6-0.8 at full time and only genuinely relentless running empties him.
+ *  Calibrated against the workload the engine's players ACTUALLY produce
+ *  (measured, not assumed), which is higher than a real footballer's because
+ *  they never stop to walk:
+ *  before this was measured, EVERY player finished EVERY match on zero, which
+ *  made the stamina attribute do nothing at all and applied the full late-game
+ *  speed penalty to all twenty-two from the half-hour mark. */
+export const STAMINA_DRAIN_PER_SECOND = 0.000055;
+
 /** Personal space radius used by the separation steering term. */
 export const SEPARATION_RADIUS = 1.6;
 export const SEPARATION_WEIGHT = 1.1;
@@ -155,6 +166,82 @@ export const KNOCK_AHEAD_SECONDS = 0.28;
  *  player passing to himself eight times a second. */
 export const KICK_CONTROL_LOCK = 0.22;
 export const KICK_SELF_LOCK = 0.75;
+
+/* --- Aerial duels and crossing (M5) -------------------------------------- */
+
+/** Horizontal radius within which a player can contest a ball in the air. */
+export const AERIAL_RANGE = 3.2;
+/** Head height standing, and what a jumpReach of 20 adds to it. */
+export const AERIAL_REACH_BASE = 1.7;
+export const AERIAL_REACH_JUMP = 0.7;
+/** Below the first, it is a ball for the feet; above the second, nobody in
+ *  football is reaching it. */
+export const AERIAL_BAND_LOW = 0.9;
+export const AERIAL_BAND_HIGH = 2.6;
+/** Ticks before a ball in the air may be contested again. This is not a
+ *  cosmetic guard: at ten ticks the engine produced eight hundred and seventy
+ *  aerial duels a match, because every header sent the ball back into the band
+ *  it had just been headed out of. A real match has forty to sixty. */
+export const AERIAL_LOCK_TICKS = 110;
+
+/** Loft on a cross: high enough to clear a defender, flat enough to be
+ *  attacked rather than caught. */
+export const CROSS_LOFT = 0.55;
+/** Metres of scatter on a cross at zero delivery quality. */
+export const CROSS_TARGET_SPREAD = 5.0;
+
+/** How much better a keeper deals with a ball played by his own side than
+ *  with a stray from the opposition: he is set for it and it is coming at him
+ *  from in front. Multiplies the beat chance. */
+export const OWN_GOAL_SAVE_BONUS = 0.08;
+
+/* --- Fouls and cards (M5) ------------------------------------------------ */
+
+/** How often a defender in range actually goes in for the ball, per steering
+ *  beat, at parity. Most engagements do not win it and do not foul: they are
+ *  simply a defender pressing a carrier. */
+export const TACKLE_ENGAGE_BASE = 0.02;
+
+/** Base probability that a tackle which did NOT win the ball was a foul.
+ *  Scaled by how clean and how reckless the defender is. Calibrated against
+ *  the real rate of about 22 fouls in a match. */
+export const FOUL_BASE = 0.26;
+
+/** Seconds the referee lets an advantage run before pulling it back. */
+export const ADVANTAGE_SECONDS = 5;
+
+/** Card thresholds. A booking is not a random draw off a foul: it is a foul
+ *  that was cynical, late, or stopped something. */
+export const YELLOW_BASE = 0.075;
+/** Extra booking chance for stopping a side that was breaking away. */
+export const YELLOW_PROMISING_ATTACK = 0.2;
+/** A foul that denies a clear scoring chance is a sending off. */
+export const RED_DOGSO = 0.06;
+/** ...and a small chance any foul is violent enough on its own. */
+export const RED_VIOLENT = 0.006;
+/** A booked player pulls out of challenges he would otherwise make. */
+export const BOOKED_CAUTION = 0.55;
+
+/** Seconds added for each stoppage type, for the derived clock. */
+export const STOPPAGE_PER_CARD = 25;
+export const STOPPAGE_PER_INJURY = 45;
+
+/* --- Home advantage ------------------------------------------------------ */
+
+/* Home advantage is real and it is worth about a quarter of a goal, but it is
+ * not one mechanic — it is a crowd, a familiar pitch, and a referee who gives
+ * the marginal decision to the home side. So it is applied where those things
+ * actually show up, scaled by the club's own homeAdvantage rating (0-10):
+ *
+ *   passes come off slightly more often
+ *   shots are struck slightly better
+ *   the marginal foul goes against the away side
+ *
+ * Each is small. Together, at a rating of 5, they move a season's worth of
+ * results by roughly the right amount. */
+export const HOME_EDGE_PASS = 0.01; // per rating point, added to completion
+export const HOME_EDGE_SHOT = 0.03; // per rating point, added to shot skill
+export const HOME_EDGE_FOUL = 0.045; // per rating point, off the foul chance
 
 /* --- Attribute scale ----------------------------------------------------- */
 

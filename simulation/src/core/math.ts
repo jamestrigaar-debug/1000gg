@@ -22,16 +22,10 @@ export const vec3 = (x = 0, y = 0, z = 0): Vec3 => ({ x, y, z });
 export const clamp = (v: number, lo: number, hi: number): number =>
   v < lo ? lo : v > hi ? hi : v;
 export const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
-/** Inverse lerp, clamped — the workhorse for "map this range onto 0..1". */
-export const invLerp = (a: number, b: number, v: number): number =>
-  a === b ? 0 : clamp((v - a) / (b - a), 0, 1);
-
 export const add = (a: Vec2, b: Vec2): Vec2 => ({ x: a.x + b.x, y: a.y + b.y });
 export const sub = (a: Vec2, b: Vec2): Vec2 => ({ x: a.x - b.x, y: a.y - b.y });
 export const scale = (a: Vec2, s: number): Vec2 => ({ x: a.x * s, y: a.y * s });
 export const dot = (a: Vec2, b: Vec2): number => a.x * b.x + a.y * b.y;
-export const len = (a: Vec2): number => Math.hypot(a.x, a.y);
-export const lenSq = (a: Vec2): number => a.x * a.x + a.y * a.y;
 export const dist = (a: Vec2, b: Vec2): number => Math.hypot(a.x - b.x, a.y - b.y);
 export const distSq = (a: Vec2, b: Vec2): number => {
   const dx = a.x - b.x;
@@ -87,11 +81,6 @@ export function distToSegment(p: Vec2, a: Vec2, b: Vec2): number {
  *  through here so the scale is changed in exactly one place. */
 export const attr01 = (v: number): number =>
   clamp((v - ATTR_MIN) / (ATTR_MAX - ATTR_MIN), 0, 1);
-
-/** Attribute -> a multiplier centred on 1 at attribute 10.5.
- *  spread 0.3 gives 0.7x at 1 and 1.3x at 20. */
-export const attrMul = (v: number, spread: number): number =>
-  1 + (attr01(v) - 0.5) * 2 * spread;
 
 /** Logistic. Used by the shot model, the save model and every duel. */
 export const sigmoid = (x: number): number => 1 / (1 + Math.exp(-x));
