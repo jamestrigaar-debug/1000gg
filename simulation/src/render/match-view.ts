@@ -9,6 +9,7 @@
  * ========================================================================== */
 
 import { Application, Container } from "pixi.js";
+import { SNAPSHOT_HZ } from "../worker/protocol";
 import { PITCH_LENGTH } from "../core/constants";
 import { clamp } from "../core/math";
 import type { RenderSnapshot } from "../core/snapshot";
@@ -116,11 +117,21 @@ export class MatchView {
    *  of them is the current time scale. Smoothed so a jittery frame does not
    *  make the picture surge. */
   private impliedScale(span: number): number {
-    const raw = span * 30; // SNAPSHOT_HZ
+    const raw = span * SNAPSHOT_HZ;
     this.scaleEstimate = this.scaleEstimate * 0.8 + raw * 0.2;
     return this.scaleEstimate;
   }
   private scaleEstimate = 1;
+
+  /** Forget the match being drawn. Called when the fixture changes: the next
+   *  snapshot to arrive belongs to a different match and must not be
+   *  interpolated against the last one from the old one. */
+  reset(): void {
+    this.prev = null;
+    this.next = null;
+    this.drawnSecond = 0;
+    this.scaleEstimate = 1;
+  }
 
   /** Latest snapshot, for the UI panels (which read the event stream from it). */
   latest(): RenderSnapshot | null {
