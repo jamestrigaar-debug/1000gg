@@ -20,20 +20,44 @@ import { PHYSICS_HZ } from "../core/constants";
 import { buildCommentary } from "../core/commentary";
 import { buildHighlights, type Highlight, type HighlightMode } from "../core/highlights";
 import { MatchSim } from "../core/match";
+import type { MatchEvent } from "../core/events";
 import { buildPreMatch } from "../core/prematch";
 import { buildStats } from "../core/stats";
 import { loadFormations, loadPlaybook } from "../data";
 import { styleProfile, styleMatchup } from "../manager/styles";
 import type { MatchSetup } from "../core/types";
-import { SNAPSHOT_HZ, type FromWorker, type MatchReport, type ToWorker } from "./protocol";
+import {
+  SNAPSHOT_DT,
+  SNAPSHOT_HZ,
+  type FromWorker,
+  type MatchReport,
+  type ToWorker,
+} from "./protocol";
 
 let sim: MatchSim | null = null;
 let setup: MatchSetup | null = null;
 let highlights: Highlight[] = [];
+/**
+ * THE MATCH RECORD — the event stream as it stood at the final whistle.
+ *
+ * Everything the user is shown (the score, the stats, the ratings, the
+ * commentary, the reel) is derived from this and never from the live
+ * simulation's log. That distinction is the whole fix for "the highlights
+ * don't match what was selected": watching a passage back rewinds the sim and
+ * replays it, which necessarily re-emits that passage's events, and watching
+ * passages out of order leaves the live log a patchwork of whichever ones you
+ * happened to click. Re-cutting Key to Full read that patchwork and produced a
+ * reel for a match nobody had watched.
+ *
+ * Frozen once, at full time. Re-cutting is then a pure function of it.
+ */
+let record: readonly MatchEvent[] = [];
+/** Possession share at the final whistle. Frozen for the same reason as the
+ *  record: the live sim's possession counters rewind with every seek. */
+let finalPossession: [number, number] = [0.5, 0.5];
 let playing = false;
-let scale: number | "max" = 1;
+let scale = 1;
 let timer: ReturnType<typeof setTimeout> | null = null;
-let lastWall = 0;
 /** The window currently being played back, if any. */
 let window: { index: number; from: number; to: number } | null = null;
 
@@ -65,17 +89,28 @@ function handle(msg: ToWorker): void {
       break;
     }
     case "recut": {
-      if (!sim || !setup) return;
+      // Re-cutting never re-simulates and never touches the live sim: it is a
+      // fresh pass over the frozen match record at a different threshold.
+      if (record.length === 0 || !setup) return;
       post({ type: "report", report: buildReport(msg.mode) });
       break;
     }
-    case "watch": {
+    case "playReel":
+      playReel(msg.from ?? 0);
+      break;
+    case "watch":
       watch(msg.index);
       break;
-    }
-    case "play":
+    case "skip":
+      skip();
+      break;
+    case "skipAll":
+      skipAll();
+      break;
+    case "resume":
+      if (!window || playing) return;
       playing = true;
-      lastWall = now();
+      nextFrameDue = now();
       schedule();
       break;
     case "pause":
@@ -84,10 +119,12 @@ function handle(msg: ToWorker): void {
       break;
     case "speed":
       scale = msg.scale;
-      lastWall = now();
+      // Re-anchor the schedule so a speed change takes effect on the next
+      // frame rather than being applied to a backlog built at the old one.
+      nextFrameDue = now();
       break;
     case "seek":
-      seekTo(msg.matchSecond);
+      seekTo(msg.matchSecond, true);
       break;
     case "command":
       sim?.applyCommand(msg.command);
@@ -143,13 +180,16 @@ function simulate(mode: HighlightMode): void {
       post({ type: "progress", fraction });
     }
   }
+  // Freeze the match before anything is allowed to seek into it.
+  record = sim.log.all().slice();
+  finalPossession = sim.possessionShare();
   post({ type: "progress", fraction: 1 });
   post({ type: "report", report: buildReport(mode) });
 }
 
 function buildReport(mode: HighlightMode): MatchReport {
-  if (!sim || !setup) throw new Error("no match to report on");
-  const events = sim.log.all();
+  if (!setup) throw new Error("no match to report on");
+  const events = record;
   const stats = buildStats(events);
   const names = new Map<number, string>();
   for (const team of [setup.home, setup.away]) {
@@ -167,7 +207,7 @@ function buildReport(mode: HighlightMode): MatchReport {
 
   return {
     score: stats.score,
-    possession: sim.possessionShare(),
+    possession: finalPossession,
     team: stats.team,
     highlights,
     ratings: [...stats.players.values()]
@@ -177,16 +217,106 @@ function buildReport(mode: HighlightMode): MatchReport {
   };
 }
 
-/** Seek to a highlight and start playing its window. */
+
+/* ==========================================================================
+ * PLAYBACK — the reel, played as football.
+ *
+ * The old loop advanced the simulation by however much wall time had elapsed
+ * since the last frame. That sounds right and is the root of the jank: a
+ * setTimeout in a worker fires anywhere between 33 and 60 ms, so every frame
+ * carried a different slice of match time, and the renderer — which had to
+ * guess the time scale from how far apart snapshots landed — spent the whole
+ * match alternately racing ahead and stalling against its own clamp.
+ *
+ * This loop advances the simulation by exactly SNAPSHOT_DT * speed every
+ * frame, full stop. Consecutive snapshots are always the same distance apart
+ * in match time. If the timer oversleeps it catches up by emitting at most a
+ * couple of extra fixed frames rather than by taking one enormous step, and if
+ * it has fallen hopelessly behind (a backgrounded tab) it gives up the debt
+ * instead of sprinting to clear it. Wall-clock jitter is absorbed by the
+ * renderer\'s buffer, where it belongs.
+ * ========================================================================== */
+
+/** How far behind schedule we are willing to chase, in frames. */
+const MAX_CATCH_UP_FRAMES = 3;
+/** Past this, the tab was asleep: drop the debt rather than fast-forward. */
+const ABANDON_DEBT_SECONDS = 1.0;
+
+/** Wall-clock time the next frame is due. */
+let nextFrameDue = 0;
+/** True while the reel is running the whole list rather than one passage. */
+let reelRunning = false;
+
+/** Play one passage and stop — clicking a line back after full time. */
 function watch(index: number): void {
   const highlight = highlights[index];
   if (!highlight || !sim) return;
-  window = { index, from: highlight.from, to: highlight.to };
-  seekTo(highlight.from);
+  reelRunning = false;
+  enter(index, highlight.from, highlight.to);
+}
+
+/** Play the reel from `from` to the end, as one continuous piece of football. */
+function playReel(from: number): void {
+  if (!sim) return;
+  const start = Math.max(0, from);
+  const highlight = highlights[start];
+  if (!highlight) {
+    post({ type: "reelEnded", skipped: false });
+    return;
+  }
+  reelRunning = true;
+  enter(start, highlight.from, highlight.to);
+}
+
+/** Seek to a passage and start it. */
+function enter(index: number, from: number, to: number): void {
+  window = { index, from, to };
+  seekTo(from, true);
+  post({ type: "reelEnter", index });
   playing = true;
-  scale = 1;
-  lastWall = now();
+  nextFrameDue = now();
   schedule();
+}
+
+/** The passage being played is over. Move on, or stop. */
+function leaveWindow(): void {
+  const finished = window;
+  if (!finished) return;
+  window = null;
+  post({ type: "highlightEnded", index: finished.index });
+
+  if (!reelRunning) {
+    playing = false;
+    stopTimer();
+    return;
+  }
+  const nextIndex = finished.index + 1;
+  const next = highlights[nextIndex];
+  if (!next) {
+    playing = false;
+    stopTimer();
+    reelRunning = false;
+    post({ type: "reelEnded", skipped: false });
+    return;
+  }
+  enter(nextIndex, next.from, next.to);
+}
+
+/** Cut to the next passage without waiting for this one to finish. */
+function skip(): void {
+  if (!window) return;
+  stopTimer();
+  playing = false;
+  leaveWindow();
+}
+
+/** Abandon the reel entirely; the screen reveals the result. */
+function skipAll(): void {
+  stopTimer();
+  playing = false;
+  reelRunning = false;
+  window = null;
+  post({ type: "reelEnded", skipped: true });
 }
 
 /**
@@ -194,19 +324,21 @@ function watch(index: number): void {
  * silence. The keyframe carries the RNG cursor, so the fast-forward replays
  * the same match rather than inventing a new one from that position.
  */
-function seekTo(matchSecond: number): void {
+function seekTo(matchSecond: number, cut = false): void {
   if (!sim) return;
   const targetTick = Math.round(matchSecond * PHYSICS_HZ);
   const frame = sim.keyframeRing().nearestBefore(targetTick);
+  /* The ring pins its first frame, so this can only miss if the match has not
+   * been simulated at all. Falling back to a LATER frame — which is what this
+   * used to do — lands past the passage and ends it before it starts. */
   if (frame) sim.restore(frame);
-  else sim.restore(sim.keyframeRing().all()[0] ?? sim.fullSnapshot());
   while (sim.tick < targetTick && !sim.finished) sim.step();
   /* Two calls on purpose. renderSnapshot() drains the events accumulated since
    * the last one, and the fast-forward just replayed a chunk of the match: the
    * first call throws those away (they were reported when the match was
    * simulated), the second is the clean snapshot the view starts from. */
   sim.renderSnapshot();
-  post({ type: "snapshot", snapshot: sim.renderSnapshot() });
+  post({ type: "snapshot", snapshot: sim.renderSnapshot(), cut, timeScale: scale });
 }
 
 function stopTimer(): void {
@@ -216,30 +348,43 @@ function stopTimer(): void {
 
 function schedule(): void {
   if (!playing || !sim) return;
-  timer = setTimeout(tickLoop, 1000 / SNAPSHOT_HZ);
+  // Aim at the wall-clock time this frame is actually due, so a late timer
+  // shortens the next wait instead of compounding.
+  timer = setTimeout(tickLoop, Math.max(0, nextFrameDue - now()));
 }
 
 function tickLoop(): void {
   if (!sim || !playing) return;
-  const wall = now();
-  const elapsed = Math.min((wall - lastWall) / 1000, 0.25);
-  lastWall = wall;
+  const frameMs = 1000 / SNAPSHOT_HZ;
 
-  const seconds = scale === "max" ? 4 : elapsed * scale;
-  sim.stepSeconds(seconds);
-  post({ type: "snapshot", snapshot: sim.renderSnapshot() });
+  if (now() - nextFrameDue > ABANDON_DEBT_SECONDS * 1000) {
+    // The tab was asleep. Resume from now rather than replaying the gap.
+    nextFrameDue = now();
+  }
 
-  if (window && sim.matchSecond >= window.to) {
-    playing = false;
-    stopTimer();
-    post({ type: "highlightEnded", index: window.index });
-    window = null;
-    return;
-  }
-  if (sim.finished) {
-    playing = false;
-    stopTimer();
-    return;
-  }
+  let framesThisTurn = 0;
+  do {
+    sim.stepSeconds(SNAPSHOT_DT * scale);
+    post({ type: "snapshot", snapshot: sim.renderSnapshot(), cut: false, timeScale: scale });
+    nextFrameDue += frameMs;
+    framesThisTurn++;
+
+    if (window && sim.matchSecond >= window.to) {
+      stopTimer();
+      playing = false;
+      leaveWindow();
+      return;
+    }
+    if (sim.finished) {
+      stopTimer();
+      playing = false;
+      if (reelRunning) {
+        reelRunning = false;
+        post({ type: "reelEnded", skipped: false });
+      }
+      return;
+    }
+  } while (nextFrameDue < now() && framesThisTurn < MAX_CATCH_UP_FRAMES);
+
   schedule();
 }
