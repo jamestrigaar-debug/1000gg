@@ -22,7 +22,7 @@ import { buildHighlights, type Highlight, type HighlightMode } from "../core/hig
 import { MatchSim } from "../core/match";
 import { buildPreMatch } from "../core/prematch";
 import { buildStats } from "../core/stats";
-import { loadFormations } from "../data";
+import { loadFormations, loadPlaybook } from "../data";
 import { styleProfile, styleMatchup } from "../manager/styles";
 import type { MatchSetup } from "../core/types";
 import { SNAPSHOT_HZ, type FromWorker, type MatchReport, type ToWorker } from "./protocol";
@@ -55,7 +55,7 @@ function handle(msg: ToWorker): void {
   switch (msg.type) {
     case "init": {
       setup = msg.setup;
-      sim = new MatchSim(msg.setup, { formations: loadFormations() });
+      sim = new MatchSim(msg.setup, { formations: loadFormations(), playbook: loadPlaybook() });
       post({ type: "ready", preMatch: preMatchFor(msg.setup) });
       break;
     }
@@ -201,8 +201,10 @@ function seekTo(matchSecond: number): void {
   if (frame) sim.restore(frame);
   else sim.restore(sim.keyframeRing().all()[0] ?? sim.fullSnapshot());
   while (sim.tick < targetTick && !sim.finished) sim.step();
-  // Flush the events the silent fast-forward produced: they have already been
-  // reported, and the view must not replay them as if they were live.
+  /* Two calls on purpose. renderSnapshot() drains the events accumulated since
+   * the last one, and the fast-forward just replayed a chunk of the match: the
+   * first call throws those away (they were reported when the match was
+   * simulated), the second is the clean snapshot the view starts from. */
   sim.renderSnapshot();
   post({ type: "snapshot", snapshot: sim.renderSnapshot() });
 }
