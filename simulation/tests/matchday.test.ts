@@ -221,6 +221,50 @@ describe("watching a highlight back", () => {
       expect(other?.pos.y).toBeCloseTo(player.pos.y, 6);
     }
   }, 120_000);
+
+  it("re-cuts the same reel after passages have been watched back", () => {
+    const sim = runMatch("logpollution");
+
+    /* The worker freezes the event stream at the final whistle and derives
+     * every report from that frozen record. This is that contract: take the
+     * record, watch passages back out of order the way a user clicking around
+     * the reel does, and the reel re-cut at any mode must be untouched. */
+    const record = sim.log.all().slice();
+    const before = record.length;
+    const reelBefore = buildHighlights(commentaryFor(record, "logpollution"), record, "full");
+
+    for (const second of [2400, 300, 1200, 60]) {
+      const targetTick = second * PHYSICS_HZ;
+      const frame = sim.keyframeRing().nearestBefore(targetTick);
+      expect(frame, `no keyframe at or before ${second}s`).not.toBeNull();
+      sim.restore(frame!);
+      while (sim.tick < targetTick && !sim.finished) sim.step();
+      const until = targetTick + 15 * PHYSICS_HZ;
+      while (sim.tick < until && !sim.finished) sim.step();
+    }
+
+    const reelAfter = buildHighlights(commentaryFor(record, "logpollution"), record, "full");
+    expect(reelAfter).toEqual(reelBefore);
+
+    // And the live log is rewound rather than appended to, so a long session
+    // of watching cannot grow it without bound.
+    expect(sim.log.length).toBeLessThanOrEqual(before);
+  }, 120_000);
+
+  /* The ring is fixed-capacity, so a long match evicts its oldest frames. It
+   * must never evict the FIRST one: without a frame at or before the target,
+   * seeking silently landed past the passage and the highlight ended the
+   * instant it was clicked. */
+  it("can always seek back to the opening minutes of a long match", () => {
+    const sim = runMatch("longmatch");
+    expect(sim.keyframeRing().all()[0]?.tick).toBe(0);
+
+    for (let second = 0; second <= Math.floor(sim.matchSecond); second += 30) {
+      const frame = sim.keyframeRing().nearestBefore(second * PHYSICS_HZ);
+      expect(frame, `no keyframe at or before ${second}s`).not.toBeNull();
+      expect(frame!.tick).toBeLessThanOrEqual(second * PHYSICS_HZ);
+    }
+  }, 120_000);
 });
 
 describe("stats from the event stream", () => {
