@@ -1,7 +1,6 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b2b17'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%236ee7a0' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='2.4' fill='%236ee7a0'/%3E%3C/svg%3E" />
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Match Engine — Match Day</title>
@@ -126,48 +125,24 @@
       .stat-table td:first-child { text-align: left; }
       .stat-table td:last-child { text-align: right; }
       .ratings { list-style: none; padding: 0; margin: 4px 0 0; }
-      .ratings li { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 3px 0; border-bottom: 1px solid #21262d; }
-      .ratings li span { display: flex; flex-direction: column; min-width: 0; }
-      /* How he plays, under how well he played. Derived from his attributes,
-         so it reads the same every week — see core/traits.ts. */
-      .ratings li em { font-style: normal; font-size: 11px; color: #8b949e; }
+      .ratings li { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid #21262d; }
       h3 { font-size: 13px; margin: 14px 0 4px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
-
-      /* The clock beside the score. Tabular so it does not jitter as it ticks. */
-      .clock { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; min-width: 52px; }
-      /* Before the reel has played, the result is not announced. */
-      .score.concealed { color: var(--muted); letter-spacing: 0.08em; }
-
-      button.primary { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-      .watch-caption-row {
-        display: flex; gap: 10px; align-items: baseline;
-        padding: 2px 2px 6px; font-size: 13px; min-height: 20px;
-      }
-      #watch-caption { flex: 1; }
-      .reel-pos { font-variant-numeric: tabular-nums; font-size: 12px; }
-
-      /* A line only appears once the match reaches it, so the reel cannot
-       * spoil its own goals. New lines fade in rather than snapping in. */
-      @keyframes hl-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
-      .hl.fresh { animation: hl-in 220ms ease-out; }
-      .hl[disabled] { opacity: 1; cursor: default; }
-      #watch-again { margin-top: 12px; width: 100%; }
     </style>
-    <script type="module" crossorigin src="./assets/index-CCr2ObzK.js"></script>
+    <script type="module" crossorigin src="./assets/index-CZ3AJvZb.js"></script>
   </head>
   <body>
     <header>
       <span class="team" id="home-name">HOME</span>
       <span class="score" id="score">v</span>
       <span class="team" id="away-name">AWAY</span>
-      <span class="clock" id="clock"></span>
       <span class="muted" id="status"></span>
       <span class="spacer"></span>
-      <button id="kickoff">Kick off</button>
+      <button id="kickoff">Simulate match</button>
       <span class="muted">Highlights:</span>
       <button id="mode-key">Key</button>
       <button id="mode-extended" class="on">Extended</button>
       <button id="mode-comprehensive">Comprehensive</button>
+      <button id="mode-full">Full</button>
     </header>
     <div class="picker">
       <label>Home
@@ -191,21 +166,15 @@
         <div id="stage-wrap" class="hidden">
           <div id="stage"></div>
           <div class="watch-strip">
-            <button id="pause" class="primary">Pause</button>
-            <button id="skip">Skip &rsaquo;</button>
-            <button id="skip-all">Skip to result &raquo;</button>
-            <span class="reel-pos muted" id="reel-pos"></span>
+            <span id="watch-clock" class="muted">00:00</span>
+            <span id="watch-caption"></span>
             <span class="spacer"></span>
-            <button id="speed-1" class="on">1&times;</button>
+            <button id="speed-1">1&times;</button>
             <button id="speed-2">2&times;</button>
             <button id="speed-4">4&times;</button>
             <button id="names" data-on="true" class="on">Names</button>
             <button id="camera" data-mode="fit">Camera: pitch</button>
             <button id="flip" data-o="horizontal">Flip</button>
-          </div>
-          <div class="watch-caption-row">
-            <span id="watch-clock" class="muted">00:00</span>
-            <span id="watch-caption"></span>
           </div>
         </div>
         <div id="sim-bar" class="hidden"><div id="sim-progress"></div></div>
@@ -213,10 +182,9 @@
       </div>
       <aside>
         <h3>The match</h3>
-        <div class="muted" id="reel-summary">Kick off to watch the match.</div>
+        <div class="muted" id="reel-summary">Simulate the match to see the highlights.</div>
         <div id="feed"></div>
-        <div id="stats" class="hidden"></div>
-        <button id="watch-again" class="hidden">Watch the reel again</button>
+        <div id="stats"></div>
       </aside>
     </main>
   </body>
