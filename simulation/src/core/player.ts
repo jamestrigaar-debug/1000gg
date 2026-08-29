@@ -13,11 +13,6 @@ import {
   ACCEL_BASE,
   ACCEL_PER_ACCELERATION,
   ARRIVE_SLOW_RADIUS,
-  ARRIVE_STOP_RADIUS,
-  BRAKE_FACTOR,
-  HEADING_HOLD_SPEED,
-  TURN_EASE_AT_REST,
-  TURN_FREE_BELOW,
   CARRY_SPEED_MAX,
   CARRY_SPEED_MIN,
   FATIGUE_SPEED_LOSS_MAX,
@@ -30,10 +25,16 @@ import {
   TURN_BASE,
   TURN_PER_AGILITY,
 } from "./constants";
-import { attr01, clamp, lerp, rotateTowards, sub, truncate, type Vec2, len2 } from "./math";
-import { createPerception, type Perception } from "./perception";
+import {
+  attr01,
+  clamp,
+  lerp,
+  rotateTowards,
+  sub,
+  truncate,
+  type Vec2,
+} from "./math";
 import { SIM_MAX_X, SIM_MAX_Y, SIM_MIN_X, SIM_MIN_Y } from "./pitch";
-import { deriveTraits, type Traits } from "./traits";
 import type { PlayerDef, TeamSide } from "./types";
 
 /** Thin per-player FSM state. The brain picks it; movement reads it. */
@@ -86,15 +87,6 @@ export interface Player {
   steerX: number;
   steerY: number;
 
-  /** What he BELIEVES about the world, as against what is true. See
-   *  perception.ts — this is where Concentration, Anticipation and
-   *  Positioning finally do something. */
-  readonly perception: Perception;
-  /** His temperament: what he TRIES, as distinct from how well he does it.
-   *  Derived from the attributes, so it is the same in every match and never
-   *  needs snapshotting. See traits.ts. */
-  readonly traits: Traits;
-
   /* Attribute-derived constants, computed once. They are read on the hottest
    *  path in the engine — 22 players, 120 times a second — and normalising a
    *  1-20 attribute there was measurably a chunk of a whole match. */
@@ -124,8 +116,6 @@ export function createPlayer(def: PlayerDef, side: TeamSide, slot: number, pos: 
     turnRate: 0,
     steerX: 0,
     steerY: 0,
-    perception: createPerception(def.attributes),
-    traits: deriveTraits(def.attributes),
     staminaWilling: lerp(0.75, 1.25, attr01(def.attributes.workRate)),
     staminaCapacity: lerp(1.35, 0.65, attr01(def.attributes.stamina)),
     carryFactor: lerp(CARRY_SPEED_MIN, CARRY_SPEED_MAX, attr01(def.attributes.dribbling)),
@@ -158,8 +148,8 @@ export function refreshCeilings(p: Player): void {
  *  onto an anchor rather than jittering across it. */
 export function arrive(p: Player, target: Vec2, maxSpeed: number): Vec2 {
   const to = sub(target, p.pos);
-  const d = len2(to.x, to.y);
-  if (d < ARRIVE_STOP_RADIUS) return { x: 0, y: 0 };
+  const d = Math.hypot(to.x, to.y);
+  if (d < 0.05) return { x: 0, y: 0 };
   const speed = d < ARRIVE_SLOW_RADIUS ? maxSpeed * (d / ARRIVE_SLOW_RADIUS) : maxSpeed;
   const dir = { x: to.x / d, y: to.y / d };
   return { x: dir.x * speed, y: dir.y * speed };
@@ -173,7 +163,7 @@ export function separation(p: Player, neighbours: readonly Player[]): Vec2 {
     if (n === p || !n.onPitch) continue;
     const dx = p.pos.x - n.pos.x;
     const dy = p.pos.y - n.pos.y;
-    const d = len2(dx, dy);
+    const d = Math.hypot(dx, dy);
     if (d > SEPARATION_RADIUS || d < 1e-4) continue;
     const push = (SEPARATION_RADIUS - d) / SEPARATION_RADIUS;
     sx += (dx / d) * push;
@@ -224,10 +214,10 @@ export function steerPlayer(
   // --- arrive ---
   let dx = targetX - p.pos.x;
   let dy = targetY - p.pos.y;
-  const d = len2(dx, dy);
+  const d = Math.hypot(dx, dy);
   let wx = 0;
   let wy = 0;
-  if (d >= ARRIVE_STOP_RADIUS) {
+  if (d >= 0.05) {
     const speed = d < ARRIVE_SLOW_RADIUS ? maxSpeed * (d / ARRIVE_SLOW_RADIUS) : maxSpeed;
     wx = (dx / d) * speed;
     wy = (dy / d) * speed;
@@ -240,7 +230,7 @@ export function steerPlayer(
     if (n === p || !n.onPitch) continue;
     dx = p.pos.x - n.pos.x;
     dy = p.pos.y - n.pos.y;
-    const nd = len2(dx, dy);
+    const nd = Math.hypot(dx, dy);
     if (nd > SEPARATION_RADIUS || nd < 1e-4) continue;
     const push = (SEPARATION_RADIUS - nd) / SEPARATION_RADIUS;
     sx += (dx / nd) * push;
@@ -250,7 +240,7 @@ export function steerPlayer(
   wy += sy * SEPARATION_WEIGHT * maxSpeed * 0.5;
 
   // --- truncate to the speed ceiling ---
-  const wantSpeed = len2(wx, wy);
+  const wantSpeed = Math.hypot(wx, wy);
   if (wantSpeed > maxSpeed && wantSpeed > 1e-9) {
     const k = maxSpeed / wantSpeed;
     wx *= k;
@@ -261,53 +251,9 @@ export function steerPlayer(
 }
 
 /**
- * How far a player may swing his direction of travel this tick.
- *
- * Two terms, and the second one is the point. The first is the ordinary turn
- * rate, eased upwards the slower he is going — you can turn more sharply at a
- * jog than at a sprint. The second RELAXES the limit smoothly to nothing as
- * he approaches a standstill, because a player who is not running is not
- * constrained by momentum he does not have: he can simply set off whichever
- * way he likes.
- *
- * It matters that this is smooth rather than a threshold. The old integrator
- * had a hard one — under 0.3 m/s the heading snapped instantly — and a side
- * holding its shape sits in that band almost permanently, so the smallest
- * nudge to a target span a player on the spot. Any hard cutoff reintroduces
- * that twitch at whatever speed you put it; a ramp has no edge to sit on.
- */
-function turnStep(p: Player, speed: number, dt: number): number {
-  const ease = 1 + TURN_EASE_AT_REST * clamp(1 - speed / Math.max(p.vMax, 0.1), 0, 1);
-  const running = p.turnRate * ease * dt;
-  const atRest = clamp(1 - speed / TURN_FREE_BELOW, 0, 1) * Math.PI;
-  return running + atRest;
-}
-
-/**
- * Body half of the hot path, run every physics tick.
- *
- * WHY THIS IS A VECTOR AND NOT AN ANGLE PLUS A SPEED
- *
- * It used to work like a tank: pick a heading, turn towards it, then set the
- * velocity to `speed * (cos heading, sin heading)`. Two things fall out of
- * that, and both of them are visible.
- *
- *   - Travel is ALWAYS exactly along the facing, so a player has no momentum
- *     through a turn. The drawn path has a hard corner at every heading
- *     change rather than an arc, and a defender who wants to move sideways
- *     has to rotate his whole body first.
- *   - The heading SNAPPED to the desired direction whenever speed dropped
- *     below 0.3 m/s. A player easing onto his position crosses that threshold
- *     constantly, so the smallest change of target spun him on the spot. With
- *     twenty-two of them doing it, that twitch is most of what "janky" meant.
- *
- * So instead: a steering force, capped by what the legs can do, is added to
- * the velocity VECTOR — Reynolds' vehicle model. The turn-rate limit is then
- * applied to the direction of travel, which is where a real constraint lives:
- * you may turn freely from a standstill, less and less the faster you are
- * going, and at a sprint you must arc. Facing follows travel, and is simply
- * held when a player is too slow for his velocity to have a direction worth
- * reading.
+ * Body half of the hot path, run every physics tick: turn towards the desired
+ * velocity as fast as agility allows, accelerate towards its magnitude, move,
+ * and pay the stamina.
  */
 export function integratePlayer(p: Player, maxSpeed: number, dt: number): void {
   const wx = p.steerX;
@@ -320,38 +266,21 @@ export function integratePlayer(p: Player, maxSpeed: number, dt: number): void {
     drainStamina(p, 0, dt);
     return;
   }
-
-  const curSpeed = Math.sqrt(curSq);
   const wantSpeed = Math.min(Math.sqrt(wantSq), maxSpeed);
-
-  /* DIRECTION and SPEED are limited separately, and that separation is the
-   * whole design.
-   *
-   * Turning is rate-limited, so the direction of travel sweeps round rather
-   * than snapping: that is what removes the twitch and what draws an arc
-   * instead of a corner. But turning does NOT eat the acceleration budget.
-   * A footballer changing direction plants a foot and pushes off it; he is
-   * not a puck being nudged sideways. Charging the turn to the same budget as
-   * the acceleration - which is what a naive steering-force integrator does -
-   * quietly halves everybody's agility, and a defence that cannot change
-   * direction concedes. Measured, on the balance harness: it doubled the
-   * shots in a match and took goals from 2.4 to 4.2.
-   */
-  let heading = curSpeed > TURN_FREE_BELOW ? Math.atan2(p.vel.y, p.vel.x) : p.heading;
+  const curSpeed = Math.sqrt(curSq);
   if (wantSpeed > 1e-4) {
-    heading = rotateTowards(heading, Math.atan2(wy, wx), turnStep(p, curSpeed, dt));
+    const wantHeading = Math.atan2(wy, wx);
+    p.heading =
+      curSpeed < 0.3 ? wantHeading : rotateTowards(p.heading, wantHeading, p.turnRate * dt);
   }
-
-  const dv = clamp(wantSpeed - curSpeed, -p.aMax * dt * BRAKE_FACTOR, p.aMax * dt);
-  const speed = clamp(curSpeed + dv, 0, maxSpeed);
-
-  p.vel.x = Math.cos(heading) * speed;
-  p.vel.y = Math.sin(heading) * speed;
-  // Facing follows travel, and is left alone when there is no travel to read.
-  if (speed > HEADING_HOLD_SPEED) p.heading = heading;
+  const dv = clamp(wantSpeed - curSpeed, -p.aMax * dt * 1.6, p.aMax * dt);
+  const newSpeed = clamp(curSpeed + dv, 0, maxSpeed);
+  p.vel.x = Math.cos(p.heading) * newSpeed;
+  p.vel.y = Math.sin(p.heading) * newSpeed;
 
   p.pos.x = clamp(p.pos.x + p.vel.x * dt, SIM_MIN_X, SIM_MAX_X);
   p.pos.y = clamp(p.pos.y + p.vel.y * dt, SIM_MIN_Y, SIM_MAX_Y);
 
-  drainStamina(p, speed, dt);
+  drainStamina(p, newSpeed, dt);
 }
+

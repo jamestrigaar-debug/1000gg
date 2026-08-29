@@ -29,7 +29,7 @@ import {
   KICK_NEWTON_PASSES,
   PHYSICS_HZ,
 } from "./constants";
-import { attr01, clamp, lerp, type Vec2, type Vec3, len2 } from "./math";
+import { attr01, clamp, lerp, type Vec2, type Vec3 } from "./math";
 import { createBall, integrateBall, type BallState } from "./ball";
 import type { Rng } from "./rng";
 
@@ -74,7 +74,7 @@ export const launchAngle = (loft: number): number =>
  * (target too high for the angle), which the caller answers by lofting more.
  */
 export function ballisticSpeed(from: Vec3, target: Vec3, theta: number): number | null {
-  const dx = len2(target.x - from.x, target.y - from.y);
+  const dx = Math.hypot(target.x - from.x, target.y - from.y);
   const dz = target.z - from.z;
   if (dx < 1e-6) return null;
   const c = Math.cos(theta);
@@ -118,7 +118,7 @@ function simulateLanding(
       };
     }
     // A grounded, near-stopped ball has arrived wherever it is.
-    if (b.pos.z <= BALL_RADIUS && len2(b.vel.x, b.vel.y) < 0.2) {
+    if (b.pos.z <= BALL_RADIUS && Math.hypot(b.vel.x, b.vel.y) < 0.2) {
       return { at: { x: b.pos.x, y: b.pos.y }, time: (i + 1) * dt };
     }
     prev = { ...b.pos };
@@ -147,7 +147,7 @@ export function solveKick(
   const aim = opts.skill && opts.rng ? applyError(from, req, opts.skill, opts.rng) : req.target;
 
   const flat = req.loft <= 0.02 && aim.z <= BALL_RADIUS * 2;
-  const dist = len2(aim.x - from.x, aim.y - from.y);
+  const dist = Math.hypot(aim.x - from.x, aim.y - from.y);
   const heading = Math.atan2(aim.y - from.y, aim.x - from.x);
 
   if (flat) {
@@ -161,7 +161,7 @@ export function solveKick(
     if (req.pace < 0.999) {
       for (let pass = 0; pass < KICK_NEWTON_PASSES; pass++) {
         const probe = simulateLanding(from, vel, req.spin, friction, BALL_RADIUS);
-        const reached = len2(probe.at.x - from.x, probe.at.y - from.y);
+        const reached = Math.hypot(probe.at.x - from.x, probe.at.y - from.y);
         if (reached < 0.05) break;
         const ratio = dist / reached;
         if (Math.abs(ratio - 1) < 0.004) break;
@@ -174,7 +174,7 @@ export function solveKick(
       vel,
       spin: req.spin,
       travelTime: landing.time,
-      errorDistance: len2(landing.at.x - req.target.x, landing.at.y - req.target.y),
+      errorDistance: Math.hypot(landing.at.x - req.target.x, landing.at.y - req.target.y),
     };
   }
 
@@ -187,8 +187,8 @@ export function solveKick(
   for (let pass = 0; pass < KICK_NEWTON_PASSES; pass++) {
     const vel = velocityFrom(heading, theta, speed);
     landing = simulateLanding(from, vel, req.spin, friction, Math.max(aim.z, BALL_RADIUS));
-    const reached = len2(landing.at.x - from.x, landing.at.y - from.y);
-    const wanted = len2(aim.x - from.x, aim.y - from.y);
+    const reached = Math.hypot(landing.at.x - from.x, landing.at.y - from.y);
+    const wanted = Math.hypot(aim.x - from.x, aim.y - from.y);
     if (reached < 0.05) break;
     const ratio = wanted / reached;
     if (Math.abs(ratio - 1) < 0.004) break;
@@ -203,7 +203,7 @@ export function solveKick(
     vel,
     spin: req.spin,
     travelTime: final.time,
-    errorDistance: len2(final.at.x - req.target.x, final.at.y - req.target.y),
+    errorDistance: Math.hypot(final.at.x - req.target.x, final.at.y - req.target.y),
   };
 }
 
@@ -227,7 +227,7 @@ export function applyError(
   skill: KickSkill,
   rng: Rng,
 ): Vec3 {
-  const dist = len2(req.target.x - from.x, req.target.y - from.y);
+  const dist = Math.hypot(req.target.x - from.x, req.target.y - from.y);
   const s = clamp(skill.skill, 0, 1);
   const p = clamp(skill.pressure, 0, 1);
   const d = clamp(skill.difficulty, 0, 1);
@@ -274,7 +274,7 @@ export function kickSkill(
  * "goal" outcomes were doing before this existed.
  */
 export function launchAngleFor(from: Vec3, target: Vec3, speed: number): number | null {
-  const dx = len2(target.x - from.x, target.y - from.y);
+  const dx = Math.hypot(target.x - from.x, target.y - from.y);
   const dz = target.z - from.z;
   if (dx < 1e-6) return null;
   const v2 = speed * speed;
@@ -311,7 +311,7 @@ export function strikeVelocity(from: Vec3, target: Vec3, pace: number): Vec3 {
 
 /** The slowest strike that can reach `target` at all, ignoring drag. */
 export function minimumSpeedFor(from: Vec3, target: Vec3): number {
-  const dx = len2(target.x - from.x, target.y - from.y);
+  const dx = Math.hypot(target.x - from.x, target.y - from.y);
   const dz = target.z - from.z;
-  return Math.sqrt(GRAVITY * (dz + len2(dx, dz)));
+  return Math.sqrt(GRAVITY * (dz + Math.hypot(dx, dz)));
 }

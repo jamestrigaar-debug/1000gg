@@ -23,7 +23,7 @@ import {
   GROUND_FRICTION_MIN,
   SPIN_ACCEL_K,
 } from "./constants";
-import { lerp, type Vec3, len2, len3 } from "./math";
+import { lerp, type Vec3 } from "./math";
 
 export type BallOwner = number | null;
 
@@ -63,7 +63,7 @@ export function createBall(pos: Vec3): BallState {
 export const isAirborne = (b: BallState): boolean =>
   b.pos.z > BALL_RADIUS * 0.5 || Math.abs(b.vel.z) > BOUNCE_SETTLE_SPEED;
 
-export const speed2d = (b: BallState): number => len2(b.vel.x, b.vel.y);
+export const speed2d = (b: BallState): number => Math.hypot(b.vel.x, b.vel.y);
 
 export const isDead = (b: BallState): boolean =>
   b.owner === null && !isAirborne(b) && speed2d(b) < BALL_DEAD_SPEED;
@@ -94,7 +94,7 @@ export function integrateBall(b: BallState, dt: number, friction: number): void 
 
 function integrateAir(b: BallState, dt: number): void {
   const v = b.vel;
-  const sp = len3(v.x, v.y, v.z);
+  const sp = Math.hypot(v.x, v.y, v.z);
 
   // Quadratic drag opposing the velocity vector.
   const d = AIR_DRAG_K * sp;
@@ -105,7 +105,7 @@ function integrateAir(b: BallState, dt: number): void {
   // Magnus: lateral acceleration perpendicular to the horizontal heading,
   // proportional to spin and to pace. This is what bends a free kick.
   if (b.spin !== 0 && sp > 0.01) {
-    const h = len2(v.x, v.y) || 1;
+    const h = Math.hypot(v.x, v.y) || 1;
     const px = -v.y / h;
     const py = v.x / h;
     const m = SPIN_ACCEL_K * b.spin * sp * sp;
@@ -126,7 +126,7 @@ function integrateAir(b: BallState, dt: number): void {
 
 function integrateRoll(b: BallState, dt: number, friction: number): void {
   const v = b.vel;
-  const sp = len2(v.x, v.y);
+  const sp = Math.hypot(v.x, v.y);
   b.pos.z = 0;
   v.z = 0;
   if (sp <= 1e-6) {
@@ -169,7 +169,7 @@ function resolveGroundContact(b: BallState, dt: number, friction: number): void 
   v.y *= BOUNCE_TANGENT_KEEP;
   // Sidespin bites on contact: a curling ball kicks on off the deck.
   if (b.spin !== 0) {
-    const h = len2(v.x, v.y);
+    const h = Math.hypot(v.x, v.y);
     if (h > 0.01) {
       const px = -v.y / h;
       const py = v.x / h;

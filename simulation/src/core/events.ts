@@ -36,23 +36,7 @@ export type WhistleKind =
 
 export type MatchEvent =
   | (EventBase & { type: "KickOff"; period: number })
-  /**
-   * A ball played from a player's foot that is not a shot.
-   *
-   * `kind` matters more than it looks. Everything struck through strike()
-   * emitted a Pass, so a hoofed clearance and a goal kick were counted
-   * alongside a ten-yard ball in midfield, and both defaulted to completed.
-   * "Pass accuracy" then meant nothing in particular: it could not be compared
-   * to a real 76-86% because it was not measuring the same thing football
-   * measures. Splitting it is the difference between a number and a metric.
-   */
-  | (EventBase & {
-      type: "Pass";
-      targetId: number | null;
-      completed: boolean;
-      length: number;
-      kind: "open" | "clear" | "restart";
-    })
+  | (EventBase & { type: "Pass"; targetId: number | null; completed: boolean; length: number })
   | (EventBase & { type: "Interception" })
   | (EventBase & { type: "Dribble"; beat: boolean })
   | (EventBase & { type: "Duel"; opponentId: number; won: boolean; aerial: boolean })
@@ -108,20 +92,6 @@ export class EventLog {
   /** Events added after index `from` — how the worker ships deltas. */
   since(from: number): MatchEvent[] {
     return this.events.slice(from);
-  }
-
-  /**
-   * Drop everything after the first `count` events.
-   *
-   * This exists for one reason: seeking. Restoring a keyframe rewinds the
-   * whole simulation to an earlier tick, and replaying from there re-emits
-   * every event of that passage. Without this the log ended up holding the
-   * original match AND a second copy of every passage that had been watched
-   * back — so re-cutting the reel at a different mode derived the commentary
-   * from a match that never happened.
-   */
-  truncate(count: number): void {
-    if (count < this.events.length) this.events.length = Math.max(0, count);
   }
 
   get length(): number {

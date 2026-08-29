@@ -18,7 +18,6 @@
 
 import type { BallState } from "./ball";
 import type { Vec2 } from "./math";
-import type { Perception } from "./perception";
 import type { PlayerState } from "./player";
 import type { MatchEvent } from "./events";
 import type { TeamSide } from "./types";
@@ -109,38 +108,6 @@ export interface FullSnapshot {
    *  waiting to be taken. Both are plain data. */
   pendingShot: unknown;
   pendingRestart: unknown;
-  /**
-   * The three cooldowns and the referee's held whistle.
-   *
-   * These are the ones that were missing, and they are why a watched highlight
-   * did not show the match the text described: each of them GATES a mechanic
-   * for a window of ticks, so a resumed sim that thinks the gate is open runs
-   * an aerial duel, or re-faces a resolved shot, that the original match never
-   * had. Half a second of difference compounds; by the end of a ten-second
-   * passage the ball was fifteen metres from where the commentary said it was.
-   */
-  aerialLockTick: number;
-  resolvedShotUntil: number;
-  lastRestartTick: number;
-  /** A foul the referee is playing advantage on. */
-  advantage: { side: TeamSide; at: Vec2; until: number } | null;
-  /**
-   * The passage's authored moment, if this is a staged scene.
-   *
-   * This belongs in the snapshot for one specific reason. Replaying a scene
-   * from its opening keyframe has to reproduce the passage that was validated,
-   * or the clip the viewer watches is not the clip that was checked — which is
-   * the exact bug the whole architecture exists to make impossible. Leaving
-   * the decree out meant `spent` was still true from the first run, so on
-   * replay the authored shot was no longer steered and the ball ended eight
-   * metres somewhere else.
-   */
-  decree: {
-    actorId: number;
-    outcome: string;
-    spot: Vec2;
-    spent: boolean;
-  } | null;
   /** The rehearsed move each side is running, if any. A move changes what
    *  every player in its cast does, so a keyframe that forgot it would resume
    *  into a different match. */
@@ -168,32 +135,10 @@ export interface FullSnapshot {
     vMax: number;
     aMax: number;
     turnRate: number;
-    /** What he believes. A resumed match whose players believe different
-     *  things is a different match — same class of bug as the ceilings. */
-    perception: Perception;
   }[];
 }
 
-/**
- * Fixed-capacity ring of keyframes.
- *
- * With one exception, the oldest frame is dropped when the ring is full: the
- * VERY FIRST frame is pinned and never evicted. That is not tidiness, it is
- * the fix for a real and very visible bug.
- *
- * Seeking asks for the newest frame at or before the target tick. If the ring
- * has already dropped everything that early it answers "none", and the caller
- * had no honest move left — it fell back to the oldest frame it still had,
- * which is LATER than the passage being sought. The simulation then sat past
- * the end of the window it was supposed to play, the playback loop saw it was
- * already finished, and the highlight ended the instant it was clicked. From
- * the outside: you click a line near the start of the match and nothing at all
- * happens.
- *
- * Pinning frame zero means nearestBefore() can always answer for any tick in
- * the match. The worst case degrades to a longer silent fast-forward, which is
- * a wait; the old behaviour was a lie.
- */
+/** Fixed-capacity ring of keyframes; the oldest is dropped silently. */
 export class KeyframeRing {
   private readonly frames: FullSnapshot[] = [];
 
@@ -201,8 +146,7 @@ export class KeyframeRing {
 
   push(frame: FullSnapshot): void {
     this.frames.push(frame);
-    // Evict the second-oldest, so index 0 — the start of the match — stays.
-    if (this.frames.length > this.capacity) this.frames.splice(1, 1);
+    if (this.frames.length > this.capacity) this.frames.shift();
   }
 
   /** Newest keyframe at or before `tick`, or null if we have none that early. */

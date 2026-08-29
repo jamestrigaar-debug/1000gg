@@ -12,7 +12,6 @@
  * in a half.
  * ========================================================================== */
 
-import { PITCH_LENGTH, PITCH_WIDTH } from "./constants";
 import type { MatchEvent } from "./events";
 import { Rng } from "./rng";
 import type { TeamSide } from "./types";
@@ -95,46 +94,9 @@ const POST_TEMPLATES = [
 const OFFSIDE_TEMPLATES = [
   "The flag goes up against {player}.",
   "{player} strayed offside.",
-  "{player} timed that badly — offside.",
-  "Offside. {player} was a yard early.",
-];
-/**
- * Distance to goal below which an offside counts as having denied something,
- * and so earns a place in the Extended reel rather than only Comprehensive.
- *
- * Set at the MEDIAN, measured rather than guessed: over six matches the
- * offsides in this engine run from 21 to 59 metres out with a median of 38,
- * because most of them happen against a high line near halfway where nothing
- * was being denied. An earlier guess of 26 m caught a tenth of them and the
- * default reel showed no offsides at all — the law was working, and invisible.
- */
-const OFFSIDE_TIGHT_METRES = 38;
-
-/** For one that cut out a real opening; worth a line of its own. */
-const OFFSIDE_TIGHT_TEMPLATES = [
-  "{player} is through — but the flag is up. Tight one.",
-  "Offside, and {player} will feel that was close.",
-  "The flag denies {player} a clear sight of goal.",
 ];
 
 const CORNER_TEMPLATES = ["Corner to {team}.", "{team} win a corner."];
-
-/**
- * How far a point is from the goal it is nearest to.
- *
- * Sides swap ends at half time, so the attacking direction cannot be read off
- * the team alone, and the nearer goal is the right answer for anything that
- * happens in an attacking position — which is all of the events that ask.
- * (The same trick, and the same reasoning, as the batch harness's shot
- * distance, which measured 61 metres until it stopped keying off the team.)
- */
-function distanceToNearerGoal(at: { x: number; y: number }): number {
-  const dy = (at.y - PITCH_WIDTH / 2) ** 2;
-  return Math.min(
-    Math.sqrt((at.x - PITCH_LENGTH) ** 2 + dy),
-    Math.sqrt(at.x ** 2 + dy),
-  );
-}
 
 /**
  * Turn one event into a line, or null when the event is not worth a line.
@@ -232,27 +194,15 @@ export function lineFor(
         kind: "save",
         text: fill(pick(SAVE_TEMPLATES), { shooter: ctx.playerName(event.shooterId) }),
       };
-    case "Offside": {
-      /* How interesting an offside is depends entirely on what it cut out.
-       * A flag on the halfway line is bookkeeping; one that denies a man a
-       * run at goal is a moment, and the difference is where it happened.
-       *
-       * This used to be a flat 0, which meant it only ever appeared in Full.
-       * The engine can now produce a realistic six or seven a match and a
-       * viewer on the default Extended setting would not have seen one of
-       * them — the law was implemented, working, and invisible. */
-      const tight = event.from !== null && distanceToNearerGoal(event.from) < OFFSIDE_TIGHT_METRES;
+    case "Offside":
       return {
         matchSecond: event.matchSecond,
         minute,
-        importance: tight ? 2 : 1,
+        importance: 0,
         team: event.team,
         kind: "offside",
-        text: fill(pick(tight ? OFFSIDE_TIGHT_TEMPLATES : OFFSIDE_TEMPLATES), {
-          player: ctx.playerName(event.actorId),
-        }),
+        text: fill(pick(OFFSIDE_TEMPLATES)),
       };
-    }
     case "Restart":
       if (event.kind === "penalty") {
         return {
@@ -277,15 +227,7 @@ export function lineFor(
       return {
         matchSecond: event.matchSecond,
         minute,
-        /* A card is always worth showing. So is a foul that hands over a free
-         * kick in a shooting position — that is a chance being created, not a
-         * stoppage. A tug in midfield is neither. */
-        importance:
-          event.card !== "none"
-            ? 2
-            : event.from !== null && distanceToNearerGoal(event.from) < 30
-              ? 1
-              : 0,
+        importance: event.card === "none" ? 0 : 2,
         team: event.team,
         kind: "foul",
         text:
