@@ -24,7 +24,7 @@ import {
   SIX_YARD_DEPTH,
   SIX_YARD_WIDTH,
 } from "./constants";
-import { clamp, type Vec2 } from "./math";
+import { clamp, type Vec2, len2 } from "./math";
 
 /** Which goal a team attacks. LeftToRight attacks x = PITCH_LENGTH. */
 export type Direction = 1 | -1;
@@ -106,7 +106,7 @@ export const clampToSim = (p: Vec2): Vec2 => ({
 /** Straight-line distance to the centre of the goal at `dir`'s end. */
 export const distanceToGoal = (p: Vec2, dir: Direction): number => {
   const g = goalCentre(dir);
-  return Math.hypot(p.x - g.x, p.y - g.y);
+  return len2(p.x - g.x, p.y - g.y);
 };
 
 /** Radians of goal visible from p, ignoring bodies. The angle term of the xG

@@ -18,6 +18,7 @@
 
 import type { BallState } from "./ball";
 import type { Vec2 } from "./math";
+import type { Perception } from "./perception";
 import type { PlayerState } from "./player";
 import type { MatchEvent } from "./events";
 import type { TeamSide } from "./types";
@@ -123,6 +124,23 @@ export interface FullSnapshot {
   lastRestartTick: number;
   /** A foul the referee is playing advantage on. */
   advantage: { side: TeamSide; at: Vec2; until: number } | null;
+  /**
+   * The passage's authored moment, if this is a staged scene.
+   *
+   * This belongs in the snapshot for one specific reason. Replaying a scene
+   * from its opening keyframe has to reproduce the passage that was validated,
+   * or the clip the viewer watches is not the clip that was checked — which is
+   * the exact bug the whole architecture exists to make impossible. Leaving
+   * the decree out meant `spent` was still true from the first run, so on
+   * replay the authored shot was no longer steered and the ball ended eight
+   * metres somewhere else.
+   */
+  decree: {
+    actorId: number;
+    outcome: string;
+    spot: Vec2;
+    spent: boolean;
+  } | null;
   /** The rehearsed move each side is running, if any. A move changes what
    *  every player in its cast does, so a keyframe that forgot it would resume
    *  into a different match. */
@@ -150,6 +168,9 @@ export interface FullSnapshot {
     vMax: number;
     aMax: number;
     turnRate: number;
+    /** What he believes. A resumed match whose players believe different
+     *  things is a different match — same class of bug as the ceilings. */
+    perception: Perception;
   }[];
 }
 

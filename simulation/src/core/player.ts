@@ -30,8 +30,10 @@ import {
   TURN_BASE,
   TURN_PER_AGILITY,
 } from "./constants";
-import { attr01, clamp, lerp, rotateTowards, sub, truncate, type Vec2 } from "./math";
+import { attr01, clamp, lerp, rotateTowards, sub, truncate, type Vec2, len2 } from "./math";
+import { createPerception, type Perception } from "./perception";
 import { SIM_MAX_X, SIM_MAX_Y, SIM_MIN_X, SIM_MIN_Y } from "./pitch";
+import { deriveTraits, type Traits } from "./traits";
 import type { PlayerDef, TeamSide } from "./types";
 
 /** Thin per-player FSM state. The brain picks it; movement reads it. */
@@ -84,6 +86,15 @@ export interface Player {
   steerX: number;
   steerY: number;
 
+  /** What he BELIEVES about the world, as against what is true. See
+   *  perception.ts — this is where Concentration, Anticipation and
+   *  Positioning finally do something. */
+  readonly perception: Perception;
+  /** His temperament: what he TRIES, as distinct from how well he does it.
+   *  Derived from the attributes, so it is the same in every match and never
+   *  needs snapshotting. See traits.ts. */
+  readonly traits: Traits;
+
   /* Attribute-derived constants, computed once. They are read on the hottest
    *  path in the engine — 22 players, 120 times a second — and normalising a
    *  1-20 attribute there was measurably a chunk of a whole match. */
@@ -113,6 +124,8 @@ export function createPlayer(def: PlayerDef, side: TeamSide, slot: number, pos: 
     turnRate: 0,
     steerX: 0,
     steerY: 0,
+    perception: createPerception(def.attributes),
+    traits: deriveTraits(def.attributes),
     staminaWilling: lerp(0.75, 1.25, attr01(def.attributes.workRate)),
     staminaCapacity: lerp(1.35, 0.65, attr01(def.attributes.stamina)),
     carryFactor: lerp(CARRY_SPEED_MIN, CARRY_SPEED_MAX, attr01(def.attributes.dribbling)),
@@ -145,7 +158,7 @@ export function refreshCeilings(p: Player): void {
  *  onto an anchor rather than jittering across it. */
 export function arrive(p: Player, target: Vec2, maxSpeed: number): Vec2 {
   const to = sub(target, p.pos);
-  const d = Math.hypot(to.x, to.y);
+  const d = len2(to.x, to.y);
   if (d < ARRIVE_STOP_RADIUS) return { x: 0, y: 0 };
   const speed = d < ARRIVE_SLOW_RADIUS ? maxSpeed * (d / ARRIVE_SLOW_RADIUS) : maxSpeed;
   const dir = { x: to.x / d, y: to.y / d };
@@ -160,7 +173,7 @@ export function separation(p: Player, neighbours: readonly Player[]): Vec2 {
     if (n === p || !n.onPitch) continue;
     const dx = p.pos.x - n.pos.x;
     const dy = p.pos.y - n.pos.y;
-    const d = Math.hypot(dx, dy);
+    const d = len2(dx, dy);
     if (d > SEPARATION_RADIUS || d < 1e-4) continue;
     const push = (SEPARATION_RADIUS - d) / SEPARATION_RADIUS;
     sx += (dx / d) * push;
@@ -211,7 +224,7 @@ export function steerPlayer(
   // --- arrive ---
   let dx = targetX - p.pos.x;
   let dy = targetY - p.pos.y;
-  const d = Math.hypot(dx, dy);
+  const d = len2(dx, dy);
   let wx = 0;
   let wy = 0;
   if (d >= ARRIVE_STOP_RADIUS) {
@@ -227,7 +240,7 @@ export function steerPlayer(
     if (n === p || !n.onPitch) continue;
     dx = p.pos.x - n.pos.x;
     dy = p.pos.y - n.pos.y;
-    const nd = Math.hypot(dx, dy);
+    const nd = len2(dx, dy);
     if (nd > SEPARATION_RADIUS || nd < 1e-4) continue;
     const push = (SEPARATION_RADIUS - nd) / SEPARATION_RADIUS;
     sx += (dx / nd) * push;
@@ -237,7 +250,7 @@ export function steerPlayer(
   wy += sy * SEPARATION_WEIGHT * maxSpeed * 0.5;
 
   // --- truncate to the speed ceiling ---
-  const wantSpeed = Math.hypot(wx, wy);
+  const wantSpeed = len2(wx, wy);
   if (wantSpeed > maxSpeed && wantSpeed > 1e-9) {
     const k = maxSpeed / wantSpeed;
     wx *= k;

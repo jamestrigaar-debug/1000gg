@@ -257,3 +257,91 @@ export function goalMouthPoint(
 ): { x: number; y: number; z: number } {
   return { x: goalLineX(dir), y, z };
 }
+
+/* ============================================================================
+ * COERCING A SHOT TO A DECREED OUTCOME
+ *
+ * The director decides before a ball is kicked whether a given chance is
+ * scored, saved, blocked or dragged wide. The physics still plays the move —
+ * the runs, the marking, the block are all real — but the strike itself has
+ * to land where the plan says.
+ *
+ * Coercion is done by moving the BALL, not by relabelling the event. A shot
+ * recorded as "off" whose ball flies into the net is the bug this engine spent
+ * a long time chasing, and the only defence against it is that the two can
+ * never be set separately. So the aim point is nudged the smallest distance
+ * that makes the required outcome true, and everything downstream — the
+ * flight, the keeper, the stats, the commentary — reads the same numbers it
+ * always did.
+ *
+ * The nudge is small on purpose. resolveShot has already chosen a realistic
+ * aim and a realistic error for this shooter, from this range, under this
+ * pressure; a decreed miss should be the shot he was going to take, pulled
+ * just outside the post, not a fresh random one. So a shot already satisfying
+ * the decree is returned untouched, and most are.
+ * ========================================================================== */
+
+export type DecreedOutcome = "goal" | "saved" | "blocked" | "off" | "post";
+
+const POST_SLACK = 0.35;
+
+export function coerceShot(o: ShotOutcome, want: DecreedOutcome, rng: Rng): ShotOutcome {
+  if (o.kind === want) return o;
+  const { near, far } = goalPostY();
+  const y = o.aim.y;
+  const z = o.aim.z;
+  const inside = y > near + POST_SLACK && y < far - POST_SLACK && z > 0.05 && z < GOAL_HEIGHT - 0.15;
+
+  /** Pull the aim to the nearer side of the goal mouth, keeping the shooter's
+   *  own tendency: a man who was going right stays going right. */
+  const pullIn = (): { y: number; z: number } => {
+    const side = y < (near + far) / 2 ? 1 : -1;
+    const post = side > 0 ? near : far;
+    return {
+      y: post + side * rng.range(0.5, GOAL_WIDTH * 0.45),
+      z: clamp(z, 0.1, GOAL_HEIGHT - 0.25),
+    };
+  };
+  /** ...and push it just outside, which is what a miss looks like. */
+  const pushOut = (): { y: number; z: number } => {
+    const overTheBar = rng.chance(0.34);
+    if (overTheBar) return { y, z: GOAL_HEIGHT + rng.range(0.25, 2.2) };
+    const side = y < (near + far) / 2 ? -1 : 1;
+    const post = side < 0 ? near : far;
+    return { y: post + side * rng.range(POST_SLACK + 0.2, 3.4), z: clamp(z, 0.1, GOAL_HEIGHT) };
+  };
+
+  switch (want) {
+    case "blocked":
+      return { kind: "blocked", xg: o.xg, psxg: 0, aim: o.aim, pace: 0 };
+    case "goal": {
+      const aim = inside ? o.aim : pullIn();
+      return { kind: "goal", xg: o.xg, psxg: Math.max(o.psxg, 0.2), aim, pace: o.pace || 20 };
+    }
+    case "saved": {
+      const aim = inside ? o.aim : pullIn();
+      return {
+        kind: "saved",
+        xg: o.xg,
+        psxg: Math.max(o.psxg, 0.12),
+        aim,
+        pace: o.pace || 20,
+        // A keeper holds most of what he saves; the rest is a live rebound.
+        held: rng.chance(0.62),
+      };
+    }
+    case "post": {
+      const side = rng.chance(0.5) ? -1 : 1;
+      const post = side < 0 ? near : far;
+      return {
+        kind: "post",
+        xg: o.xg,
+        psxg: 0,
+        aim: { y: post + side * rng.range(0, POST_SLACK * 0.8), z: clamp(z, 0.2, GOAL_HEIGHT - 0.1) },
+        pace: o.pace || 20,
+      };
+    }
+    case "off":
+      return { kind: "off", xg: o.xg, psxg: 0, aim: inside ? pushOut() : o.aim, pace: o.pace || 20 };
+  }
+}

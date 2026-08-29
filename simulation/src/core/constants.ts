@@ -245,6 +245,42 @@ export const CROSS_TARGET_SPREAD = 5.0;
  *  from in front. Multiplies the beat chance. */
 export const OWN_GOAL_SAVE_BONUS = 0.08;
 
+/* --- Officials ----------------------------------------------------------- */
+
+/** How often the assistant misses an offside that genuinely was one. Real
+ *  officials are wrong on a small but real fraction of tight calls, and that
+ *  residue is where a contentious goal comes from. Not a get-out for the
+ *  players: awareness governs whether the pass is PLAYED, not whether the flag
+ *  goes up. */
+export const ASSISTANT_MISS = 0.06;
+
+/** Spread on a blocked shot's rebound, either side of straight back at the
+ *  shooter. Wide enough that a block is genuinely loose and dangerous, narrow
+ *  enough that it does not carry on into the net's direction — a full circle
+ *  sent a quarter of all blocks behind for a corner. */
+export const BLOCK_SPREAD = 1.15;
+
+/** Fouls away from the ball — the shirt pull on a man running in behind.
+ *
+ * Every foul in this engine came from a challenge on the carrier, inside 1.8
+ * metres of him. Real football gives away a good share of its free kicks with
+ * the ball nowhere near: a defender beaten for pace who grabs a handful of
+ * shirt, a blocking run, a body checked at a corner. It is also the offence
+ * the rest of this work created the conditions for — now that strikers make
+ * genuine runs in behind against a line they can misread, there are runners to
+ * foul.
+ *
+ * Per steering beat, per defender-runner pair in range, so it is small. Tuned
+ * on the batch harness: 0.0007 put the foul count at 25.1 a match, the very
+ * top of the real 18-26 band, and the extra free kicks inflated set-piece
+ * chances behind it. This lands it mid-range. */
+export const OFF_BALL_FOUL_BASE = 0.00038;
+/** How close he has to be to get a hand on him. */
+export const OFF_BALL_FOUL_RANGE = 1.7;
+/** ...and how fast the runner has to be going, as a fraction of his top speed.
+ *  You do not haul down a man who is jogging. */
+export const OFF_BALL_RUNNER_SPEED = 0.72;
+
 /* --- Fouls and cards (M5) ------------------------------------------------ */
 
 /** How often a defender in range actually goes in for the ball, per steering
@@ -298,3 +334,105 @@ export const HOME_EDGE_FOUL = 0.045; // per rating point, off the foul chance
 /** FM attributes run 1..20; most mechanics want a 0..1 normal of them. */
 export const ATTR_MIN = 1;
 export const ATTR_MAX = 20;
+
+/* --- BLOCKED SHOTS ---------------------------------------------------------
+ *
+ * A block used to be counted by sweeping a 1.3 m corridor from the shooter to
+ * the middle of the goal and charging 0.15 per body found in it. Measured
+ * against real football that model was wrong by a factor of five AND wrong in
+ * its sign: 1% of shots inside eleven metres were blocked against a real 25%,
+ * rising to 27% beyond twenty-two metres, because a fixed-width corridor gets
+ * LONGER with range and so sweeps up more bodies the further out you shoot.
+ * Reality is the other way round — the crowded place is the six-yard box.
+ *
+ * The replacement asks the only question that actually decides a block: how
+ * much of the goal can the shooter still SEE? Each defender's body is
+ * projected from the shooter's eye onto the goal line, the shadows are merged,
+ * and the fraction of the seven-and-a-third metres that is hidden is the
+ * chance the strike hits somebody. It needs no distance term, because the
+ * geometry already has one: a defender a metre away blacks out the whole goal,
+ * and the same defender twenty metres away hides a foot of it.
+ */
+/** Effective radius a defender presents to a struck ball. Larger than a body,
+ *  because blocking is an act — a leg goes out, a man turns his back and
+ *  spreads. */
+export const BLOCK_BODY = 0.62;
+/** Not every shot into a shadow is blocked: it can be lifted, slid under, or
+ *  struck through a gap the geometry rounds away. */
+export const BLOCK_COVER = 0.82;
+/** Even a shooter with a wall in front of him sometimes finds a way through. */
+export const BLOCK_MAX = 0.72;
+/** A defender must be genuinely goal-side to block; level with the shooter he
+ *  is beaten. */
+export const BLOCK_MIN_AHEAD = 0.35;
+
+/* --- THE DEFENSIVE LINE LEADS THE BALL -------------------------------------
+ *
+ * A line set from where the ball IS can never be in position, and the shot
+ * probe proved it: at every shot sampled, all ten outfielders of the
+ * defending side were sprinting at exactly vMax, with full stamina, and were
+ * still ten to twenty-three metres short of the position their own brains had
+ * chosen. They were not deciding badly — they were losing a footrace they
+ * could not win, because a pass travels twenty metres in under a second and a
+ * defender needs two and a half. The measured consequence: 0.89 opponents
+ * goal-side of the shooter and 1.74 in the box, against a real six to eight,
+ * so 73% of shots were struck with literally nobody in front of the ball.
+ *
+ * Anticipation is the only thing that closes a gap like that, and it is what
+ * defenders actually do — you drop as the ball is played, not once it has
+ * arrived.
+ */
+/** Seconds of ball travel the line reads ahead of itself. */
+export const LINE_LOOKAHEAD = 0.85;
+/** ...and the most it will concede to one ball, so a goal kick does not put
+ *  the whole back four on its own six-yard line. */
+export const LINE_LEAD_MAX = 15;
+
+/** What a shot struck into a defender is worth relative to a clear sight of
+ *  goal. Not zero — a block spills, deflects, or wins a corner — but small
+ *  enough that a player with a body in front of him looks for another way. */
+export const BLOCKED_SHOT_WORTH = 0.22;
+
+/** How close to its own goal the back line will sit. Defenders stand ON the
+ *  line for a shot from six yards; the old 5.5 m floor meant a striker eight
+ *  metres out was level with the centre-halves rather than behind them, and
+ *  4.3% of shots from inside eleven metres were blocked against a real 25%. */
+export const LINE_FLOOR = 3;
+/** The tightest a block ever gets, front edge to back. A side defending its
+ *  own six-yard box is not thirty metres deep. */
+export const BLOCK_MIN_DEPTH = 6;
+
+/* --- A REHEARSED CHANCE ----------------------------------------------------
+ *
+ * How hard a side plays the pattern the director called. These bias the
+ * option scorer; they do not bypass it, which matters — a pass into the
+ * nominated man is still weighed against whether it arrives, and a defender
+ * who reads it still intercepts it. What they buy is INTENT, and the
+ * measurement is blunt about how much that was worth: with no intent at all,
+ * the nominated player struck the ball in one staged passage out of
+ * twenty-five, and 96% of the reel fell back to a standing start.
+ */
+/** How much more a pass to the man the move is for is worth. */
+export const DECREE_PASS_BIAS = 3.4;
+/** ...and how much more his shot is worth once he is in the position. */
+export const DECREE_SHOOT_BIAS = 7;
+/** ...and driving at it when he has the ball but is not there yet. */
+export const DECREE_CARRY_BIAS = 2.6;
+/** How near the intended position counts as being in it, in metres. */
+export const DECREE_SPOT_RADIUS = 8;
+
+/* --- STRIKING IT FIRST TIME ------------------------------------------------
+ *
+ * How long a player takes to settle a ball, and what a shot is worth before he
+ * has. The old rule was a hard gate — nothing at all for the first quarter
+ * second — and since a reception zeroes the possession clock and the next
+ * brain beat lands an eighth of a second later, it meant no player in this
+ * engine had ever shot first time. A striker receiving a cutback six metres
+ * out laid it off. Measured on staged chances: he received it in 79% of
+ * passages and struck it in 2%.
+ */
+export const SETTLE_SECONDS = 0.25;
+/** What a first-time strike is worth against a settled one, for a player of
+ *  no particular technique. Scaled up by First Touch, Technique and Composure,
+ *  which is where the difference between a poacher and a defender shows. */
+export const FIRST_TIME_FLOOR = 0.42;

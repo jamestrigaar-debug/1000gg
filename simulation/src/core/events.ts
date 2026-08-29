@@ -36,7 +36,23 @@ export type WhistleKind =
 
 export type MatchEvent =
   | (EventBase & { type: "KickOff"; period: number })
-  | (EventBase & { type: "Pass"; targetId: number | null; completed: boolean; length: number })
+  /**
+   * A ball played from a player's foot that is not a shot.
+   *
+   * `kind` matters more than it looks. Everything struck through strike()
+   * emitted a Pass, so a hoofed clearance and a goal kick were counted
+   * alongside a ten-yard ball in midfield, and both defaulted to completed.
+   * "Pass accuracy" then meant nothing in particular: it could not be compared
+   * to a real 76-86% because it was not measuring the same thing football
+   * measures. Splitting it is the difference between a number and a metric.
+   */
+  | (EventBase & {
+      type: "Pass";
+      targetId: number | null;
+      completed: boolean;
+      length: number;
+      kind: "open" | "clear" | "restart";
+    })
   | (EventBase & { type: "Interception" })
   | (EventBase & { type: "Dribble"; beat: boolean })
   | (EventBase & { type: "Duel"; opponentId: number; won: boolean; aerial: boolean })
